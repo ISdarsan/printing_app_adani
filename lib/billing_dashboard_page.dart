@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'print_bill_page.dart';
 import 'add_item_page.dart';
+import 'logout_splash_page.dart'; // 👈 import your logout splash page
 
 class BillingDashboardPage extends StatelessWidget {
   const BillingDashboardPage({super.key});
@@ -20,7 +21,7 @@ class BillingDashboardPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.grey[100],
 
-      // 👇 Add drawer
+      // 👇 Drawer with logout splash
       drawer: Drawer(
         child: ListView(
           padding: EdgeInsets.zero,
@@ -79,7 +80,11 @@ class BillingDashboardPage extends StatelessWidget {
               title: const Text('Logout'),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.pushReplacementNamed(context, '/login');
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const LogoutSplashPage()),
+                );
               },
             ),
           ],
