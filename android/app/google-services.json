@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1081372073317",
+    "project_id": "canteen-app-adani",
+    "storage_bucket": "canteen-app-adani.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1081372073317:android:a9de02d9171aa3c7ea158c",
+        "android_client_info": {
+          "package_name": "com.adani.canteen_adani"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDWrklomuJ5LgYk54cRZ-IQHcs9nNxt-I0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
