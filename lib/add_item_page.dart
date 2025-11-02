@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+// 1. IMPORT the Firebase database package
+import 'package:cloud_firestore/cloud_firestore.dart';
 
+// 2. CONVERT to a StatefulWidget to manage a "loading" state
 class AddItemPage extends StatefulWidget {
   const AddItemPage({super.key});
 
@@ -8,17 +11,19 @@ class AddItemPage extends StatefulWidget {
 }
 
 class _AddItemPageState extends State<AddItemPage> {
+  // A key to validate our form
   final _formKey = GlobalKey<FormState>();
 
-  // Text controllers
+  // Controllers to get the text from the fields
   final _codeController = TextEditingController();
   final _nameController = TextEditingController();
-  // MODIFIED: Renamed to full price
   final _fullPriceController = TextEditingController();
-  // NEW: Added half price controller
   final _halfPriceController = TextEditingController();
 
-  // Your Adani brand gradient
+  // A variable to track if we are currently saving
+  bool _isLoading = false;
+
+  // Your gradient
   final LinearGradient adaniGradient = const LinearGradient(
     colors: [
       Color(0xFF0066B3), // blue
@@ -29,34 +34,72 @@ class _AddItemPageState extends State<AddItemPage> {
     end: Alignment.bottomRight,
   );
 
-  void _saveItem() {
+  // 3. CREATE the function to save the item
+  Future<void> _saveItem() async {
+    // First, check if all fields are valid (e.g., not empty)
     if (_formKey.currentState!.validate()) {
-      // --- TODO: Add Firebase save logic here ---
-      // Now you would save all fields:
-      // String code = _codeController.text;
-      // String name = _nameController.text;
-      // String fullPrice = _fullPriceController.text;
-      // String halfPrice = _halfPriceController.text; // (might be empty)
-      // -----------------------------------------
+      // Show the loading spinner
+      setState(() {
+        _isLoading = true;
+      });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Item Saved! (Demo)'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      try {
+        // Get the values from the text fields
+        String code = _codeController.text.toUpperCase().trim();
+        String name = _nameController.text.trim();
+        // Convert prices from text (String) to a number (double)
+        double fullPrice = double.tryParse(_fullPriceController.text) ?? 0.0;
+        double? halfPrice = _halfPriceController.text.isEmpty
+            ? null // If half price is empty, save it as null
+            : double.tryParse(_halfPriceController.text);
 
-      Navigator.pop(context);
+        // --- THIS IS THE MAGIC ---
+        // Get a reference to our database collection called "menuItems"
+        // We use .doc(code) to use the Food Code as the ID.
+        // This is smart because it prevents duplicate food codes.
+        await FirebaseFirestore.instance.collection('menuItems').doc(code).set({
+          'code': code,
+          'name': name,
+          'fullPrice': fullPrice,
+          'halfPrice': halfPrice,
+          'category': 'default', // We can add this feature later
+        });
+        // -------------------------
+
+        // Show a success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Item saved successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        // Go back to the previous page (dashboard)
+        if (mounted) {
+          Navigator.pop(context);
+        }
+      } catch (e) {
+        // If an error happens (like no internet)
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save item: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
+  // Clean up the controllers when the page is closed
   @override
   void dispose() {
-    // Clean up all controllers
     _codeController.dispose();
     _nameController.dispose();
-    _fullPriceController.dispose(); // MODIFIED
-    _halfPriceController.dispose(); // NEW
+    _fullPriceController.dispose();
+    _halfPriceController.dispose();
     super.dispose();
   }
 
@@ -72,7 +115,7 @@ class _AddItemPageState extends State<AddItemPage> {
             decoration: BoxDecoration(gradient: adaniGradient),
           ),
           title: const Text(
-            'Add New Menu Item',
+            'Add / Edit Item',
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.bold,
@@ -85,97 +128,66 @@ class _AddItemPageState extends State<AddItemPage> {
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
+        // 4. WRAP everything in a Form widget
         child: Form(
           key: _formKey,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Enter Item Details',
+                'Enter New Food Details',
                 style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black54,
-                ),
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF003C8F)),
               ),
               const SizedBox(height: 24),
-
-              // Food Code Field
-              TextFormField(
+              _buildTextFormField(
                 controller: _codeController,
-                decoration: _buildInputDecoration(
-                  hintText: 'e.g., CH10 or 101',
-                  labelText: 'Food Code',
-                  icon: Icons.qr_code_2,
-                ),
-                validator: (value) =>
-                value!.isEmpty ? 'Please enter a food code' : null,
+                labelText: 'Food Code (e.g., CH10)',
+                icon: Icons.qr_code,
               ),
               const SizedBox(height: 16),
-
-              // Item Name Field
-              TextFormField(
+              _buildTextFormField(
                 controller: _nameController,
-                decoration: _buildInputDecoration(
-                  hintText: 'e.g., Chicken Curry',
-                  labelText: 'Item Name',
-                  icon: Icons.fastfood_outlined,
-                ),
-                validator: (value) =>
-                value!.isEmpty ? 'Please enter an item name' : null,
+                labelText: 'Item Name (e.g., Chicken Curry)',
+                icon: Icons.fastfood_outlined,
               ),
               const SizedBox(height: 16),
-
-              // MODIFIED: Full Price Field
-              TextFormField(
+              _buildTextFormField(
                 controller: _fullPriceController,
+                labelText: 'Full Price (e.g., 120)',
+                icon: Icons.currency_rupee,
                 keyboardType: TextInputType.number,
-                decoration: _buildInputDecoration(
-                  hintText: 'e.g., 120.00',
-                  labelText: 'Full Price (₹)', // Changed label
-                  icon: Icons.currency_rupee,
-                ),
-                validator: (value) =>
-                value!.isEmpty ? 'Please enter a full price' : null,
               ),
               const SizedBox(height: 16),
-
-              // NEW: Half Price Field
-              TextFormField(
+              _buildTextFormField(
                 controller: _halfPriceController,
+                labelText: 'Half Price (e.g., 70) - Optional',
+                icon: Icons.currency_rupee,
                 keyboardType: TextInputType.number,
-                decoration: _buildInputDecoration(
-                  hintText: 'e.g., 70.00 (Optional)',
-                  labelText: 'Half Price (₹) (Optional)', // New label
-                  icon: Icons.currency_rupee_outlined,
-                ),
-                validator: (value) {
-                  // This field is optional, so no error if empty
-                  return null;
-                },
+                isOptional: true, // This will skip validation if it's empty
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 32),
 
-              // Save Button (Gradient)
+              // 5. MODIFY the save button to show a loading spinner
               GestureDetector(
-                onTap: _saveItem,
+                onTap: _isLoading ? null : _saveItem, // Disable button when loading
                 child: Container(
                   width: double.infinity,
                   height: 55,
                   decoration: BoxDecoration(
                     gradient: adaniGradient,
                     borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.blue.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
                   ),
-                  child: const Center(
-                    child: Text(
-                      'Save Item',
+                  child: Center(
+                    // Show spinner or text
+                    child: _isLoading
+                        ? const CircularProgressIndicator(
+                      valueColor:
+                      AlwaysStoppedAnimation<Color>(Colors.white),
+                    )
+                        : const Text(
+                      'Save Item to Database',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -192,32 +204,45 @@ class _AddItemPageState extends State<AddItemPage> {
     );
   }
 
-  InputDecoration _buildInputDecoration({
-    required String hintText,
+  // Helper widget for text fields
+  Widget _buildTextFormField({
+    required TextEditingController controller,
     required String labelText,
     required IconData icon,
+    TextInputType keyboardType = TextInputType.text,
+    bool isOptional = false, // New parameter
   }) {
-    // This is the brand's blue color from your logo
-    const Color brandBlue = Color(0xFF0066B3);
-
-    return InputDecoration(
-      hintText: hintText,
-      labelText: labelText,
-      filled: true,
-      fillColor: Colors.white,
-      prefixIcon: Icon(icon, color: brandBlue),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(15),
-        borderSide: BorderSide(color: Colors.grey.shade300),
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      decoration: InputDecoration(
+        labelText: labelText,
+        filled: true,
+        fillColor: Colors.white,
+        prefixIcon: Icon(icon),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: const BorderSide(color: Color(0xFF0066B3), width: 2),
+        ),
       ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(15),
-        borderSide: BorderSide(color: Colors.grey.shade300),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(15),
-        borderSide: const BorderSide(color: brandBlue, width: 2),
-      ),
+      // Validator to check if field is empty
+      validator: (value) {
+        if (isOptional && (value == null || value.isEmpty)) {
+          return null; // Skip validation if optional and empty
+        }
+        if (value == null || value.isEmpty) {
+          return 'This field is mandatory';
+        }
+        return null;
+      },
     );
   }
 }

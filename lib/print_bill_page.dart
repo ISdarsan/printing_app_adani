@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-// This is a simple data model for an item IN THE BILL
+// BillItem model remains the same
 class BillItem {
   final String code;
   final String name;
   final String type; // "Full" or "Half"
   final int quantity;
-  final double price; // The price for this item (e.g., 120.00)
+  final double price;
 
   BillItem({
     required this.code,
@@ -19,8 +20,7 @@ class BillItem {
   double get subtotal => price * quantity;
 }
 
-// This is a (DEMO) model for an item IN THE MENU
-// Later, this will come from Firebase
+// MenuItem model remains the same
 class MenuItem {
   final String code;
   final String name;
@@ -33,6 +33,17 @@ class MenuItem {
     required this.fullPrice,
     this.halfPrice,
   });
+
+  // Factory to create a MenuItem from a Firebase document
+  factory MenuItem.fromFirestore(Map<String, dynamic> data) {
+    return MenuItem(
+      code: data['code'] ?? '',
+      name: data['name'] ?? '',
+      fullPrice: (data['fullPrice'] ?? 0.0).toDouble(),
+      halfPrice:
+      (data['halfPrice'] != null) ? (data['halfPrice']).toDouble() : null,
+    );
+  }
 }
 
 class PrintBillPage extends StatefulWidget {
@@ -43,19 +54,13 @@ class PrintBillPage extends StatefulWidget {
 }
 
 class _PrintBillPageState extends State<PrintBillPage> {
-  // --- DEMO MENU DATABASE ---
-  final Map<String, MenuItem> _menuDatabase = {
-    'CH10': MenuItem(
-        code: 'CH10', name: 'Chicken Curry', fullPrice: 120.00, halfPrice: 70.00),
-    'BF20': MenuItem(
-        code: 'BF20', name: 'Beef Fry', fullPrice: 140.00, halfPrice: 80.00),
-    'VEG30': MenuItem(code: 'VEG30', name: 'Veg Meals', fullPrice: 80.00),
-    'PO50': MenuItem(code: 'PO50', name: 'Porotta', fullPrice: 12.00),
-  };
-  // --------------------------
+  final _autocompleteController = TextEditingController();
+  final _autocompleteFocusNode = FocusNode();
+  List<MenuItem> _fullMenu = [];
+  MenuItem? _selectedMenuItem;
 
-  final _codeController = TextEditingController();
   final _quantityController = TextEditingController(text: '1');
+  bool _isLoading = false;
 
   List<bool> _priceSelection = [true, false]; // [Full, Half]
   List<bool> _paymentSelection = [true, false]; // [Cash, UPI]
@@ -74,48 +79,69 @@ class _PrintBillPageState extends State<PrintBillPage> {
     end: Alignment.bottomRight,
   );
 
-  // --- LOGIC METHODS ---
+  @override
+  void initState() {
+    super.initState();
+    _fetchMenu();
+  }
 
-  void _addItemToBill() {
-    final String code = _codeController.text.toUpperCase().trim();
-    final int quantity = int.tryParse(_quantityController.text) ?? 1;
+  Future<void> _fetchMenu() async {
+    try {
+      final snapshot =
+      await FirebaseFirestore.instance.collection('menuItems').get();
 
-    if (_menuDatabase.containsKey(code)) {
-      final menuItem = _menuDatabase[code]!;
-      final bool isFull = _priceSelection[0];
-
-      double price;
-      String type;
-
-      if (isFull) {
-        price = menuItem.fullPrice;
-        type = 'Full';
-      } else {
-        if (menuItem.halfPrice != null) {
-          price = menuItem.halfPrice!;
-          type = 'Half';
-        } else {
-          _showErrorSnackBar('This item does not have a "Half" price option.');
-          return;
-        }
-      }
+      final menu = snapshot.docs.map((doc) {
+        return MenuItem.fromFirestore(doc.data() as Map<String, dynamic>);
+      }).toList();
 
       setState(() {
-        _currentBillItems.add(BillItem(
-          code: code,
-          name: menuItem.name,
-          type: type,
-          quantity: quantity,
-          price: price,
-        ));
-        _calculateTotal();
+        _fullMenu = menu;
       });
-
-      _codeController.clear();
-      _quantityController.text = '1';
-    } else {
-      _showErrorSnackBar('Food Code "$code" not found in menu.');
+    } catch (e) {
+      _showErrorSnackBar('Failed to load menu: $e');
     }
+  }
+
+  void _addItemToBill() {
+    final int quantity = int.tryParse(_quantityController.text) ?? 1;
+
+    if (_selectedMenuItem == null) {
+      _showErrorSnackBar('Please select an item from the search list.');
+      return;
+    }
+
+    final menuItem = _selectedMenuItem!;
+    final bool isFull = _priceSelection[0];
+    double price;
+    String type;
+
+    if (isFull) {
+      price = menuItem.fullPrice;
+      type = 'Full';
+    } else {
+      if (menuItem.halfPrice != null && menuItem.halfPrice! > 0) {
+        price = menuItem.halfPrice!;
+        type = 'Half';
+      } else {
+        _showErrorSnackBar('This item does not have a "Half" price option.');
+        return;
+      }
+    }
+
+    setState(() {
+      _currentBillItems.add(BillItem(
+        code: menuItem.code,
+        name: menuItem.name,
+        type: type,
+        quantity: quantity,
+        price: price,
+      ));
+      _calculateTotal();
+      _autocompleteController.clear();
+      _selectedMenuItem = null;
+      _quantityController.text = '1';
+      _autocompleteFocusNode.unfocus();
+    });
   }
 
   void _removeItem(int index) {
@@ -141,6 +167,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
       _calculateTotal();
       _paymentSelection = [true, false];
       _paymentMethod = 'Cash';
+      _autocompleteController.clear();
+      _selectedMenuItem = null;
     });
   }
 
@@ -150,11 +178,26 @@ class _PrintBillPageState extends State<PrintBillPage> {
       return;
     }
 
-    // --- TODO: Add real printer logic here ---
+    FirebaseFirestore.instance.collection('sales').add({
+      'totalAmount': _totalAmount,
+      'paymentMethod': _paymentMethod,
+      'timestamp': FieldValue.serverTimestamp(),
+      'items': _currentBillItems
+          .map((item) => {
+        'code': item.code,
+        'name': item.name,
+        'type': item.type,
+        'quantity': item.quantity,
+        'price': item.price,
+        'subtotal': item.subtotal,
+      })
+          .toList(),
+    });
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-            'Printing Bill... Total: ₹${_totalAmount.toStringAsFixed(2)}, Payment: $_paymentMethod'),
+            'Bill Saved! Total: ₹${_totalAmount.toStringAsFixed(2)}, Payment: $_paymentMethod'),
         backgroundColor: Colors.green,
       ),
     );
@@ -173,13 +216,13 @@ class _PrintBillPageState extends State<PrintBillPage> {
 
   @override
   void dispose() {
-    _codeController.dispose();
+    _autocompleteController.dispose();
     _quantityController.dispose();
+    _autocompleteFocusNode.dispose();
     super.dispose();
   }
 
-  // --- UI WIDGETS ---
-
+  // --- WIDGET BUILD (MODIFIED) ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -203,23 +246,29 @@ class _PrintBillPageState extends State<PrintBillPage> {
           elevation: 3,
         ),
       ),
-      // --- THIS IS THE FIX ---
-      // Wrap the entire body in a SafeArea widget
+      // The Scaffold will automatically resize when the keyboard appears.
+      // This new Column layout is simpler and faster.
       body: SafeArea(
         child: Column(
           children: [
             // 1. INPUT SECTION
+            // This part will NOT scroll. It's always at the top.
             _buildInputSection(),
 
             // 2. BILL ITEMS LIST
             const Divider(thickness: 1),
             const Padding(
-              padding: EdgeInsets.only(top: 8.0),
+              padding: EdgeInsets.only(top: 8.0, bottom: 4.0), // Added bottom padding
               child: Text(
                 'Current Bill',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
               ),
             ),
+
+            // 3. THIS IS THE BIG FIX
+            // We wrap the list in Expanded.
+            // This tells the list to "take all the remaining empty space".
+            // This pushes the totals to the bottom.
             Expanded(
               child: _currentBillItems.isEmpty
                   ? const Center(
@@ -229,6 +278,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
                 ),
               )
                   : ListView.builder(
+                // The ListView will now scroll internally if it gets too long
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 itemCount: _currentBillItems.length,
                 itemBuilder: (context, index) {
@@ -265,48 +315,105 @@ class _PrintBillPageState extends State<PrintBillPage> {
               ),
             ),
 
-            // 3. TOTALS & PRINT BUTTON
+            // 4. TOTALS & PRINT BUTTON
+            // Because the list is Expanded, this is pushed to the bottom.
             _buildTotalsSection(),
           ],
         ),
       ),
     );
   }
+  // --- END OF MODIFICATION ---
+
 
   // Helper Widget for the input section
   Widget _buildInputSection() {
     return Container(
       padding: const EdgeInsets.all(16.0),
       color: Colors.white,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
         children: [
-          // Food Code & Quantity
-          Expanded(
-            flex: 3,
-            child: Column(
-              children: [
-                TextField(
-                  controller: _codeController,
-                  decoration:
-                  _buildInputDecoration(labelText: 'Food Code (e.g., CH10)'),
+          // This is the new Autocomplete widget
+          Autocomplete<MenuItem>(
+            textEditingController: _autocompleteController,
+            focusNode: _autocompleteFocusNode,
+            displayStringForOption: (MenuItem option) =>
+            '${option.code} - ${option.name}',
+            optionsBuilder: (TextEditingValue textEditingValue) {
+              if (textEditingValue.text == '') {
+                return const Iterable<MenuItem>.empty();
+              }
+              if (_fullMenu.isEmpty) {
+                return const Iterable<MenuItem>.empty();
+              }
+
+              String query = textEditingValue.text.toLowerCase();
+              return _fullMenu.where((MenuItem item) {
+                return item.name.toLowerCase().contains(query) ||
+                    item.code.toLowerCase().contains(query);
+              });
+            },
+            optionsViewBuilder: (context, onSelected, options) {
+              return Align(
+                alignment: Alignment.topLeft,
+                child: Material(
+                  elevation: 4.0,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: 200, maxWidth: MediaQuery.of(context).size.width - 32),
+                    child: ListView.builder(
+                      padding: EdgeInsets.zero,
+                      itemCount: options.length,
+                      itemBuilder: (BuildContext context, int index) {
+                        final MenuItem option = options.elementAt(index);
+                        return InkWell(
+                          onTap: () {
+                            onSelected(option);
+                          },
+                          child: ListTile(
+                            title: Text('${option.code} - ${option.name}'),
+                            subtitle: Text('₹${option.fullPrice.toStringAsFixed(2)}'),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 12),
-                TextField(
+              );
+            },
+            onSelected: (MenuItem selection) {
+              setState(() {
+                _selectedMenuItem = selection;
+                _autocompleteController.text = '${selection.code} - ${selection.name}';
+                FocusScope.of(context).nextFocus();
+              });
+            },
+            fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+              return TextField(
+                controller: controller,
+                focusNode: focusNode,
+                decoration: _buildInputDecoration(
+                  labelText: 'Search by Code or Name...',
+                  icon: Icons.search,
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 2,
+                child: TextField(
                   controller: _quantityController,
                   keyboardType: TextInputType.number,
                   decoration: _buildInputDecoration(labelText: 'Quantity'),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Toggle & Add Button
-          Expanded(
-            flex: 2,
-            child: Column(
-              children: [
-                ToggleButtons(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 3,
+                child: ToggleButtons(
                   isSelected: _priceSelection,
                   onPressed: (index) {
                     setState(() {
@@ -315,25 +422,38 @@ class _PrintBillPageState extends State<PrintBillPage> {
                   },
                   borderRadius: BorderRadius.circular(8),
                   constraints:
-                  const BoxConstraints(minHeight: 40.0, minWidth: 60.0),
+                  const BoxConstraints(minHeight: 40.0, minWidth: 100.0),
                   children: const [
                     Text('Full', style: TextStyle(fontWeight: FontWeight.bold)),
                     Text('Half', style: TextStyle(fontWeight: FontWeight.bold)),
                   ],
                 ),
-                const SizedBox(height: 12),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.add_shopping_cart),
-                  label: const Text('Add'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(double.infinity, 50),
-                  ),
-                  onPressed: _addItemToBill,
-                ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Add to Bill Button
+          ElevatedButton.icon(
+            icon: _isLoading
+                ? Container(
+              width: 20,
+              height: 20,
+              child: const CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 2,
+              ),
+            )
+                : const Icon(Icons.add_shopping_cart),
+            label: Text(_isLoading ? 'Adding...' : 'Add Item to Bill'),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)
+                )
             ),
+            onPressed: _isLoading ? null : _addItemToBill,
           ),
         ],
       ),
@@ -356,7 +476,6 @@ class _PrintBillPageState extends State<PrintBillPage> {
       ),
       child: Column(
         children: [
-          // TOTAL AMOUNT
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -379,8 +498,6 @@ class _PrintBillPageState extends State<PrintBillPage> {
             ],
           ),
           const SizedBox(height: 16),
-
-          // PAYMENT METHOD
           Row(
             children: [
               const Text(
@@ -415,17 +532,18 @@ class _PrintBillPageState extends State<PrintBillPage> {
             ],
           ),
           const SizedBox(height: 16),
-
-          // ACTION BUTTONS
           Row(
             children: [
               Expanded(
                 child: OutlinedButton(
                   onPressed: _clearBill,
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    minimumSize: const Size(0, 50),
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                      minimumSize: const Size(0, 50),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30)
+                      )
                   ),
                   child: const Text('Clear Bill'),
                 ),
@@ -443,7 +561,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
                     ),
                     child: const Center(
                       child: Text(
-                        'Print Bill',
+                        'Save & Print Bill',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -461,9 +579,10 @@ class _PrintBillPageState extends State<PrintBillPage> {
     );
   }
 
-  InputDecoration _buildInputDecoration({required String labelText}) {
+  InputDecoration _buildInputDecoration({required String labelText, IconData? icon}) {
     return InputDecoration(
       labelText: labelText,
+      prefixIcon: icon != null ? Icon(icon) : null,
       filled: true,
       fillColor: Colors.grey[100],
       border: OutlineInputBorder(
@@ -474,4 +593,3 @@ class _PrintBillPageState extends State<PrintBillPage> {
     );
   }
 }
-

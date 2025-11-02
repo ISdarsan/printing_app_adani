@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
+
+// --- ADDED ---
+import 'package:firebase_core/firebase_core.dart'; // Import Firebase
+import 'firebase_options.dart'; // This file was created by the tool
+// -------------
+
 import 'splash_page.dart';
-import 'login_page.dart'; // 👈 make sure this matches your file name!
+import 'login_page.dart';
 import 'admin_dashboard_page.dart';
 import 'billing_dashboard_page.dart';
 import 'today_sales_page.dart';
@@ -9,12 +15,22 @@ import 'expenses_page.dart';
 import 'logout_splash_page.dart';
 import 'print_bill_page.dart';
 import 'role_splash_page.dart';
-// ADDED: Import for the new menu page
 import 'menu_view_page.dart';
 
-void main() {
+// --- MODIFIED ---
+void main() async { // Make this 'async'
+  // Make sure Flutter is ready
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // Run the app
   runApp(const MyApp());
 }
+// ----------------
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -29,21 +45,20 @@ class MyApp extends StatelessWidget {
       routes: {
         // Core routes
         '/': (context) => const SplashPage(),
-        '/login': (context) => LoginPage(), // 👈 no const
-        '/admin_dashboard': (context) => const AdminDashboardPage(), // Corrected name
-        '/billing_dashboard': (context) => const BillingDashboardPage(), // Corrected name
+        '/login': (context) => LoginPage(),
+        '/admin_dashboard': (context) => const AdminDashboardPage(),
+        '/billing_dashboard': (context) => const BillingDashboardPage(),
 
-        // ADDED: All your other pages
+        // All your other pages
         '/role_splash': (context) =>
-            RoleSplashPage(role: ''), // Base route, not used directly
+            RoleSplashPage(role: ''),
         '/logout_splash': (context) => LogoutSplashPage(),
         '/print_bill': (context) => const PrintBillPage(),
         '/add_item': (context) => const AddItemPage(),
         '/today_sales': (context) => const TodaySalesPage(),
         '/expenses': (context) => const ExpensesPage(),
-        '/view_menu': (context) => const MenuViewPage(), // The new menu page
+        '/view_menu': (context) => const MenuViewPage(),
       },
     );
   }
 }
-
