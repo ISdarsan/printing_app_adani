@@ -90,7 +90,7 @@ class BillingDashboardPage extends StatelessWidget {
                 Navigator.pushNamed(context, '/expenses');
               },
             ),
-            // NEW: "Add Item" is now a management task in the drawer
+            // "Add Item" is now a management task in the drawer
             ListTile(
               leading: const Icon(Icons.add_box_outlined, color: Colors.blue),
               title: const Text('Add/Edit Item'),
@@ -117,9 +117,9 @@ class BillingDashboardPage extends StatelessWidget {
       ),
       // BODY: Only the two most essential buttons
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // This is the "Welcome, Cashier!" and stat cards
-          // We can keep this as it's useful information
           Container(
             padding: const EdgeInsets.all(16),
             width: double.infinity,
@@ -155,29 +155,36 @@ class BillingDashboardPage extends StatelessWidget {
               ],
             ),
           ),
-          const Divider(thickness: 1),
+          const Divider(thickness: 1, height: 1),
           const SizedBox(height: 20),
+
           // Essential Action Buttons
-          _buildBigTile(
-            context,
-            icon: Icons.receipt_long_outlined, // Changed icon
-            title: 'New Bill', // Changed title
-            gradient: adaniGradient,
-            onTap: () {
-              // This is your "Print Bill" page, which is the main billing screen
-              Navigator.pushNamed(context, '/print_bill');
-            },
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: _buildBigTile(
+              context,
+              icon: Icons.receipt_long_outlined, // Changed icon
+              title: 'New Bill', // Changed title
+              gradient: adaniGradient,
+              onTap: () {
+                // This is your "Print Bill" page, which is the main billing screen
+                Navigator.pushNamed(context, '/print_bill');
+              },
+            ),
           ),
           const SizedBox(height: 20),
-          _buildBigTile(
-            context,
-            icon: Icons.menu_book_outlined, // New icon
-            title: 'View Menu', // New button
-            isWhite: true,
-            onTap: () {
-              // Navigate to our new menu page
-              Navigator.pushNamed(context, '/view_menu');
-            },
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: _buildBigTile(
+              context,
+              icon: Icons.menu_book_outlined, // New icon
+              title: 'View Menu', // New button
+              isWhite: true,
+              onTap: () {
+                // Navigate to our new menu page
+                Navigator.pushNamed(context, '/view_menu');
+              },
+            ),
           ),
         ],
       ),
