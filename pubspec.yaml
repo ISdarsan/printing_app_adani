@@ -38,7 +38,6 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  cupertino_icons: ^1.0.8
   lottie: ^2.7.0
   animated_text_kit: ^4.2.2
 
