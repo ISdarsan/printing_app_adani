@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 class RoleSplashPage extends StatefulWidget {
-  final String role; // 'admin' or 'cashier'
+  final String role;
   const RoleSplashPage({super.key, required this.role});
 
   @override
@@ -18,31 +18,32 @@ class _RoleSplashPageState extends State<RoleSplashPage>
   @override
   void initState() {
     super.initState();
-
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     );
 
-    // Logo pops from centre
     _logoScale = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _controller, curve: Curves.elasticOut),
     );
 
-    // Text fades in
     _textOpacity = CurvedAnimation(
       parent: _controller,
       curve: const Interval(0.4, 1.0, curve: Curves.easeIn),
     );
-
     _controller.forward();
 
-    // After animation ends, go to dashboard
+    // Navigate after 3 seconds
     Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
       if (widget.role == 'admin') {
-        Navigator.pushReplacementNamed(context, '/adminDashboard');
+        // --- THIS IS THE FIX ---
+        // Was '/adminDashboard', now matches main.dart
+        Navigator.pushReplacementNamed(context, '/admin_dashboard');
       } else {
-        Navigator.pushReplacementNamed(context, '/billingDashboard');
+        // --- THIS IS THE FIX ---
+        // Was '/billingDashboard', now matches main.dart
+        Navigator.pushReplacementNamed(context, '/billing_dashboard');
       }
     });
   }
@@ -55,8 +56,7 @@ class _RoleSplashPageState extends State<RoleSplashPage>
 
   @override
   Widget build(BuildContext context) {
-    // Always white background
-    // Always blue gradient for text
+    // Always blue gradient for text, regardless of role
     final gradientColors = [Colors.blue.shade700, Colors.blue.shade400];
 
     return Scaffold(
@@ -81,13 +81,11 @@ class _RoleSplashPageState extends State<RoleSplashPage>
                   colors: gradientColors,
                 ).createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
                 child: Text(
-                  widget.role == 'admin'
-                      ? 'Welcome Admin'
-                      : 'Welcome Cashier',
+                  widget.role == 'admin' ? 'Welcome Admin' : 'Welcome Cashier',
                   style: const TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
-                    color: Colors.white, // must be white for ShaderMask
+                    color: Colors.white, // Must be white for ShaderMask
                   ),
                 ),
               ),

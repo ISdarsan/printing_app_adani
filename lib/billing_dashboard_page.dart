@@ -1,15 +1,10 @@
 import 'package:flutter/material.dart';
-import 'print_bill_page.dart';
-import 'add_item_page.dart';
-import 'logout_splash_page.dart'; // Make sure this file is in your lib/ folder
-// We'll also create these two placeholder pages
-import 'today_sales_page.dart';
-import 'expenses_page.dart';
+import 'logout_splash_page.dart';
 
 class BillingDashboardPage extends StatelessWidget {
   const BillingDashboardPage({super.key});
 
-  // The Adani gradient you like
+  // Your Adani brand gradient
   final LinearGradient adaniGradient = const LinearGradient(
     colors: [
       Color(0xFF0066B3), // blue
@@ -43,7 +38,7 @@ class BillingDashboardPage extends StatelessWidget {
           elevation: 3,
         ),
       ),
-      // Drawer with menu options (same as before)
+      // DRAWER: All non-essential items are here
       drawer: Drawer(
         child: ListView(
           padding: EdgeInsets.zero,
@@ -76,10 +71,7 @@ class BillingDashboardPage extends StatelessWidget {
               title: const Text('Today\'s Total Sales'),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) => const TodaySalesPage()));
+                Navigator.pushNamed(context, '/today_sales');
               },
             ),
             ListTile(
@@ -87,7 +79,7 @@ class BillingDashboardPage extends StatelessWidget {
               title: const Text('Previous Bills'),
               onTap: () {
                 Navigator.pop(context);
-                // We can make a 'PreviousBillsPage' next
+                // TODO: Create and navigate to '/previous_bills'
               },
             ),
             ListTile(
@@ -95,10 +87,16 @@ class BillingDashboardPage extends StatelessWidget {
               title: const Text('Expenses Tracking'),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) => const ExpensesPage()));
+                Navigator.pushNamed(context, '/expenses');
+              },
+            ),
+            // NEW: "Add Item" is now a management task in the drawer
+            ListTile(
+              leading: const Icon(Icons.add_box_outlined, color: Colors.blue),
+              title: const Text('Add/Edit Item'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/add_item');
               },
             ),
             const Divider(),
@@ -117,120 +115,76 @@ class BillingDashboardPage extends StatelessWidget {
           ],
         ),
       ),
-      // --- NEW DASHBOARD BODY ---
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 1. Welcome Header
-            const Text(
-              'Welcome, Cashier!',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF003C8F), // Dark Blue
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // 2. "At a Glance" Info Cards
-            Row(
+      // BODY: Only the two most essential buttons
+      body: Column(
+        children: [
+          // This is the "Welcome, Cashier!" and stat cards
+          // We can keep this as it's useful information
+          Container(
+            padding: const EdgeInsets.all(16),
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildStatCard(
-                  icon: Icons.currency_rupee,
-                  label: "Today's Sales",
-                  value: "₹ 0.00", // This is dummy data for now
-                  color: Colors.green,
+                const Text(
+                  'Welcome, Cashier!',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF003C8F), // Dark Blue
+                  ),
                 ),
-                const SizedBox(width: 16),
-                _buildStatCard(
-                  icon: Icons.receipt,
-                  label: "Total Bills",
-                  value: "0", // Dummy data
-                  color: Colors.orange,
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    _buildStatCard(
+                      icon: Icons.currency_rupee,
+                      label: "Today's Sales",
+                      value: "₹ 0.00", // Dummy data
+                      color: Colors.green,
+                    ),
+                    const SizedBox(width: 16),
+                    _buildStatCard(
+                      icon: Icons.receipt,
+                      label: "Total Bills",
+                      value: "0", // Dummy data
+                      color: Colors.orange,
+                    ),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(height: 24),
-
-            // 3. Main Action Grid
-            const Text(
-              'Main Actions',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.black54,
-              ),
-            ),
-            const SizedBox(height: 16),
-            GridView.count(
-              crossAxisCount: 2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [
-                // "New Bill" card (styled with gradient)
-                _buildBigTile(
-                  context,
-                  icon: Icons.print,
-                  title: 'New Bill',
-                  gradient: adaniGradient, // Highlighted card
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => const PrintBillPage()),
-                    );
-                  },
-                ),
-                // "Add Item" card (white)
-                _buildBigTile(
-                  context,
-                  icon: Icons.add_box,
-                  title: 'Add Item',
-                  isWhite: true, // White card
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => const AddItemPage()),
-                    );
-                  },
-                ),
-                // "Expenses" card (white)
-                _buildBigTile(
-                  context,
-                  icon: Icons.money_off,
-                  title: 'Log Expense',
-                  isWhite: true, // White card
-                  onTap: () {
-                    Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => const ExpensesPage()));
-                  },
-                ),
-                // "Previous Bills" card (white)
-                _buildBigTile(
-                  context,
-                  icon: Icons.receipt_long,
-                  title: 'Previous Bills',
-                  isWhite: true, // White card
-                  onTap: () {
-                    // We can make a 'PreviousBillsPage' next
-                  },
-                ),
-              ],
-            ),
-          ],
-        ),
+          ),
+          const Divider(thickness: 1),
+          const SizedBox(height: 20),
+          // Essential Action Buttons
+          _buildBigTile(
+            context,
+            icon: Icons.receipt_long_outlined, // Changed icon
+            title: 'New Bill', // Changed title
+            gradient: adaniGradient,
+            onTap: () {
+              // This is your "Print Bill" page, which is the main billing screen
+              Navigator.pushNamed(context, '/print_bill');
+            },
+          ),
+          const SizedBox(height: 20),
+          _buildBigTile(
+            context,
+            icon: Icons.menu_book_outlined, // New icon
+            title: 'View Menu', // New button
+            isWhite: true,
+            onTap: () {
+              // Navigate to our new menu page
+              Navigator.pushNamed(context, '/view_menu');
+            },
+          ),
+        ],
       ),
     );
   }
 
-  // A new widget for the small "At a Glance" stat cards
+  // Helper for Stat Cards
   Widget _buildStatCard(
       {required IconData icon,
         required String label,
@@ -276,7 +230,7 @@ class BillingDashboardPage extends StatelessWidget {
     );
   }
 
-  // Modified widget for the big "Action Grid" tiles
+  // Helper for Big Action Tiles
   Widget _buildBigTile(
       BuildContext context, {
         required IconData icon,
@@ -285,7 +239,6 @@ class BillingDashboardPage extends StatelessWidget {
         LinearGradient? gradient,
         bool isWhite = false,
       }) {
-    // Define the gradient and text/icon color
     final Decoration decoration = gradient != null
         ? BoxDecoration(
       gradient: gradient,
@@ -309,7 +262,6 @@ class BillingDashboardPage extends StatelessWidget {
         ),
       ],
     );
-
     final Color contentColor =
     isWhite ? const Color(0xFF0066B3) : Colors.white;
 
@@ -317,17 +269,19 @@ class BillingDashboardPage extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
+        width: MediaQuery.of(context).size.width * 0.9,
+        height: 140,
         decoration: decoration,
-        child: Column(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, size: 60, color: contentColor),
-            const SizedBox(height: 12),
+            const SizedBox(width: 20),
             Text(
               title,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 22,
+                fontSize: 26,
                 fontWeight: FontWeight.bold,
                 color: contentColor,
               ),
