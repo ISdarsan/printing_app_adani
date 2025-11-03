@@ -82,8 +82,20 @@ class BillingDashboardPage extends StatelessWidget {
                 // TODO: Create and navigate to '/previous_bills'
               },
             ),
+
+            // --- NEW BUTTON ADDED HERE ---
             ListTile(
-              leading: const Icon(Icons.money_off, color: Colors.blue),
+              leading: const Icon(Icons.account_balance_wallet, color: Colors.green),
+              title: const Text('Funds Received'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/funds_received');
+              },
+            ),
+            // -----------------------------
+
+            ListTile(
+              leading: const Icon(Icons.money_off, color: Colors.red),
               title: const Text('Expenses Tracking'),
               onTap: () {
                 Navigator.pop(context);
