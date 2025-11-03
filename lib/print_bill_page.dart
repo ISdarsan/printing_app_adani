@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart'; // <-- 1. IMPORT THIS
 
 // BillItem model remains the same
 class BillItem {
@@ -60,7 +61,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
   MenuItem? _selectedMenuItem;
 
   final _quantityController = TextEditingController(text: '1');
-  bool _isLoading = false;
+  bool _isSavingBill = false; // <-- 2. ADD THIS LOADING STATE
+  bool _isAddingItem = false; // Renamed from _isLoading
 
   List<bool> _priceSelection = [true, false]; // [Full, Half]
   List<bool> _paymentSelection = [true, false]; // [Cash, UPI]
@@ -103,10 +105,13 @@ class _PrintBillPageState extends State<PrintBillPage> {
   }
 
   void _addItemToBill() {
+    setState(() { _isAddingItem = true; }); // Show loading on button
+
     final int quantity = int.tryParse(_quantityController.text) ?? 1;
 
     if (_selectedMenuItem == null) {
       _showErrorSnackBar('Please select an item from the search list.');
+      setState(() { _isAddingItem = false; });
       return;
     }
 
@@ -124,6 +129,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
         type = 'Half';
       } else {
         _showErrorSnackBar('This item does not have a "Half" price option.');
+        setState(() { _isAddingItem = false; });
         return;
       }
     }
@@ -141,6 +147,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
       _selectedMenuItem = null;
       _quantityController.text = '1';
       _autocompleteFocusNode.unfocus();
+      _isAddingItem = false; // Hide loading
     });
   }
 
@@ -172,38 +179,86 @@ class _PrintBillPageState extends State<PrintBillPage> {
     });
   }
 
-  void _printBill() {
+  // --- 3. THIS ENTIRE FUNCTION IS REPLACED ---
+  Future<void> _printBill() async {
     if (_currentBillItems.isEmpty) {
       _showErrorSnackBar("Cannot print an empty bill.");
       return;
     }
 
-    FirebaseFirestore.instance.collection('sales').add({
-      'totalAmount': _totalAmount,
-      'paymentMethod': _paymentMethod,
-      'timestamp': FieldValue.serverTimestamp(),
-      'items': _currentBillItems
-          .map((item) => {
-        'code': item.code,
-        'name': item.name,
-        'type': item.type,
-        'quantity': item.quantity,
-        'price': item.price,
-        'subtotal': item.subtotal,
-      })
-          .toList(),
-    });
+    setState(() { _isSavingBill = true; });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-            'Bill Saved! Total: ₹${_totalAmount.toStringAsFixed(2)}, Payment: $_paymentMethod'),
-        backgroundColor: Colors.green,
-      ),
-    );
+    final db = FirebaseFirestore.instance;
 
-    _clearBill();
+    try {
+      // This transaction does all operations at once.
+      // If any part fails, nothing is saved.
+      await db.runTransaction((transaction) async {
+
+        // --- A: Get a new, unique bill number ---
+        final counterRef = db.collection('counters').doc('billCounter');
+        final counterSnap = await transaction.get(counterRef);
+
+        int newBillNumber = 1;
+        if (counterSnap.exists) {
+          newBillNumber = (counterSnap.data()!['lastNumber'] as int) + 1;
+        }
+
+        // --- B: Define all document paths ---
+        final String todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
+        final DocumentReference newBillRef = db.collection('bills').doc(); // Auto-generates ID
+        final DocumentReference dailyStatRef = db.collection('dailyStats').doc(todayId);
+
+        // --- C: Prepare the bill data ---
+        final billData = {
+          'billNumber': newBillNumber, // Add the new bill number
+          'totalAmount': _totalAmount,
+          'paymentMode': _paymentMethod,
+          'timestamp': FieldValue.serverTimestamp(),
+          'items': _currentBillItems.map((item) => {
+            'code': item.code,
+            'name': item.name,
+            'type': item.type,
+            'quantity': item.quantity,
+            'price': item.price,
+            'subtotal': item.subtotal,
+          }).toList(),
+        };
+
+        // --- D: Prepare the daily stats data ---
+        // This will automatically increase the totals
+        final statsData = {
+          'totalSales': FieldValue.increment(_totalAmount),
+          'totalBills': FieldValue.increment(1),
+          // Also update the specific payment mode total
+          _paymentMethod == 'Cash' ? 'totalCash' : 'totalUpi' : FieldValue.increment(_totalAmount),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        };
+
+        // --- E: Execute all database writes ---
+        transaction.set(newBillRef, billData); // 1. Save the new bill
+        transaction.set(dailyStatRef, statsData, SetOptions(merge: true)); // 2. Update stats
+        transaction.set(counterRef, {'lastNumber': newBillNumber}); // 3. Update counter
+      });
+
+      // If we get here, the transaction was successful
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Bill Saved! Total: ₹${_totalAmount.toStringAsFixed(2)}, Payment: $_paymentMethod'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      _clearBill();
+
+    } catch (e) {
+      _showErrorSnackBar("Error saving bill: $e");
+    } finally {
+      setState(() { _isSavingBill = false; });
+    }
   }
+  // --- END OF REPLACED FUNCTION ---
 
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -258,7 +313,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
             // 2. BILL ITEMS LIST
             const Divider(thickness: 1),
             const Padding(
-              padding: EdgeInsets.only(top: 8.0, bottom: 4.0), // Added bottom padding
+              padding:
+              EdgeInsets.only(top: 8.0, bottom: 4.0), // Added bottom padding
               child: Text(
                 'Current Bill',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
@@ -325,7 +381,6 @@ class _PrintBillPageState extends State<PrintBillPage> {
   }
   // --- END OF MODIFICATION ---
 
-
   // Helper Widget for the input section
   Widget _buildInputSection() {
     return Container(
@@ -359,7 +414,9 @@ class _PrintBillPageState extends State<PrintBillPage> {
                 child: Material(
                   elevation: 4.0,
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(maxHeight: 200, maxWidth: MediaQuery.of(context).size.width - 32),
+                    constraints: BoxConstraints(
+                        maxHeight: 200,
+                        maxWidth: MediaQuery.of(context).size.width - 32),
                     child: ListView.builder(
                       padding: EdgeInsets.zero,
                       itemCount: options.length,
@@ -371,7 +428,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
                           },
                           child: ListTile(
                             title: Text('${option.code} - ${option.name}'),
-                            subtitle: Text('₹${option.fullPrice.toStringAsFixed(2)}'),
+                            subtitle: Text(
+                                '₹${option.fullPrice.toStringAsFixed(2)}'),
                           ),
                         );
                       },
@@ -383,11 +441,13 @@ class _PrintBillPageState extends State<PrintBillPage> {
             onSelected: (MenuItem selection) {
               setState(() {
                 _selectedMenuItem = selection;
-                _autocompleteController.text = '${selection.code} - ${selection.name}';
+                _autocompleteController.text =
+                '${selection.code} - ${selection.name}';
                 FocusScope.of(context).nextFocus();
               });
             },
-            fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+            fieldViewBuilder:
+                (context, controller, focusNode, onFieldSubmitted) {
               return TextField(
                 controller: controller,
                 focusNode: focusNode,
@@ -434,7 +494,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
           const SizedBox(height: 16),
           // Add to Bill Button
           ElevatedButton.icon(
-            icon: _isLoading
+            icon: _isAddingItem // <-- 4. USE THE CORRECT LOADING STATE
                 ? Container(
               width: 20,
               height: 20,
@@ -444,16 +504,14 @@ class _PrintBillPageState extends State<PrintBillPage> {
               ),
             )
                 : const Icon(Icons.add_shopping_cart),
-            label: Text(_isLoading ? 'Adding...' : 'Add Item to Bill'),
+            label: Text(_isAddingItem ? 'Adding...' : 'Add Item to Bill'),
             style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue,
                 foregroundColor: Colors.white,
                 minimumSize: const Size(double.infinity, 50),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)
-                )
-            ),
-            onPressed: _isLoading ? null : _addItemToBill,
+                    borderRadius: BorderRadius.circular(12))),
+            onPressed: _isAddingItem ? null : _addItemToBill,
           ),
         ],
       ),
@@ -542,9 +600,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
                       side: const BorderSide(color: Colors.red),
                       minimumSize: const Size(0, 50),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30)
-                      )
-                  ),
+                          borderRadius: BorderRadius.circular(30))),
                   child: const Text('Clear Bill'),
                 ),
               ),
@@ -552,15 +608,20 @@ class _PrintBillPageState extends State<PrintBillPage> {
               Expanded(
                 flex: 2,
                 child: GestureDetector(
-                  onTap: _printBill,
+                  // <-- 5. USE THE CORRECT LOADING STATE
+                  onTap: _isSavingBill ? null : _printBill,
                   child: Container(
                     height: 50,
                     decoration: BoxDecoration(
-                      gradient: adaniGradient,
+                      gradient: _isSavingBill
+                          ? LinearGradient(colors: [Colors.grey, Colors.grey.shade600])
+                          : adaniGradient, // Use grey gradient when loading
                       borderRadius: BorderRadius.circular(30),
                     ),
-                    child: const Center(
-                      child: Text(
+                    child: Center(
+                      child: _isSavingBill
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : const Text(
                         'Save & Print Bill',
                         style: TextStyle(
                           fontSize: 20,
@@ -579,7 +640,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
     );
   }
 
-  InputDecoration _buildInputDecoration({required String labelText, IconData? icon}) {
+  InputDecoration _buildInputDecoration(
+      {required String labelText, IconData? icon}) {
     return InputDecoration(
       labelText: labelText,
       prefixIcon: icon != null ? Icon(icon) : null,

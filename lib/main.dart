@@ -17,7 +17,11 @@ import 'print_bill_page.dart';
 import 'role_splash_page.dart';
 import 'menu_view_page.dart';
 import 'funds_received_page.dart';
-import 'notifications_page.dart'; // <-- 1. IMPORT ADDED
+import 'notifications_page.dart';
+import 'daily_sales_report_page.dart'; // Import
+import 'all_bills_page.dart';
+import 'admin_analytics_page.dart';
+import 'monthly_sales_breakdown_page.dart'; // Import
 
 // --- MODIFIED ---
 void main() async { // Make this 'async'
@@ -52,8 +56,13 @@ class MyApp extends StatelessWidget {
         '/billing_dashboard': (context) => const BillingDashboardPage(),
 
         // All your other pages
+
+        // --- THIS IS THE FIX ---
+        // We provide a default empty string for the 'role'
         '/role_splash': (context) =>
             RoleSplashPage(role: ''),
+        // ---------------------
+
         '/logout_splash': (context) => LogoutSplashPage(),
         '/print_bill': (context) => const PrintBillPage(),
         '/add_item': (context) => const AddItemPage(),
@@ -61,7 +70,11 @@ class MyApp extends StatelessWidget {
         '/expenses': (context) => const ExpensesPage(),
         '/view_menu': (context) => const MenuViewPage(),
         '/funds_received': (context) => const FundsReceivedPage(),
-        '/notifications': (context) => const NotificationsPage(), // <-- 2. ROUTE ADDED
+        '/notifications': (context) => const NotificationsPage(),
+        '/daily_sales_report': (context) => const DailySalesReportPage(),
+        '/all_bills_page': (context) => const AllBillsPage(),
+        '/admin_analytics': (context) => const AdminAnalyticsPage(),
+        '/monthly_sales_breakdown': (context) => const MonthlySalesBreakdownPage(),
       },
     );
   }

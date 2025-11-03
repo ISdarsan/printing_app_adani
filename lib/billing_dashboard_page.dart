@@ -85,22 +85,9 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
               ),
             ),
             // ------------------------------------
-            ListTile(
-              leading: const Icon(Icons.bar_chart, color: Colors.blue),
-              title: const Text('Today\'s Total Sales'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/today_sales');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.receipt_long, color: Colors.blue),
-              title: const Text('Previous Bills'),
-              onTap: () {
-                Navigator.pop(context);
-                // TODO: Create and navigate to '/previous_bills'
-              },
-            ),
+
+            // --- ITEMS REMOVED AS REQUESTED ---
+
             ListTile(
               leading:
               const Icon(Icons.account_balance_wallet, color: Colors.green),
@@ -208,18 +195,34 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
 
                       return Row(
                         children: [
-                          _buildStatCard(
-                            icon: Icons.currency_rupee,
-                            label: "Today's Sales",
-                            value: sales,
-                            color: Colors.green,
+                          // --- MODIFIED: Made card clickable ---
+                          Expanded(
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.pushNamed(context, '/daily_sales_report');
+                              },
+                              child: _buildStatCard(
+                                icon: Icons.currency_rupee,
+                                label: "Today's Sales",
+                                value: sales,
+                                color: Colors.green,
+                              ),
+                            ),
                           ),
                           const SizedBox(width: 16),
-                          _buildStatCard(
-                            icon: Icons.receipt,
-                            label: "Total Bills",
-                            value: bills,
-                            color: Colors.orange,
+                          // --- MODIFIED: Made card clickable ---
+                          Expanded(
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.pushNamed(context, '/all_bills_page');
+                              },
+                              child: _buildStatCard(
+                                icon: Icons.receipt,
+                                label: "Total Bills",
+                                value: bills,
+                                color: Colors.orange,
+                              ),
+                            ),
                           ),
                         ],
                       );
@@ -281,42 +284,40 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
         required String label,
         required String value,
         required Color color}) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 32, color: color),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.black54),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: color,
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 32, color: color),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black54),
-            ),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
