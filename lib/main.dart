@@ -16,7 +16,8 @@ import 'logout_splash_page.dart';
 import 'print_bill_page.dart';
 import 'role_splash_page.dart';
 import 'menu_view_page.dart';
-import 'funds_received_page.dart'; // <-- 1. IMPORT ADDED
+import 'funds_received_page.dart';
+import 'notifications_page.dart'; // <-- 1. IMPORT ADDED
 
 // --- MODIFIED ---
 void main() async { // Make this 'async'
@@ -59,7 +60,8 @@ class MyApp extends StatelessWidget {
         '/today_sales': (context) => const TodaySalesPage(),
         '/expenses': (context) => const ExpensesPage(),
         '/view_menu': (context) => const MenuViewPage(),
-        '/funds_received': (context) => const FundsReceivedPage(), // <-- 2. ROUTE ADDED
+        '/funds_received': (context) => const FundsReceivedPage(),
+        '/notifications': (context) => const NotificationsPage(), // <-- 2. ROUTE ADDED
       },
     );
   }

@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // For user email
+import 'package:cloud_firestore/cloud_firestore.dart'; // For live stats
+import 'package:intl/intl.dart'; // For today's date
 import 'logout_splash_page.dart';
 
-class BillingDashboardPage extends StatelessWidget {
+class BillingDashboardPage extends StatefulWidget {
   const BillingDashboardPage({super.key});
 
+  @override
+  State<BillingDashboardPage> createState() => _BillingDashboardPageState();
+}
+
+class _BillingDashboardPageState extends State<BillingDashboardPage> {
   // Your Adani brand gradient
   final LinearGradient adaniGradient = const LinearGradient(
     colors: [
@@ -14,6 +22,19 @@ class BillingDashboardPage extends StatelessWidget {
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
+
+  final User? _currentUser = FirebaseAuth.instance.currentUser;
+
+  // Stream for live stats
+  Stream<DocumentSnapshot> _getDailyStatsStream() {
+    String todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    // This stream listens to a specific document for today's sales.
+    // We will need to create the logic in 'print_bill_page' to update this doc.
+    return FirebaseFirestore.instance
+        .collection('dailyStats')
+        .doc(todayId)
+        .snapshots();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +56,7 @@ class BillingDashboardPage extends StatelessWidget {
             ),
           ),
           centerTitle: true,
-          elevation: 3,
+          elevation: 0, // Removed shadow to blend with curved header
         ),
       ),
       // DRAWER: All non-essential items are here
@@ -43,29 +64,27 @@ class BillingDashboardPage extends StatelessWidget {
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            DrawerHeader(
+            // --- NEW PROFESSIONAL DRAWER HEADER ---
+            UserAccountsDrawerHeader(
               decoration: BoxDecoration(gradient: adaniGradient),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Colors.white,
-                    child: Icon(Icons.person, size: 40, color: Colors.blue),
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    'Cashier',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
+              accountName: const Text(
+                'Canteen Cashier',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              accountEmail: Text(
+                _currentUser?.email ?? 'Loading...',
+                style: const TextStyle(color: Colors.white70),
+              ),
+              currentAccountPicture: const CircleAvatar(
+                backgroundColor: Colors.white,
+                child: Icon(Icons.person, size: 40, color: Color(0xFF0066B3)),
               ),
             ),
+            // ------------------------------------
             ListTile(
               leading: const Icon(Icons.bar_chart, color: Colors.blue),
               title: const Text('Today\'s Total Sales'),
@@ -82,18 +101,15 @@ class BillingDashboardPage extends StatelessWidget {
                 // TODO: Create and navigate to '/previous_bills'
               },
             ),
-
-            // --- NEW BUTTON ADDED HERE ---
             ListTile(
-              leading: const Icon(Icons.account_balance_wallet, color: Colors.green),
-              title: const Text('Funds Received'),
+              leading:
+              const Icon(Icons.account_balance_wallet, color: Colors.green),
+              title: const Text('Monthly Report'), // Renamed
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushNamed(context, '/funds_received');
               },
             ),
-            // -----------------------------
-
             ListTile(
               leading: const Icon(Icons.money_off, color: Colors.red),
               title: const Text('Expenses Tracking'),
@@ -102,7 +118,6 @@ class BillingDashboardPage extends StatelessWidget {
                 Navigator.pushNamed(context, '/expenses');
               },
             ),
-            // "Add Item" is now a management task in the drawer
             ListTile(
               leading: const Icon(Icons.add_box_outlined, color: Colors.blue),
               title: const Text('Add/Edit Item'),
@@ -111,6 +126,18 @@ class BillingDashboardPage extends StatelessWidget {
                 Navigator.pushNamed(context, '/add_item');
               },
             ),
+
+            // --- NOTIFICATION BUTTON ADDED ---
+            ListTile(
+              leading: const Icon(Icons.notifications, color: Colors.orange),
+              title: const Text('Notifications'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/notifications');
+              },
+            ),
+            // ---------------------------------
+
             const Divider(),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
@@ -127,75 +154,120 @@ class BillingDashboardPage extends StatelessWidget {
           ],
         ),
       ),
-      // BODY: Only the two most essential buttons
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      // BODY: With new curved UI and GridView
+      body: Stack(
         children: [
-          // This is the "Welcome, Cashier!" and stat cards
-          Container(
-            padding: const EdgeInsets.all(16),
-            width: double.infinity,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Welcome, Cashier!',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF003C8F), // Dark Blue
+          // --- CURVED BACKGROUND ---
+          ClipPath(
+            clipper: _BottomCurveClipper(),
+            child: Container(
+              height: 220,
+              decoration: BoxDecoration(gradient: adaniGradient),
+            ),
+          ),
+          // --- MAIN CONTENT ---
+          SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // --- WELCOME TEXT ---
+                  const Text(
+                    'Welcome, Cashier!',
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    _buildStatCard(
-                      icon: Icons.currency_rupee,
-                      label: "Today's Sales",
-                      value: "₹ 0.00", // Dummy data
-                      color: Colors.green,
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Here is your daily summary.',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.white70,
                     ),
-                    const SizedBox(width: 16),
-                    _buildStatCard(
-                      icon: Icons.receipt,
-                      label: "Total Bills",
-                      value: "0", // Dummy data
-                      color: Colors.orange,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const Divider(thickness: 1, height: 1),
-          const SizedBox(height: 20),
+                  ),
+                  const SizedBox(height: 20),
 
-          // Essential Action Buttons
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: _buildBigTile(
-              context,
-              icon: Icons.receipt_long_outlined, // Changed icon
-              title: 'New Bill', // Changed title
-              gradient: adaniGradient,
-              onTap: () {
-                // This is your "Print Bill" page, which is the main billing screen
-                Navigator.pushNamed(context, '/print_bill');
-              },
-            ),
-          ),
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: _buildBigTile(
-              context,
-              icon: Icons.menu_book_outlined, // New icon
-              title: 'View Menu', // New button
-              isWhite: true,
-              onTap: () {
-                // Navigate to our new menu page
-                Navigator.pushNamed(context, '/view_menu');
-              },
+                  // --- LIVE STATS CARDS ---
+                  StreamBuilder<DocumentSnapshot>(
+                    stream: _getDailyStatsStream(),
+                    builder: (context, snapshot) {
+                      String sales = "₹ 0.00";
+                      String bills = "0";
+
+                      if (snapshot.hasData && snapshot.data!.exists) {
+                        final data =
+                        snapshot.data!.data() as Map<String, dynamic>;
+                        sales =
+                        "₹ ${data['totalSales']?.toStringAsFixed(2) ?? '0.00'}";
+                        bills = data['totalBills']?.toString() ?? '0';
+                      }
+
+                      return Row(
+                        children: [
+                          _buildStatCard(
+                            icon: Icons.currency_rupee,
+                            label: "Today's Sales",
+                            value: sales,
+                            color: Colors.green,
+                          ),
+                          const SizedBox(width: 16),
+                          _buildStatCard(
+                            icon: Icons.receipt,
+                            label: "Total Bills",
+                            value: bills,
+                            color: Colors.orange,
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 24),
+
+                  // --- ACTION GRID ---
+                  const Text(
+                    'Main Actions',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF003C8F), // Dark Blue
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  GridView.count(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                    shrinkWrap: true, // Important for SingleChildScrollView
+                    physics:
+                    const NeverScrollableScrollPhysics(), // Let the parent scroll
+                    children: [
+                      _buildBigTile(
+                        context,
+                        icon: Icons.receipt_long_outlined,
+                        title: 'New Bill',
+                        gradient: adaniGradient,
+                        onTap: () {
+                          Navigator.pushNamed(context, '/print_bill');
+                        },
+                      ),
+                      _buildBigTile(
+                        context,
+                        icon: Icons.menu_book_outlined,
+                        title: 'View Menu',
+                        isWhite: true,
+                        onTap: () {
+                          Navigator.pushNamed(context, '/view_menu');
+                        },
+                      ),
+                      // You can easily add more tiles here in the future
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -249,7 +321,7 @@ class BillingDashboardPage extends StatelessWidget {
     );
   }
 
-  // Helper for Big Action Tiles
+  // Helper for Big Action Tiles (modified for GridView)
   Widget _buildBigTile(
       BuildContext context, {
         required IconData icon,
@@ -288,19 +360,17 @@ class BillingDashboardPage extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        width: MediaQuery.of(context).size.width * 0.9,
-        height: 140,
         decoration: decoration,
-        child: Row(
+        child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, size: 60, color: contentColor),
-            const SizedBox(width: 20),
+            const SizedBox(height: 12),
             Text(
               title,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 26,
+                fontSize: 22,
                 fontWeight: FontWeight.bold,
                 color: contentColor,
               ),
@@ -310,4 +380,25 @@ class BillingDashboardPage extends StatelessWidget {
       ),
     );
   }
+}
+
+// --- CUSTOM CLIPPER CLASS FOR THE CURVED UI ---
+class _BottomCurveClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    path.lineTo(0, size.height - 50); // Start curve 50px from bottom
+    path.quadraticBezierTo(
+      size.width / 2, // Control point x
+      size.height, // Control point y (the lowest point)
+      size.width, // End point x
+      size.height - 50, // End point y
+    );
+    path.lineTo(size.width, 0); // Line back to top-right
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
 }
