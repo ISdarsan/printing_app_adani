@@ -22,6 +22,8 @@ import 'daily_sales_report_page.dart'; // Import
 import 'all_bills_page.dart';
 import 'admin_analytics_page.dart';
 import 'monthly_sales_breakdown_page.dart'; // Import
+import 'send_notification_page.dart'; // <-- 1. IMPORT ADDED
+import 'admin_expense_report_page.dart';
 
 // --- MODIFIED ---
 void main() async { // Make this 'async'
@@ -75,7 +77,10 @@ class MyApp extends StatelessWidget {
         '/all_bills_page': (context) => const AllBillsPage(),
         '/admin_analytics': (context) => const AdminAnalyticsPage(),
         '/monthly_sales_breakdown': (context) => const MonthlySalesBreakdownPage(),
+        '/send_notification': (context) => const SendNotificationPage(), // <-- 2. ROUTE ADDED
+        '/admin_expense_report': (context) => const AdminExpenseReportPage(),
       },
     );
   }
 }
+

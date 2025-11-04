@@ -1,215 +1,131 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart'; // Import for date formatting
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
-class FundsReceivedPage extends StatefulWidget {
+class FundsReceivedPage extends StatelessWidget {
   const FundsReceivedPage({super.key});
 
-  @override
-  State<FundsReceivedPage> createState() => _FundsReceivedPageState();
-}
+  // Your Adani brand gradient
+  final LinearGradient adaniGradient = const LinearGradient(
+    colors: [
+      Color(0xFF0066B3), // blue
+      Color(0xFF6C3FB5), // purple
+      Color(0xFFE91E63), // pink
+    ],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
 
-class _FundsReceivedPageState extends State<FundsReceivedPage> {
-  // 1. State variable to track the selected month
-  DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
-
-  // 2. Function to show the month/year picker
-  Future<void> _selectMonth(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedMonth,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2101),
-      // Optional: You can customize this to be a month-only picker
-      // For simplicity, we use the standard date picker and just use its month/year
-    );
-    if (picked != null && (picked.month != _selectedMonth.month || picked.year != _selectedMonth.year)) {
-      setState(() {
-        _selectedMonth = DateTime(picked.year, picked.month);
-      });
-    }
-  }
-
-  // 3. Helper function to get the start and end of the selected month
-  (DateTime, DateTime) _getMonthRange() {
-    final DateTime startOfMonth = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
-    final DateTime endOfMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0, 23, 59, 59); // Gets last day, 23:59:59
-    return (startOfMonth, endOfMonth);
-  }
-
-  // 4. Stream to fetch total funds received for the month
-  Stream<double> _getTotalReceived() {
-    final (start, end) = _getMonthRange();
-
+  // Stream to get the monthly fund (entered by Admin)
+  Stream<DocumentSnapshot> _getMonthlyFundStream() {
+    final String monthId = DateFormat('yyyy-MM').format(DateTime.now());
     return FirebaseFirestore.instance
-        .collection('fund_transactions')
-        .where('type', isEqualTo: 'credit')
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThanOrEqualTo: end)
-        .snapshots()
-        .map((snapshot) {
-      double total = 0.0;
-      for (var doc in snapshot.docs) {
-        total += (doc.data()['amount'] as num).toDouble();
-      }
-      return total;
-    });
+        .collection('monthlyFunds')
+        .doc(monthId)
+        .snapshots();
   }
-
-  // 5. Stream to fetch total expenses for the month
-  Stream<double> _getTotalExpenses() {
-    final (start, end) = _getMonthRange();
-
-    return FirebaseFirestore.instance
-        .collection('expenses')
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThanOrEqualTo: end)
-        .snapshots()
-        .map((snapshot) {
-      double total = 0.0;
-      for (var doc in snapshot.docs) {
-        total += (doc.data()['amount'] as num).toDouble();
-      }
-      return total;
-    });
-  }
-
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final String monthName = DateFormat('MMMM yyyy').format(_selectedMonth);
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Monthly Cashflow Report"),
-        backgroundColor: theme.primaryColor,
-        foregroundColor: theme.colorScheme.onPrimary,
+      backgroundColor: Colors.grey[100],
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(50),
+        child: AppBar(
+          iconTheme: const IconThemeData(color: Colors.white),
+          flexibleSpace: Container(
+            decoration: BoxDecoration(gradient: adaniGradient),
+          ),
+          title: const Text(
+            'Monthly Fund Report',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          centerTitle: true,
+          elevation: 3,
+        ),
       ),
-      body: Column(
-        children: [
-          // --- 6. MONTH PICKER UI ---
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: Colors.white,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.chevron_left),
-                  onPressed: () {
-                    setState(() {
-                      _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month - 1);
-                    });
-                  },
-                ),
-                TextButton(
-                  onPressed: () => _selectMonth(context),
-                  child: Text(
-                    monthName,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: StreamBuilder<DocumentSnapshot>(
+          stream: _getMonthlyFundStream(),
+          builder: (context, snapshot) {
+            String fundAmount = "₹ 0.00";
+            String lastUpdated = "Not set yet";
+
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              fundAmount = "Loading...";
+              lastUpdated = "Checking...";
+            } else if (snapshot.hasData && snapshot.data!.exists) {
+              var data = snapshot.data!.data() as Map<String, dynamic>;
+              if (data.containsKey('fundAmount')) {
+                fundAmount =
+                "₹ ${(data['fundAmount'] as num).toStringAsFixed(2)}";
+              }
+              if (data.containsKey('lastUpdated')) {
+                lastUpdated =
+                "Last updated: ${DateFormat('dd MMM yyyY, hh:mm a').format((data['lastUpdated'] as Timestamp).toDate())}";
+              }
+            } else if (snapshot.hasError) {
+              fundAmount = "Error";
+              lastUpdated = "Could not load data";
+            } else if (!snapshot.hasData || !snapshot.data!.exists) {
+              fundAmount = "₹ 0.00";
+              lastUpdated = "No fund entered by Admin for this month.";
+            }
+
+            // This is the "cool" card UI for the Cashier
+            return Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: adaniGradient, // Use the "cool" gradient
+                borderRadius: BorderRadius.circular(15),
+                boxShadow: [
+                  BoxShadow(
+                    color: adaniGradient.colors.last.withOpacity(0.3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min, // Make card compact
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Total Fund Received This Month",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white70, // Lighter text for the label
                     ),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right),
-                  onPressed: () {
-                    setState(() {
-                      _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1);
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-
-          // --- 7. SUMMARY CARDS ---
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: StreamBuilder<double>(
-              stream: _getTotalReceived(),
-              builder: (context, receivedSnapshot) {
-                return StreamBuilder<double>(
-                  stream: _getTotalExpenses(),
-                  builder: (context, expensesSnapshot) {
-
-                    if (receivedSnapshot.connectionState == ConnectionState.waiting ||
-                        expensesSnapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-
-                    final double totalReceived = receivedSnapshot.data ?? 0.0;
-                    final double totalExpenses = expensesSnapshot.data ?? 0.0;
-                    final double balance = totalReceived - totalExpenses;
-
-                    return Column(
-                      children: [
-                        _buildSummaryCard(
-                          title: "Total Funds Received",
-                          amount: totalReceived,
-                          color: Colors.green,
-                        ),
-                        const SizedBox(height: 12),
-                        _buildSummaryCard(
-                          title: "Total Expenses",
-                          amount: totalExpenses,
-                          color: Colors.red,
-                        ),
-                        const SizedBox(height: 12),
-                        _buildSummaryCard(
-                          title: "Balance for $monthName",
-                          amount: balance,
-                          color: balance >= 0 ? Colors.blue : Colors.orange,
-                          isBalance: true,
-                        ),
-                      ],
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Helper widget for the summary cards
-  Widget _buildSummaryCard({
-    required String title,
-    required double amount,
-    required Color color,
-    bool isBalance = false,
-  }) {
-    return Card(
-      elevation: 4,
-      color: isBalance ? color : Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w500,
-                color: isBalance ? Colors.white : Colors.black87,
+                  const SizedBox(height: 8),
+                  Text(
+                    fundAmount,
+                    style: const TextStyle(
+                      fontSize: 42,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    lastUpdated,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontStyle: FontStyle.italic,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
               ),
-            ),
-            Text(
-              "₹ ${amount.toStringAsFixed(2)}",
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: isBalance ? Colors.white : color,
-              ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );

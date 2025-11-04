@@ -94,7 +94,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
               title: const Text('Monthly Report'), // Renamed
               onTap: () {
                 Navigator.pop(context);
-                Navigator.pushNamed(context, '/funds_received');
+                Navigator.pushNamed(context, '/funds_received'); // <-- This is correct
               },
             ),
             ListTile(

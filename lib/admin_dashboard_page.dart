@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart'; // For user email
 import 'package:cloud_firestore/cloud_firestore.dart'; // For live stats
 import 'package:intl/intl.dart'; // For date formatting
 import 'logout_splash_page.dart';
+import 'admin_monthly_cashflow_page.dart'; // <-- 1. IMPORT (This name must match your file)
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -24,9 +25,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   final User? _currentUser = FirebaseAuth.instance.currentUser;
 
-  // --- STREAMS FOR LIVE ADMIN STATS ---
-
-  // 1. Stream for Today's Sales (from dailyStats doc)
+  // Stream for Today's Sales
   Stream<DocumentSnapshot> _getDailyStatsStream() {
     String todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
     return FirebaseFirestore.instance
@@ -35,7 +34,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         .snapshots();
   }
 
-  // 2. Stream for This Month's Sales (calculates from all bills)
+  // Stream for This Month's Sales
   Stream<double> _getMonthlySalesStream() {
     DateTime now = DateTime.now();
     DateTime startOfMonth = DateTime(now.year, now.month, 1);
@@ -103,15 +102,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     size: 40, color: Color(0xFF0066B3)),
               ),
             ),
+
+            // --- 2. THIS IS THE FIX ---
             ListTile(
               leading: const Icon(Icons.calendar_month, color: Colors.blue),
-              title: const Text('Monthly Cashflow'),
+              title: const Text('Monthly Cash Flow'),
               onTap: () {
                 Navigator.pop(context);
-                // This is the old page (Income vs Expense)
-                Navigator.pushNamed(context, '/funds_received');
+                // This now goes to our new ADMIN page
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const AdminMonthlyCashflowPage()), // <-- Used correct class name
+                );
               },
             ),
+            // --------------------------
+
             ListTile(
               leading: const Icon(Icons.receipt_long, color: Colors.blue),
               title: const Text('View All Bills'),
@@ -120,8 +126,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 Navigator.pushNamed(context, '/all_bills_page');
               },
             ),
-
-            // --- MODIFIED "Profile" to "Download Report" ---
             ListTile(
               leading: const Icon(Icons.download, color: Colors.grey),
               title: const Text('Download Report'),
@@ -130,8 +134,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 // TODO: Add functionality to download reports
               },
             ),
-            // ---------------------------------------------
-
             const Divider(),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
@@ -148,10 +150,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           ],
         ),
       ),
-      // --- BODY (MODIFIED) ---
+      // --- BODY (Unchanged) ---
       body: Stack(
         children: [
-          // --- CURVED BACKGROUND ---
           ClipPath(
             clipper: _BottomCurveClipper(),
             child: Container(
@@ -159,14 +160,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               decoration: BoxDecoration(gradient: adaniGradient),
             ),
           ),
-          // --- MAIN CONTENT ---
           SingleChildScrollView(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- WELCOME TEXT ---
                   const Text(
                     'Welcome, Admin!',
                     style: TextStyle(
@@ -184,11 +183,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     ),
                   ),
                   const SizedBox(height: 20),
-
-                  // --- LIVE STATS CARDS (MODIFIED) ---
                   Row(
                     children: [
-                      // --- CARD 1: MONTHLY SALES ---
                       StreamBuilder<double>(
                           stream: _getMonthlySalesStream(),
                           builder: (context, snapshot) {
@@ -200,16 +196,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                                 color: Colors.blue,
                                 isExpanded: true,
                                 onTap: () {
-                                  // --- THIS IS THE FIX ---
-                                  // Navigate to the new monthly breakdown page
                                   Navigator.pushNamed(
                                       context, '/monthly_sales_breakdown');
-                                  // -----------------------
                                 });
                           }),
                       const SizedBox(width: 16),
-
-                      // --- CARD 2: TODAY'S SALES ---
                       StreamBuilder<DocumentSnapshot>(
                           stream: _getDailyStatsStream(),
                           builder: (context, snapshot) {
@@ -227,7 +218,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                                 color: Colors.green,
                                 isExpanded: true,
                                 onTap: () {
-                                  // Navigate to the Daily Report page
                                   Navigator.pushNamed(
                                       context, '/daily_sales_report');
                                 });
@@ -235,14 +225,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     ],
                   ),
                   const SizedBox(height: 24),
-
-                  // --- ACTION GRID (MODIFIED) ---
                   const Text(
                     'Management Controls',
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF003C8F), // Dark Blue
+                      color: Color(0xFF003C8F),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -259,12 +247,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         title: 'Menu',
                         gradient: adaniGradient,
                         onTap: () {
-                          // Re-use the menu view page
                           Navigator.pushNamed(context, '/view_menu');
                         },
                       ),
-
-                      // --- REPLACED "Manage Staff" with "Analytics" ---
                       _buildBigTile(
                         context,
                         icon: Icons.analytics,
@@ -274,14 +259,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                           Navigator.pushNamed(context, '/admin_analytics');
                         },
                       ),
-
                       _buildBigTile(
                         context,
                         icon: Icons.send,
                         title: 'Send Notification',
                         isWhite: true,
                         onTap: () {
-                          // TODO: Create and navigate to '/send_notification'
+                          Navigator.pushNamed(context, '/send_notification');
                         },
                       ),
                     ],
