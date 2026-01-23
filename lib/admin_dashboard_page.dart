@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart'; // For live stats
 import 'package:intl/intl.dart'; // For date formatting
 import 'logout_splash_page.dart';
 import 'admin_monthly_cashflow_page.dart'; // <-- 1. IMPORT (This name must match your file)
+import 'analytics_page.dart'; // <-- 2. ADD IMPORT FOR THE NEW ANALYTICS PAGE
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -256,7 +257,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         title: 'Analytics',
                         isWhite: true,
                         onTap: () {
-                          Navigator.pushNamed(context, '/admin_analytics');
+                          // --- 3. THIS IS THE MODIFICATION ---
+                          // Changed from named route to MaterialPageRoute
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const AnalyticsPage()),
+                          );
+                          // ------------------------------------
                         },
                       ),
                       _buildBigTile(
