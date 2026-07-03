@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'daily_sales_report_page.dart'; // We will pass the date to this page
+import 'theme.dart';
+import 'daily_sales_report_page.dart';
 
-// This is a helper class to hold our grouped sales data
 class DailySaleSummary {
   final DateTime date;
   final double total;
@@ -12,7 +13,6 @@ class DailySaleSummary {
 
 class MonthlySalesBreakdownPage extends StatefulWidget {
   const MonthlySalesBreakdownPage({super.key});
-
   @override
   State<MonthlySalesBreakdownPage> createState() =>
       _MonthlySalesBreakdownPageState();
@@ -21,195 +21,228 @@ class MonthlySalesBreakdownPage extends StatefulWidget {
 class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
   DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
 
-  // Function to show the month/year picker
   Future<void> _selectMonth(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
+    final picked = await showDatePicker(
       context: context,
       initialDate: _selectedMonth,
       firstDate: DateTime(2020),
       lastDate: DateTime(2101),
-      // A more advanced picker would only show months
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: AppColors.gradBlue,
+            onPrimary: Colors.white,
+            surface: AppColors.bgCard,
+            onSurface: AppColors.textPrimary,
+          ),
+        ),
+        child: child!,
+      ),
     );
     if (picked != null &&
         (picked.month != _selectedMonth.month ||
             picked.year != _selectedMonth.year)) {
-      setState(() {
-        _selectedMonth = DateTime(picked.year, picked.month);
-      });
+      setState(() => _selectedMonth = DateTime(picked.year, picked.month));
     }
   }
 
-  // This is the core logic. Fetch all bills for the month,
-  // then group them by day and sum their totals.
   Stream<List<DailySaleSummary>> _getDailyBreakdown() {
-    DateTime startOfMonth =
-    DateTime(_selectedMonth.year, _selectedMonth.month, 1);
-    DateTime endOfMonth =
-    DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0, 23, 59, 59);
-
+    final start = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
+    final end =
+        DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0, 23, 59, 59);
     return FirebaseFirestore.instance
-        .collection('bills') // Make sure this matches your collection name
-        .where('timestamp', isGreaterThanOrEqualTo: startOfMonth)
-        .where('timestamp', isLessThanOrEqualTo: endOfMonth)
-        .orderBy('timestamp', descending: true)
+        .collection('bills')
+        .where('timestamp', isGreaterThanOrEqualTo: start)
+        .where('timestamp', isLessThanOrEqualTo: end)
+        .orderBy('timestamp')
         .snapshots()
-        .map((snapshot) {
-      // Grouping logic happens here
-      Map<String, double> dailyTotals = {};
-      Map<String, DateTime> dailyDates = {};
-
-      for (var doc in snapshot.docs) {
+        .map((snap) {
+      final Map<String, double> dailyTotals = {};
+      for (final doc in snap.docs) {
         final data = doc.data();
-        // Check if 'totalAmount' exists and is a number
-        if (data.containsKey('totalAmount') && data['totalAmount'] is num) {
-          final total = (data['totalAmount'] as num).toDouble();
-
-          // Check if 'timestamp' exists and is a Timestamp
-          if (data.containsKey('timestamp') && data['timestamp'] is Timestamp) {
-            final timestamp = (data['timestamp'] as Timestamp).toDate();
-
-            // Use 'yyyy-MM-dd' as a unique key for grouping
-            final dayString = DateFormat('yyyy-MM-dd').format(timestamp);
-
-            // Store the full date object to pass later
-            dailyDates.putIfAbsent(dayString, () => timestamp);
-
-            // Add to the total for that day
-            dailyTotals.update(dayString, (value) => value + total,
-                ifAbsent: () => total);
-          }
-        }
+        final date = (data['timestamp'] as Timestamp).toDate();
+        final dayKey = DateFormat('yyyy-MM-dd').format(date);
+        dailyTotals[dayKey] = (dailyTotals[dayKey] ?? 0) +
+            (data['totalAmount'] as num).toDouble();
       }
-
-      // Convert the grouped map into a list of objects
-      return dailyTotals.entries.map((entry) {
-        return DailySaleSummary(
-          date: dailyDates[entry.key]!,
-          total: entry.value,
-        );
-      }).toList();
+      return dailyTotals.entries.map((e) {
+        return DailySaleSummary(date: DateTime.parse(e.key), total: e.value);
+      }).toList()
+        ..sort((a, b) => a.date.compareTo(b.date));
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final String monthName = DateFormat('MMMM yyyy').format(_selectedMonth);
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Monthly Sales Breakdown"),
-        backgroundColor: theme.primaryColor,
-        foregroundColor: theme.colorScheme.onPrimary,
-      ),
+      backgroundColor: AppColors.bgDark,
+      appBar: buildGradientAppBar(title: 'Monthly Breakdown'),
       body: Column(
         children: [
-          // --- MONTH PICKER UI ---
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: Colors.white,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.chevron_left),
-                  onPressed: () {
-                    setState(() {
-                      _selectedMonth = DateTime(
-                          _selectedMonth.year, _selectedMonth.month - 1);
-                    });
-                  },
-                ),
-                TextButton(
-                  onPressed: () => _selectMonth(context),
-                  child: Text(
-                    monthName,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
+          // ── Month Selector ────────────────────────────
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: GestureDetector(
+              onTap: () => _selectMonth(context),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                decoration: glassCard(radius: 14),
+                child: Row(children: [
+                  const Icon(Icons.calendar_month_rounded,
+                      color: AppColors.accentBlue, size: 22),
+                  const SizedBox(width: 12),
+                  Text(DateFormat('MMMM yyyy').format(_selectedMonth),
+                      style: GoogleFonts.poppins(
+                          color: AppColors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                        gradient: AppGradients.blueAccent,
+                        borderRadius: BorderRadius.circular(20)),
+                    child: Text('Change',
+                        style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600)),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right),
-                  onPressed: () {
-                    setState(() {
-                      _selectedMonth = DateTime(
-                          _selectedMonth.year, _selectedMonth.month + 1);
-                    });
-                  },
-                ),
-              ],
+                ]),
+              ),
             ),
           ),
-          const Divider(height: 1),
-          // --- DAILY TOTALS LIST ---
+
+          // ── Daily List ────────────────────────────────
           Expanded(
             child: StreamBuilder<List<DailySaleSummary>>(
               stream: _getDailyBreakdown(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Center(child: Text("Error: ${snapshot.error}"));
-                }
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(
-                    child: Text(
-                      "No sales found for this month.",
-                      style: TextStyle(fontSize: 18, color: Colors.grey),
-                    ),
+                      child:
+                          CircularProgressIndicator(color: AppColors.gradBlue));
+                }
+                if (!snap.hasData || snap.data!.isEmpty) {
+                  return Center(
+                    child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.bar_chart,
+                              size: 56, color: AppColors.textHint),
+                          const SizedBox(height: 12),
+                          Text('No sales data for this month',
+                              style: GoogleFonts.poppins(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 15)),
+                        ]),
                   );
                 }
 
-                final dailySales = snapshot.data!;
+                final days = snap.data!;
+                final monthTotal = days.fold(0.0, (s, d) => s + d.total);
+                final maxTotal =
+                    days.map((d) => d.total).reduce((a, b) => a > b ? a : b);
 
-                return ListView.builder(
-                  itemCount: dailySales.length,
-                  itemBuilder: (context, index) {
-                    final day = dailySales[index];
-                    String formattedDate =
-                    DateFormat('MMMM dd, yyyy').format(day.date);
-                    String formattedTotal =
-                        "₹ ${day.total.toStringAsFixed(2)}";
+                return Column(
+                  children: [
+                    // Month Total
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: gradientCard(
+                            gradient: AppGradients.brand, radius: 16),
+                        child: Row(children: [
+                          const Icon(Icons.trending_up_rounded,
+                              color: Colors.white, size: 28),
+                          const SizedBox(width: 12),
+                          Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Month Total',
+                                    style: GoogleFonts.poppins(
+                                        color: Colors.white70, fontSize: 12)),
+                                Text('₹${monthTotal.toStringAsFixed(0)}',
+                                    style: GoogleFonts.poppins(
+                                        color: Colors.white,
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.w800)),
+                              ]),
+                          const Spacer(),
+                          Text('${days.length} days',
+                              style: GoogleFonts.poppins(
+                                  color: Colors.white70, fontSize: 12)),
+                        ]),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
 
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: theme.primaryColor.withOpacity(0.1),
-                          foregroundColor: theme.primaryColor,
-                          child: Text(DateFormat('d').format(day.date)),
-                        ),
-                        title: Text(
-                          formattedDate,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        trailing: Text(
-                          formattedTotal,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.green,
-                          ),
-                        ),
-                        onTap: () {
-                          // This is the key: navigate to the daily report
-                          // and pass the specific date to it.
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => DailySalesReportPage(
-                                selectedDate: day.date, // Pass the date
+                    Expanded(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: days.length,
+                        itemBuilder: (_, i) {
+                          final day = days[i];
+                          final pct = maxTotal > 0 ? day.total / maxTotal : 0.0;
+
+                          return GestureDetector(
+                            onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => DailySalesReportPage(
+                                        selectedDate: day.date))),
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(vertical: 5),
+                              padding: const EdgeInsets.all(14),
+                              decoration: glassCard(radius: 14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(children: [
+                                    Text(
+                                        DateFormat('EEE, MMM dd')
+                                            .format(day.date),
+                                        style: GoogleFonts.poppins(
+                                            color: AppColors.textPrimary,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 13)),
+                                    const Spacer(),
+                                    Text('₹${day.total.toStringAsFixed(0)}',
+                                        style: GoogleFonts.poppins(
+                                            color: AppColors.accentGreen,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 15)),
+                                    const SizedBox(width: 4),
+                                    const Icon(Icons.chevron_right,
+                                        color: AppColors.textHint, size: 16),
+                                  ]),
+                                  const SizedBox(height: 8),
+                                  // Mini bar
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: LinearProgressIndicator(
+                                      value: pct,
+                                      backgroundColor: AppColors.bgDivider,
+                                      valueColor:
+                                          AlwaysStoppedAnimation(pct > 0.7
+                                              ? AppColors.accentGreen
+                                              : pct > 0.4
+                                                  ? AppColors.accentBlue
+                                                  : AppColors.accentOrange),
+                                      minHeight: 6,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           );
                         },
                       ),
-                    );
-                  },
+                    ),
+                  ],
                 );
               },
             ),

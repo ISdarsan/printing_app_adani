@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-// 1. IMPORT FIREBASE LIBS
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'theme.dart';
 
 class RoleSplashPage extends StatefulWidget {
-  // The 'role' parameter is now the USER'S UID
   final String role;
   const RoleSplashPage({super.key, required this.role});
 
@@ -19,9 +19,10 @@ class _RoleSplashPageState extends State<RoleSplashPage>
   late Animation<double> _logoScale;
   late Animation<double> _textOpacity;
 
-  // 2. Add state variables for the text
-  String _welcomeMessage = 'Loading...';
+  String _welcomeMessage = 'Verifying your account...';
+  String _subMessage = 'Please wait a moment';
   String _error = '';
+  bool _showDots = true;
 
   @override
   void initState() {
@@ -29,10 +30,9 @@ class _RoleSplashPageState extends State<RoleSplashPage>
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
+      duration: const Duration(milliseconds: 1800),
     );
 
-    // Your UI animations (unchanged)
     _logoScale = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _controller, curve: Curves.elasticOut),
     );
@@ -42,65 +42,67 @@ class _RoleSplashPageState extends State<RoleSplashPage>
       curve: const Interval(0.4, 1.0, curve: Curves.easeIn),
     );
 
-    // 3. --- NEW LOGIC ---
-    // Start fetching the user role right away
     _fetchUserRoleAndNavigate();
   }
 
-  // 4. --- NEW FUNCTION TO GET ROLE FROM DATABASE ---
   Future<void> _fetchUserRoleAndNavigate() async {
     String actualRole = 'unknown';
 
     try {
-      // Look in 'canteenStaff' for a document matching the user's UID
       final doc = await FirebaseFirestore.instance
           .collection('canteenStaff')
-          .doc(widget.role) // widget.role now holds the UID
+          .doc(widget.role)
           .get();
 
       if (doc.exists) {
-        // We found the user! Get their role.
         actualRole = doc.data()?['role'] ?? 'unknown';
-
-        // Set the welcome message
-        setState(() {
-          _welcomeMessage = (actualRole == 'admin') ? 'Welcome Admin' : 'Welcome Cashier';
-        });
-
+        if (mounted) {
+          setState(() {
+            if (actualRole == 'admin') {
+              _welcomeMessage = 'Welcome, Admin! 👑';
+              _subMessage = 'Loading your dashboard...';
+            } else {
+              _welcomeMessage = 'Welcome, Cashier! 💳';
+              _subMessage = 'Loading your dashboard...';
+            }
+            _showDots = false;
+          });
+        }
       } else {
-        // This user logged in, but has no role in the database!
-        setState(() {
-          _welcomeMessage = 'Error!';
-          _error = 'User role not found in database.';
-        });
+        if (mounted) {
+          setState(() {
+            _welcomeMessage = 'Access Denied';
+            _subMessage = 'User role not found.';
+            _error = 'Contact your administrator.';
+            _showDots = false;
+          });
+        }
       }
     } catch (e) {
-      // Handle errors like no internet
-      setState(() {
-        _welcomeMessage = 'Error!';
-        _error = 'Error checking role: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _welcomeMessage = 'Connection Error';
+          _subMessage = 'Check your internet connection.';
+          _error = e.toString();
+          _showDots = false;
+        });
+      }
     }
 
-    // Start the UI animation
     _controller.forward();
 
-    // After animation ends, go to dashboard
     Timer(const Duration(seconds: 3), () {
       if (!mounted) return;
-
       if (actualRole == 'admin') {
         Navigator.pushReplacementNamed(context, '/admin_dashboard');
       } else if (actualRole == 'cashier') {
         Navigator.pushReplacementNamed(context, '/billing_dashboard');
       } else {
-        // If role is "unknown", sign them out and send back to login
         FirebaseAuth.instance.signOut();
         Navigator.pushReplacementNamed(context, '/login');
       }
     });
   }
-
 
   @override
   void dispose() {
@@ -110,52 +112,116 @@ class _RoleSplashPageState extends State<RoleSplashPage>
 
   @override
   Widget build(BuildContext context) {
-    // Your gradient (unchanged)
-    final gradientColors = [Colors.blue.shade700, Colors.blue.shade400];
-
-    // 5. --- YOUR UI IS 100% UNCHANGED ---
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ScaleTransition(
-              scale: _logoScale,
-              child: Image.asset(
-                'assets/LOGO.png',
-                width: 150,
-                height: 150,
-              ),
-            ),
-            const SizedBox(height: 20),
-            FadeTransition(
-              opacity: _textOpacity,
-              child: ShaderMask(
-                shaderCallback: (bounds) => LinearGradient(
-                  colors: gradientColors,
-                ).createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
-                child: Text(
-                  // 6. Use the new state variable for the text
-                  _welcomeMessage,
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white, // must be white for ShaderMask
+      backgroundColor: AppColors.bgDark,
+      body: Container(
+        decoration: const BoxDecoration(gradient: AppGradients.darkBg),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // ── Glowing Logo ──────────────────────────────
+              ScaleTransition(
+                scale: _logoScale,
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.gradBlue.withValues(alpha: 0.6),
+                        blurRadius: 50,
+                        spreadRadius: 10,
+                      ),
+                      BoxShadow(
+                        color: AppColors.gradPurple.withValues(alpha: 0.3),
+                        blurRadius: 80,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(30),
+                    child: Image.asset(
+                      'assets/LOGO.png',
+                      width: 140,
+                      height: 140,
+                    ),
                   ),
                 ),
               ),
-            ),
-            // 7. Add an error text if something goes wrong
-            if (_error.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 16.0),
-                child: Text(
-                  _error,
-                  style: const TextStyle(fontSize: 16, color: Colors.red),
+              const SizedBox(height: 36),
+
+              // ── Welcome Message ───────────────────────────
+              FadeTransition(
+                opacity: _textOpacity,
+                child: ShaderMask(
+                  shaderCallback: (b) => AppGradients.brand
+                      .createShader(Rect.fromLTWH(0, 0, b.width, b.height)),
+                  child: Text(
+                    _welcomeMessage,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
               ),
-          ],
+              const SizedBox(height: 8),
+
+              FadeTransition(
+                opacity: _textOpacity,
+                child: Text(
+                  _subMessage,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+
+              // ── Loading dots ──────────────────────────────
+              if (_showDots)
+                const Padding(
+                  padding: EdgeInsets.only(top: 24),
+                  child: CircularProgressIndicator(
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(AppColors.gradBlue),
+                    strokeWidth: 2.5,
+                  ),
+                ),
+
+              // ── Error ─────────────────────────────────────
+              if (_error.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 20, left: 32, right: 32),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentRed.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: AppColors.accentRed.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline,
+                            color: AppColors.accentRed, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _error,
+                            style: GoogleFonts.poppins(
+                                fontSize: 12, color: AppColors.accentRed),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

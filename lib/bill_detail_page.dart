@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'theme.dart';
 
 class BillDetailPage extends StatelessWidget {
   final String billId;
@@ -8,92 +10,102 @@ class BillDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
-      appBar: AppBar(
-        title: Text("Bill Details"),
-        backgroundColor: theme.primaryColor,
-        foregroundColor: theme.colorScheme.onPrimary,
-      ),
+      backgroundColor: AppColors.bgDark,
+      appBar: buildGradientAppBar(title: 'Bill Details'),
       body: FutureBuilder<DocumentSnapshot>(
         future: FirebaseFirestore.instance.collection('bills').doc(billId).get(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator(color: AppColors.gradBlue));
           }
-          if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text("Bill not found."));
+          if (!snap.hasData || !snap.data!.exists) {
+            return Center(child: Text('Bill not found.', style: GoogleFonts.poppins(color: AppColors.textSecondary)));
           }
 
-          final data = snapshot.data!.data() as Map<String, dynamic>;
+          final data = snap.data!.data() as Map<String, dynamic>;
           final items = List<Map<String, dynamic>>.from(data['items']);
-          final billNumber = data['billNumber'] ?? 0;
-          final totalAmount = (data['totalAmount'] as num).toDouble();
-          final paymentMode = data['paymentMode'] ?? 'N/A';
-          final timestamp = data['timestamp'] as Timestamp;
-          final formattedDate = DateFormat('MMM dd, yyyy  h:mm a').format(timestamp.toDate());
+          final billNum = data['billNumber'] ?? 0;
+          final total = (data['totalAmount'] as num).toDouble();
+          final mode = data['paymentMode'] ?? 'N/A';
+          final ts = data['timestamp'] as Timestamp;
+          final date = DateFormat('MMM dd, yyyy  •  h:mm a').format(ts.toDate());
 
           return SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // --- Bill Summary Card ---
-                  Card(
-                    elevation: 4,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        children: [
-                          Text(
-                            "Bill #$billNumber",
-                            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: theme.primaryColor),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(formattedDate, style: theme.textTheme.titleMedium),
-                          const SizedBox(height: 16),
-                          _buildDetailRow("Total Amount:", "₹ ${totalAmount.toStringAsFixed(2)}", isTotal: true),
-                          _buildDetailRow("Payment Mode:", paymentMode),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                // ── Bill Header ───────────────────────────────
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(22),
+                  decoration: gradientCard(gradient: AppGradients.brand, radius: 20),
+                  child: Column(children: [
+                    const Icon(Icons.receipt_long_rounded, color: Colors.white, size: 36),
+                    const SizedBox(height: 10),
+                    Text('Bill #$billNum',
+                        style: GoogleFonts.poppins(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 4),
+                    Text(date, style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12)),
+                    const SizedBox(height: 16),
+                    Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+                      _headerStat('Total', '₹${total.toStringAsFixed(2)}'),
+                      Container(width: 1, height: 36, color: Colors.white30),
+                      _headerStat('Payment', mode),
+                      Container(width: 1, height: 36, color: Colors.white30),
+                      _headerStat('Items', '${items.length}'),
+                    ]),
+                  ]),
+                ),
+                const SizedBox(height: 18),
 
-                  // --- Item List ---
-                  Text(
-                    "Items in this Bill",
-                    style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                // ── Items List ────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: glassCard(radius: 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      sectionTitle('Items in this Bill'),
+                      const SizedBox(height: 12),
+                      const Divider(color: AppColors.bgDivider, height: 1),
+                      ...items.map((item) {
+                        final name = item['name'];
+                        final qty = (item['quantity'] as num).toInt();
+                        final price = (item['price'] as num).toDouble();
+                        final subtotal = qty * price;
+                        return Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              child: Row(children: [
+                                Expanded(
+                                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                    Text(name,
+                                        style: GoogleFonts.poppins(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 14)),
+                                    Text('$qty × ₹${price.toStringAsFixed(2)}',
+                                        style: GoogleFonts.poppins(color: AppColors.textSecondary, fontSize: 12)),
+                                  ]),
+                                ),
+                                Text('₹${subtotal.toStringAsFixed(2)}',
+                                    style: GoogleFonts.poppins(color: AppColors.accentGreen, fontWeight: FontWeight.w600, fontSize: 15)),
+                              ]),
+                            ),
+                            const Divider(color: AppColors.bgDivider, height: 1),
+                          ],
+                        );
+                      }),
+                      const SizedBox(height: 12),
+                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                        Text('TOTAL', style: GoogleFonts.poppins(color: AppColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w600)),
+                        Text('₹${total.toStringAsFixed(2)}',
+                            style: GoogleFonts.poppins(color: AppColors.accentGreen, fontSize: 22, fontWeight: FontWeight.w800)),
+                      ]),
+                    ],
                   ),
-                  const Divider(),
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: items.length,
-                    itemBuilder: (context, index) {
-                      final item = items[index];
-                      final itemName = item['name'];
-                      final itemQty = (item['quantity'] as num).toInt();
-                      final itemPrice = (item['price'] as num).toDouble();
-                      final itemTotal = itemQty * itemPrice;
-
-                      return Card(
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        child: ListTile(
-                          title: Text(itemName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text("$itemQty x ₹${itemPrice.toStringAsFixed(2)}"),
-                          trailing: Text(
-                            "₹ ${itemTotal.toStringAsFixed(2)}",
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 20),
+              ],
             ),
           );
         },
@@ -101,30 +113,10 @@ class BillDetailPage extends StatelessWidget {
     );
   }
 
-  Widget _buildDetailRow(String label, String value, {bool isTotal = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey[700],
-              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: isTotal ? Colors.green : Colors.black,
-            ),
-          ),
-        ],
-      ),
-    );
+  Widget _headerStat(String label, String value) {
+    return Column(children: [
+      Text(value, style: GoogleFonts.poppins(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+      Text(label, style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11)),
+    ]);
   }
 }

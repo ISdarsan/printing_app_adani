@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-// 1. IMPORT FIREBASE LIBS
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'role_splash_page.dart';
+import 'theme.dart';
 
-// 2. CONVERT TO STATEFULWIDGET to handle loading
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -11,220 +11,256 @@ class LoginPage extends StatefulWidget {
   State<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends State<LoginPage> {
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
+class _LoginPageState extends State<LoginPage>
+    with SingleTickerProviderStateMixin {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _obscurePassword = true;
-
-  // 3. ADD STATE VARIABLES for loading and errors
   bool _isLoading = false;
   String _errorMessage = '';
+
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnim;
+  late Animation<Offset> _slideAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..forward();
+    _fadeAnim = CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.12),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeOut));
+  }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _fadeController.dispose();
     super.dispose();
   }
 
-  // 4. --- NEW LOGIN FUNCTION ---
   Future<void> _handleLogin() async {
-    // Start loading
     setState(() {
       _isLoading = true;
       _errorMessage = '';
     });
-
     try {
-      // 5. --- THIS IS THE REAL FIREBASE LOGIN ---
-      final UserCredential userCredential =
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
-
-      // If login is successful, pass the user's UNIQUE ID (uid)
-      // to the RoleSplashPage.
-      if (mounted && userCredential.user != null) {
+      if (mounted && cred.user != null) {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            // We pass the UID, not the role name
-            builder: (context) => RoleSplashPage(role: userCredential.user!.uid),
+            builder: (_) => RoleSplashPage(role: cred.user!.uid),
           ),
         );
       }
-
     } on FirebaseAuthException {
-      // Handle errors like "wrong password" or "user not found"
-      setState(() {
-        _errorMessage = 'Invalid email or password';
-      });
-    } catch (e) {
-      // Handle any other errors
-      setState(() {
-        _errorMessage = 'An error occurred. Please try again.';
-      });
+      setState(() => _errorMessage = 'Invalid email or password. Try again.');
+    } catch (_) {
+      setState(() => _errorMessage = 'An error occurred. Please try again.');
     }
-
-    // Stop loading
-    if(mounted) {
-      setState(() {
-        _isLoading = false;
-      });
-    }
+    if (mounted) setState(() => _isLoading = false);
   }
 
   @override
   Widget build(BuildContext context) {
-    // 6. --- YOUR UI IS 100% UNCHANGED ---
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 40),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Logo
-              Image.asset(
-                'assets/LOGO.png',
-                width: 120,
-                height: 120,
-              ),
-              const SizedBox(height: 20),
-
-              // Heading
-              ShaderMask(
-                shaderCallback: (bounds) => const LinearGradient(
-                  colors: [
-                    Color(0xFF3F51B5),
-                    Color(0xFF2196F3),
-                  ],
-                ).createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
-                child: const Text(
-                  'Welcome to FoodPrint',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    letterSpacing: 1.5,
+      backgroundColor: AppColors.bgDark,
+      body: Container(
+        decoration: const BoxDecoration(gradient: AppGradients.darkBg),
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight:
+                        constraints.maxHeight - 48, // minus vertical padding
                   ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              const SizedBox(height: 40),
+                  child: IntrinsicHeight(
+                    child: FadeTransition(
+                      opacity: _fadeAnim,
+                      child: SlideTransition(
+                        position: _slideAnim,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const SizedBox(height: 48),
+                            // ── Logo ──────────────────────────────────
+                            Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.gradBlue
+                                        .withValues(alpha: 0.5),
+                                    blurRadius: 40,
+                                    spreadRadius: 8,
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(24),
+                                child: Image.asset(
+                                  'assets/LOGO.png',
+                                  width: 100,
+                                  height: 100,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 24),
 
-              // Email field
-              TextField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(
-                  hintText: 'Email',
-                  filled: true,
-                  fillColor: Colors.grey[200],
-                  prefixIcon: const Icon(Icons.email_outlined),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(30),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
+                            // ── Title ─────────────────────────────────
+                            Text(
+                              'Welcome Back',
+                              style: GoogleFonts.poppins(
+                                fontSize: 30,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Sign in to FoodPrint',
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: 32),
 
-              // Password field
-              TextField(
-                controller: _passwordController,
-                obscureText: _obscurePassword,
-                decoration: InputDecoration(
-                  hintText: 'Password',
-                  filled: true,
-                  fillColor: Colors.grey[200],
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _obscurePassword = !_obscurePassword;
-                      });
-                    },
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(30),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
+                            // ── Email Field ───────────────────────────
+                            TextField(
+                              controller: _emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              style: GoogleFonts.poppins(
+                                  color: AppColors.textPrimary),
+                              decoration: darkInput(
+                                label: 'Email Address',
+                                prefixIcon: Icons.email_outlined,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
 
-              // 7. --- ADDED ERROR MESSAGE ---
-              if (_errorMessage.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16.0),
-                  child: Text(
-                    _errorMessage,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.red, fontSize: 14),
-                  ),
-                ),
+                            // ── Password Field ────────────────────────
+                            TextField(
+                              controller: _passwordController,
+                              obscureText: _obscurePassword,
+                              style: GoogleFonts.poppins(
+                                  color: AppColors.textPrimary),
+                              decoration: darkInput(
+                                label: 'Password',
+                                prefixIcon: Icons.lock_outline,
+                                suffixIconWidget: IconButton(
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility_off_outlined
+                                        : Icons.visibility_outlined,
+                                    color: AppColors.textSecondary,
+                                    size: 20,
+                                  ),
+                                  onPressed: () => setState(() =>
+                                      _obscurePassword = !_obscurePassword),
+                                ),
+                              ),
+                            ),
 
-              const SizedBox(height: 24),
+                            // ── Error Message ─────────────────────────
+                            if (_errorMessage.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 14),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 14, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.accentRed
+                                        .withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                        color: AppColors.accentRed
+                                            .withValues(alpha: 0.4)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.error_outline,
+                                          color: AppColors.accentRed, size: 18),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          _errorMessage,
+                                          style: GoogleFonts.poppins(
+                                            color: AppColors.accentRed,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
 
-              // Login button
-              GestureDetector(
-                // 8. --- MODIFIED ONTAP ---
-                onTap: _isLoading ? null : _handleLogin, // Disable if loading
-                child: Container(
-                  width: double.infinity,
-                  height: 55,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [
-                        Color(0xFF3F51B5),
-                        Color(0xFF2196F3),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.blue.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
+                            const SizedBox(height: 28),
+
+                            // ── Login Button ──────────────────────────
+                            SizedBox(
+                              width: double.infinity,
+                              child: buildGradientButton(
+                                label: 'Sign In',
+                                icon: Icons.login_rounded,
+                                isLoading: _isLoading,
+                                onPressed: _isLoading ? null : _handleLogin,
+                                height: 56,
+                              ),
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            // ── Forgot Password ───────────────────────
+                            TextButton(
+                              onPressed: () {},
+                              child: Text(
+                                'Forgot Password?',
+                                style: GoogleFonts.poppins(
+                                  color: AppColors.accentBlue,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+
+                            const Spacer(),
+
+                            // ── Footer ────────────────────────────────
+                            Padding(
+                              padding:
+                                  const EdgeInsets.only(top: 24, bottom: 8),
+                              child: Text(
+                                'Adani CSR Canteen Management',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white60,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
-                  child: Center(
-                    // 9. --- ADDED LOADING SPINNER ---
-                    child: _isLoading
-                        ? const CircularProgressIndicator(
-                      valueColor:
-                      AlwaysStoppedAnimation<Color>(Colors.white),
-                    )
-                        : const Text(
-                      'Login',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
                     ),
                   ),
                 ),
-              ),
-
-              const SizedBox(height: 12),
-
-              TextButton(
-                onPressed: () {},
-                child: const Text(
-                  'Forgot Password?',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ),
-            ],
+              );
+            },
           ),
         ),
       ),

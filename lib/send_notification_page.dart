@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'theme.dart';
 
 class SendNotificationPage extends StatefulWidget {
   const SendNotificationPage({super.key});
@@ -15,17 +17,6 @@ class _SendNotificationPageState extends State<SendNotificationPage> {
   final _messageController = TextEditingController();
   bool _isLoading = false;
 
-  // Your Adani brand gradient
-  final LinearGradient adaniGradient = const LinearGradient(
-    colors: [
-      Color(0xFF0066B3), // blue
-      Color(0xFF6C3FB5), // purple
-      Color(0xFFE91E63), // pink
-    ],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-
   @override
   void dispose() {
     _titleController.dispose();
@@ -34,20 +25,14 @@ class _SendNotificationPageState extends State<SendNotificationPage> {
   }
 
   Future<void> _sendNotification() async {
-    if (!_formKey.currentState!.validate()) {
-      return; // If form is invalid, do nothing
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
 
     try {
       final user = FirebaseAuth.instance.currentUser;
       final String title = _titleController.text;
       final String message = _messageController.text;
 
-      // Save to a new 'notifications' collection
       await FirebaseFirestore.instance.collection('notifications').add({
         'title': title,
         'message': message,
@@ -55,173 +40,76 @@ class _SendNotificationPageState extends State<SendNotificationPage> {
         'sentBy': user?.email ?? 'Admin',
       });
 
-      // Clear the form and show success
       _titleController.clear();
       _messageController.clear();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Notification sent successfully!'),
-            backgroundColor: Colors.green,
-          ),
+          SnackBar(content: Text('✓ Notification sent', style: GoogleFonts.poppins()), backgroundColor: const Color(0xFF1B4332)),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to send notification: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Failed: $e', style: GoogleFonts.poppins()), backgroundColor: AppColors.accentRed),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(50),
-        child: AppBar(
-          iconTheme: const IconThemeData(color: Colors.white),
-          flexibleSpace: Container(
-            decoration: BoxDecoration(gradient: adaniGradient),
-          ),
-          title: const Text(
-            'Send Notification',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          centerTitle: true,
-          elevation: 3,
-        ),
-      ),
+      backgroundColor: AppColors.bgDark,
+      appBar: buildGradientAppBar(title: 'Send Notification'),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Form(
           key: _formKey,
           child: Column(
             children: [
-              Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'New Notification Details',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF003C8F),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      TextFormField(
-                        controller: _titleController,
-                        decoration: _buildInputDecoration(
-                          labelText: 'Title',
-                          icon: Icons.title,
-                        ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter a title';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 20),
-                      TextFormField(
-                        controller: _messageController,
-                        maxLines: 5,
-                        decoration: _buildInputDecoration(
-                          labelText: 'Message',
-                          icon: Icons.message,
-                        ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter a message';
-                          }
-                          return null;
-                        },
-                      ),
-                    ],
-                  ),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: glassCard(radius: 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.campaign_outlined, color: AppColors.accentBlue, size: 22),
+                        const SizedBox(width: 8),
+                        sectionTitle('New Message Details'),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    TextFormField(
+                      controller: _titleController,
+                      style: GoogleFonts.poppins(color: AppColors.textPrimary, fontSize: 14),
+                      decoration: darkInput(label: 'Title', prefixIcon: Icons.title),
+                      validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _messageController,
+                      maxLines: 5,
+                      style: GoogleFonts.poppins(color: AppColors.textPrimary, fontSize: 14),
+                      decoration: darkInput(label: 'Message', prefixIcon: Icons.message_outlined),
+                      validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 30),
-              GestureDetector(
-                onTap: _isLoading ? null : _sendNotification,
-                child: Container(
-                  width: double.infinity,
-                  height: 55,
-                  decoration: BoxDecoration(
-                    gradient: adaniGradient,
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.blue.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: _isLoading
-                        ? const CircularProgressIndicator(
-                      valueColor:
-                      AlwaysStoppedAnimation<Color>(Colors.white),
-                    )
-                        : const Text(
-                      'Send to All Staff',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
+              buildGradientButton(
+                label: 'Send to All Staff',
+                icon: Icons.send_rounded,
+                isLoading: _isLoading,
+                onPressed: _isLoading ? null : _sendNotification,
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  InputDecoration _buildInputDecoration({
-    required String labelText,
-    required IconData icon,
-  }) {
-    return InputDecoration(
-      labelText: labelText,
-      hintText: 'Enter $labelText',
-      filled: true,
-      fillColor: Colors.grey[100],
-      prefixIcon: Icon(icon, color: const Color(0xFF0066B3)),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFF0066B3), width: 2),
       ),
     );
   }

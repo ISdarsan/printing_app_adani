@@ -1,268 +1,261 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'theme.dart';
+import 'bill_detail_page.dart';
 
 class DailySalesReportPage extends StatefulWidget {
-  // --- 1. ADD THIS CONSTRUCTOR ---
-  // This allows us to pass in a date.
   final DateTime? selectedDate;
   const DailySalesReportPage({super.key, this.selectedDate});
-  // -----------------------------
 
   @override
   State<DailySalesReportPage> createState() => _DailySalesReportPageState();
 }
 
 class _DailySalesReportPageState extends State<DailySalesReportPage> {
-  // --- 2. MODIFY THIS VARIABLE ---
   late DateTime _selectedDate;
-  // -----------------------------
 
-  // --- 3. ADD INITSTATE ---
   @override
   void initState() {
     super.initState();
-    // Use the date passed from the constructor, or default to today
     _selectedDate = widget.selectedDate ?? DateTime.now();
   }
-  // ------------------------
 
   Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
+    final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: AppColors.gradBlue,
+            onPrimary: Colors.white,
+            surface: AppColors.bgCard,
+            onSurface: AppColors.textPrimary,
+          ),
+        ),
+        child: child!,
+      ),
     );
     if (picked != null && picked != _selectedDate) {
-      setState(() {
-        _selectedDate = picked;
-      });
+      setState(() => _selectedDate = picked);
     }
   }
 
-  // Helper to get start/end of the day
   (DateTime, DateTime) _getDayRange(DateTime date) {
-    final DateTime startOfDay =
-    DateTime(date.year, date.month, date.day, 0, 0, 0);
-    final DateTime endOfDay =
-    DateTime(date.year, date.month, date.day, 23, 59, 59);
-    return (startOfDay, endOfDay);
+    return (
+      DateTime(date.year, date.month, date.day, 0, 0, 0),
+      DateTime(date.year, date.month, date.day, 23, 59, 59),
+    );
   }
 
-  // Fetches aggregated stats: total, cash, upi
-  Stream<Map<String, double>> _getAggregatedStats() {
+  Stream<QuerySnapshot> _getBillsStream() {
     final (start, end) = _getDayRange(_selectedDate);
-
     return FirebaseFirestore.instance
-        .collection('bills') // Make sure this matches your collection name
+        .collection('bills')
         .where('timestamp', isGreaterThanOrEqualTo: start)
         .where('timestamp', isLessThanOrEqualTo: end)
-        .snapshots()
-        .map((snapshot) {
-      double total = 0.0;
-      double cash = 0.0;
-      double upi = 0.0;
-
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        if (data.containsKey('totalAmount') && data['totalAmount'] is num) {
-          final billTotal = (data['totalAmount'] as num).toDouble();
-          final paymentMode = data['paymentMethod'] as String? ?? 'Cash'; // Use 'paymentMethod'
-
-          total += billTotal;
-          if (paymentMode == 'Cash') {
-            cash += billTotal;
-          } else if (paymentMode == 'UPI') {
-            upi += billTotal;
-          }
-        }
-      }
-      return {'total': total, 'cash': cash, 'upi': upi};
-    });
-  }
-
-  // Fetches all items sold and aggregates them
-  Stream<Map<String, int>> _getAggregatedItems() {
-    final (start, end) = _getDayRange(_selectedDate);
-
-    return FirebaseFirestore.instance
-        .collection('bills') // Make sure this matches your collection name
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThanOrEqualTo: end)
-        .snapshots()
-        .map((snapshot) {
-      final Map<String, int> itemCounts = {};
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        if (data.containsKey('items') && data['items'] is List) {
-          final items = List<Map<String, dynamic>>.from(data['items']);
-          for (var item in items) {
-            if (item.containsKey('name') && item.containsKey('quantity')) {
-              final String name = item['name'];
-              final int quantity = (item['quantity'] as num).toInt();
-              itemCounts.update(name, (value) => value + quantity,
-                  ifAbsent: () => quantity);
-            }
-          }
-        }
-      }
-      return itemCounts;
-    });
+        .orderBy('timestamp', descending: true)
+        .snapshots();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final String dayName = DateFormat('MMMM dd, yyyy').format(_selectedDate);
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Daily Sales Report"),
-        backgroundColor: theme.primaryColor,
-        foregroundColor: theme.colorScheme.onPrimary,
-      ),
+      backgroundColor: AppColors.bgDark,
+      appBar: buildGradientAppBar(title: 'Daily Sales Report'),
       body: Column(
         children: [
-          // --- DATE PICKER UI ---
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: Colors.white,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.chevron_left),
-                  onPressed: () {
-                    setState(() {
-                      _selectedDate =
-                          _selectedDate.subtract(const Duration(days: 1));
-                    });
-                  },
-                ),
-                TextButton(
-                  onPressed: () => _selectDate(context),
-                  child: Text(
-                    dayName,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right),
-                  // Disable going to a future date
-                  onPressed: DateFormat('yyyyMMdd').format(_selectedDate) == DateFormat('yyyyMMdd').format(DateTime.now())
-                      ? null
-                      : () {
-                    setState(() {
-                      _selectedDate =
-                          _selectedDate.add(const Duration(days: 1));
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          // --- STATS CARDS ---
-          StreamBuilder<Map<String, double>>(
-            stream: _getAggregatedStats(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              if (!snapshot.hasData) return const SizedBox.shrink();
-
-              final stats = snapshot.data!;
-              return Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
+          // ── Date Selector ─────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: GestureDetector(
+              onTap: () => _selectDate(context),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                decoration: glassCard(radius: 14),
+                child: Row(
                   children: [
-                    _buildStatCard(
-                        "Total Revenue", stats['total'] ?? 0.0, Colors.green),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                            child: _buildStatCard(
-                                "Total Cash", stats['cash'] ?? 0.0, Colors.blue)),
-                        const SizedBox(width: 12),
-                        Expanded(
-                            child: _buildStatCard(
-                                "Total UPI", stats['upi'] ?? 0.0, Colors.purple)),
-                      ],
-                    )
+                    const Icon(Icons.calendar_today,
+                        color: AppColors.accentBlue, size: 20),
+                    const SizedBox(width: 12),
+                    Text(
+                      DateFormat('EEEE, MMMM dd yyyy').format(_selectedDate),
+                      style: GoogleFonts.poppins(
+                          color: AppColors.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        gradient: AppGradients.blueAccent,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text('Change',
+                          style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600)),
+                    ),
                   ],
                 ),
-              );
-            },
-          ),
-          const Divider(),
-          // --- ITEM LIST HEADER ---
-          Padding(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text("Item Sold",
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.bold)),
-                Text("Quantity",
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.bold)),
-              ],
+              ),
             ),
           ),
-          // --- AGGREGATED ITEM LIST ---
+
+          // ── Bills List ─────────────────────────────────
           Expanded(
-            child: StreamBuilder<Map<String, int>>(
-              stream: _getAggregatedItems(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _getBillsStream(),
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(
-                      child: Text("No items sold on this day.",
-                          style: TextStyle(fontSize: 16, color: Colors.grey)));
+                      child:
+                          CircularProgressIndicator(color: AppColors.gradBlue));
+                }
+                if (!snap.hasData || snap.data!.docs.isEmpty) {
+                  return Center(
+                    child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.receipt_outlined,
+                              size: 56, color: AppColors.textHint),
+                          const SizedBox(height: 12),
+                          Text('No bills for this date',
+                              style: GoogleFonts.poppins(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 15)),
+                        ]),
+                  );
                 }
 
-                final itemCounts = snapshot.data!;
-                final sortedItems = itemCounts.entries.toList()
-                  ..sort((a, b) =>
-                      b.value.compareTo(a.value)); // Sort by quantity
+                final bills = snap.data!.docs;
+                double total = 0, cash = 0, upi = 0, credit = 0;
+                for (final b in bills) {
+                  final d = b.data() as Map<String, dynamic>;
+                  final amt = (d['totalAmount'] as num).toDouble();
+                  total += amt;
+                  if (d['paymentMode'] == 'Cash') {
+                    cash += amt;
+                  } else if (d['paymentMode'] == 'UPI') {
+                    upi += amt;
+                  } else if (d['paymentMode'] == 'Credit') {
+                    credit += amt;
+                  }
+                }
 
-                return ListView.builder(
-                  itemCount: sortedItems.length,
-                  itemBuilder: (context, index) {
-                    final item = sortedItems[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 4),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                return Column(
+                  children: [
+                    // Summary Card
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: gradientCard(
+                            gradient: AppGradients.greenAccent, radius: 18),
+                        child: Column(
                           children: [
-                            Text(item.key,
-                                style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500)),
-                            Text(item.value.toString(),
-                                style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold)),
+                            Text('₹${total.toStringAsFixed(2)}',
+                                style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.w800)),
+                            Text('Total Sales',
+                                style: GoogleFonts.poppins(
+                                    color: Colors.white70, fontSize: 13)),
+                            const SizedBox(height: 14),
+                            Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceAround,
+                                children: [
+                                  _statPill(
+                                      '💵 Cash', '₹${cash.toStringAsFixed(0)}'),
+                                  _statPill(
+                                      '📱 UPI', '₹${upi.toStringAsFixed(0)}'),
+                                  _statPill(
+                                      '💳 Credit', '₹${credit.toStringAsFixed(0)}'),
+                                  _statPill('🧾 Bills', '${bills.length}'),
+                                ]),
                           ],
                         ),
                       ),
-                    );
-                  },
+                    ),
+
+                    Expanded(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        itemCount: bills.length,
+                        itemBuilder: (_, i) {
+                          final doc = bills[i];
+                          final d = doc.data() as Map<String, dynamic>;
+                          final billNum = d['billNumber'] ?? 0;
+                          final amt = (d['totalAmount'] as num).toDouble();
+                          final mode = d['paymentMode'] ?? 'N/A';
+                          final ts = (d['timestamp'] as Timestamp).toDate();
+
+                          return GestureDetector(
+                            onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) =>
+                                        BillDetailPage(billId: doc.id))),
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(vertical: 5),
+                              decoration: glassCard(radius: 14),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 8),
+                                leading: Container(
+                                  width: 42,
+                                  height: 42,
+                                  decoration: BoxDecoration(
+                                      gradient: AppGradients.brand,
+                                      borderRadius: BorderRadius.circular(10)),
+                                  child: Center(
+                                      child: Text('#$billNum',
+                                          style: GoogleFonts.poppins(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 11))),
+                                ),
+                                title: Text('Bill #$billNum',
+                                    style: GoogleFonts.poppins(
+                                        color: AppColors.textPrimary,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13)),
+                                subtitle: Text(DateFormat.jm().format(ts),
+                                    style: GoogleFonts.poppins(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 12)),
+                                trailing: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text('₹${amt.toStringAsFixed(0)}',
+                                          style: GoogleFonts.poppins(
+                                              color: AppColors.accentGreen,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 15)),
+                                      buildBadge(
+                                          mode,
+                                          mode == 'Cash'
+                                              ? AppColors.accentGreen
+                                              : AppColors.accentBlue),
+                                    ]),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
@@ -272,30 +265,13 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
     );
   }
 
-  Widget _buildStatCard(String title, double amount, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style:
-            TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: color),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            "₹ ${amount.toStringAsFixed(2)}",
-            style:
-            TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color),
-          ),
-        ],
-      ),
-    );
+  Widget _statPill(String label, String value) {
+    return Column(children: [
+      Text(value,
+          style: GoogleFonts.poppins(
+              color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+      Text(label,
+          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11)),
+    ]);
   }
 }

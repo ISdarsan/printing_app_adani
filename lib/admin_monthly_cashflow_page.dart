@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-// We will create this page next
-// import 'expense_bill_detail_page.dart';
+import 'theme.dart';
+import 'expense_detail_page.dart';
 
 class AdminMonthlyCashflowPage extends StatefulWidget {
   const AdminMonthlyCashflowPage({super.key});
@@ -16,30 +17,17 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
   final _amountController = TextEditingController();
   bool _isLoading = false;
 
-  final LinearGradient adaniGradient = const LinearGradient(
-    colors: [
-      Color(0xFF0066B3), // blue
-      Color(0xFF6C3FB5), // purple
-      Color(0xFFE91E63), // pink
-    ],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-
-  // Function to save the monthly fund
   Future<void> _saveMonthlyFund() async {
     if (_amountController.text.isEmpty) {
-      _showSnackBar('Please enter an amount.', Colors.red);
+      _showSnackBar('Please enter an amount.', AppColors.accentRed);
       return;
     }
     final double? amount = double.tryParse(_amountController.text);
     if (amount == null || amount <= 0) {
-      _showSnackBar('Please enter a valid amount.', Colors.red);
+      _showSnackBar('Please enter a valid amount.', AppColors.accentRed);
       return;
     }
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     final String monthId = DateFormat('yyyy-MM').format(DateTime.now());
     try {
@@ -53,19 +41,14 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
       }, SetOptions(merge: true));
 
       _amountController.clear();
-      _showSnackBar('Monthly fund saved successfully!', Colors.green);
+      _showSnackBar('✓ Monthly fund saved', const Color(0xFF1B4332));
     } catch (e) {
-      _showSnackBar('Failed to save fund: $e', Colors.red);
+      _showSnackBar('Failed to save fund: $e', AppColors.accentRed);
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // Stream to get the monthly fund (what Admin entered)
   Stream<DocumentSnapshot> _getMonthlyFundStream() {
     final String monthId = DateFormat('yyyy-MM').format(DateTime.now());
     return FirebaseFirestore.instance
@@ -74,12 +57,10 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
         .snapshots();
   }
 
-  // Stream to get all expenses for this month
   Stream<QuerySnapshot> _getExpensesStream() {
     DateTime now = DateTime.now();
     DateTime startOfMonth = DateTime(now.year, now.month, 1);
-    DateTime endOfMonth =
-    DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+    DateTime endOfMonth = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
 
     return FirebaseFirestore.instance
         .collection('expenses')
@@ -92,56 +73,142 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
   void _showSnackBar(String message, Color color) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: color),
+      SnackBar(
+          content: Text(message, style: GoogleFonts.poppins()),
+          backgroundColor: color),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(50),
-        child: AppBar(
-          iconTheme: const IconThemeData(color: Colors.white),
-          flexibleSpace: Container(
-            decoration: BoxDecoration(gradient: adaniGradient),
-          ),
-          title: const Text(
-            'Monthly Cash Flow',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          centerTitle: true,
-          elevation: 3,
-        ),
-      ),
+      backgroundColor: AppColors.bgDark,
+      appBar: buildGradientAppBar(title: 'Monthly Cash Flow'),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. Card for Admin to enter the fund
-            _buildEnterFundCard(),
-            const SizedBox(height: 24),
-
-            // 2. Live Summary Card (Fund, Spent, Balance)
-            _buildSummaryCard(),
-            const SizedBox(height: 24),
-
-            // 3. Live list of all expenses
-            const Text(
-              'Live Expense Log (This Month)',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF003C8F), // Dark Blue
+            // ── Enter Fund Card ───────────────────────
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: glassCard(radius: 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.account_balance_wallet_outlined,
+                          color: AppColors.accentBlue, size: 20),
+                      const SizedBox(width: 8),
+                      sectionTitle('Set Monthly Fund'),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _amountController,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    style: GoogleFonts.poppins(
+                        color: AppColors.textPrimary, fontSize: 14),
+                    decoration: darkInput(
+                      label: 'Amount (e.g., 50000)',
+                      prefixIcon: Icons.currency_rupee,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  buildGradientButton(
+                    label: 'Save Fund',
+                    icon: Icons.save_rounded,
+                    isLoading: _isLoading,
+                    onPressed: _isLoading ? null : _saveMonthlyFund,
+                    height: 50,
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 20),
+
+            // ── Live Summary Card ─────────────────────
+            StreamBuilder<DocumentSnapshot>(
+              stream: _getMonthlyFundStream(),
+              builder: (context, fundSnapshot) {
+                double totalFund = 0.0;
+                if (fundSnapshot.hasData && fundSnapshot.data!.exists) {
+                  var fundData =
+                      fundSnapshot.data!.data() as Map<String, dynamic>;
+                  if (fundData.containsKey('fundAmount')) {
+                    totalFund = (fundData['fundAmount'] as num).toDouble();
+                  }
+                }
+
+                return StreamBuilder<QuerySnapshot>(
+                  stream: _getExpensesStream(),
+                  builder: (context, expenseSnapshot) {
+                    double totalSpent = 0.0;
+                    if (expenseSnapshot.hasData) {
+                      for (var doc in expenseSnapshot.data!.docs) {
+                        var data = doc.data() as Map<String, dynamic>;
+                        if (data.containsKey('amount')) {
+                          totalSpent += (data['amount'] as num).toDouble();
+                        }
+                      }
+                    }
+
+                    double remainingBalance = totalFund - totalSpent;
+                    bool isDeficit = remainingBalance < 0;
+
+                    return Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: gradientCard(
+                          gradient: AppGradients.blueAccent, radius: 20),
+                      child: Column(
+                        children: [
+                          _buildSummaryRow(
+                              'Total Fund:', totalFund, Colors.white70, 16),
+                          const SizedBox(height: 12),
+                          _buildSummaryRow(
+                              'Expenditure:', totalSpent, Colors.white70, 16),
+                          const Divider(color: Colors.white30, height: 24),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Balance',
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white)),
+                              Text(
+                                '₹${remainingBalance.toStringAsFixed(2)}',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDeficit
+                                      ? AppColors.accentOrange
+                                      : Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+
+            // ── Live Expense Log ──────────────────────
+            Row(
+              children: [
+                const Icon(Icons.receipt_long_outlined,
+                    color: AppColors.textSecondary, size: 18),
+                const SizedBox(width: 8),
+                sectionTitle('Live Expense Log (This Month)'),
+              ],
+            ),
+            const SizedBox(height: 12),
             _buildExpenseList(),
           ],
         ),
@@ -149,132 +216,104 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
     );
   }
 
-  // Card UI for entering the monthly fund
-  Widget _buildEnterFundCard() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Set Monthly Canteen Fund',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).primaryColor,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _amountController,
-              keyboardType:
-              const TextInputType.numberWithOptions(decimal: true),
-              decoration: _buildInputDecoration(
-                labelText: 'Amount (e.g., 50000)',
-                icon: Icons.currency_rupee,
-              ),
-            ),
-            const SizedBox(height: 20),
-            // Gradient Save Button
-            GestureDetector(
-              onTap: _isLoading ? null : _saveMonthlyFund,
-              child: Container(
-                width: double.infinity,
-                height: 50,
-                decoration: BoxDecoration(
-                    gradient: adaniGradient,
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: adaniGradient.colors.last.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
-                      )
-                    ]),
-                child: Center(
-                  child: _isLoading
-                      ? const CircularProgressIndicator(
-                    valueColor:
-                    AlwaysStoppedAnimation<Color>(Colors.white),
-                  )
-                      : const Text(
-                    'Save Fund',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+  Widget _buildSummaryRow(
+      String label, double amount, Color color, double fontSize) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: GoogleFonts.poppins(fontSize: 14, color: color)),
+        Text('₹${amount.toStringAsFixed(2)}',
+            style: GoogleFonts.poppins(
+                fontSize: fontSize,
+                fontWeight: FontWeight.w600,
+                color: Colors.white)),
+      ],
     );
   }
 
-  // "Cool" Summary Card
-  Widget _buildSummaryCard() {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: _getMonthlyFundStream(),
-      builder: (context, fundSnapshot) {
-        double totalFund = 0.0;
-        if (fundSnapshot.hasData && fundSnapshot.data!.exists) {
-          var fundData = fundSnapshot.data!.data() as Map<String, dynamic>;
-          if (fundData.containsKey('fundAmount')) {
-            totalFund = (fundData['fundAmount'] as num).toDouble();
-          }
+  Widget _buildExpenseList() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _getExpensesStream(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+              child: CircularProgressIndicator(color: AppColors.gradBlue));
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 30),
+              child: Column(
+                children: [
+                  const Icon(Icons.receipt_outlined,
+                      size: 40, color: AppColors.textHint),
+                  const SizedBox(height: 10),
+                  Text('No expenses logged for this month.',
+                      style: GoogleFonts.poppins(
+                          color: AppColors.textSecondary, fontSize: 13)),
+                ],
+              ),
+            ),
+          );
         }
 
-        return StreamBuilder<QuerySnapshot>(
-          stream: _getExpensesStream(),
-          builder: (context, expenseSnapshot) {
-            double totalSpent = 0.0;
-            if (expenseSnapshot.hasData) {
-              for (var doc in expenseSnapshot.data!.docs) {
-                var data = doc.data() as Map<String, dynamic>;
-                if (data.containsKey('amount')) {
-                  totalSpent += (data['amount'] as num).toDouble();
-                }
-              }
-            }
+        return ListView.builder(
+          itemCount: snapshot.data!.docs.length,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          itemBuilder: (context, index) {
+            var doc = snapshot.data!.docs[index];
+            var data = doc.data() as Map<String, dynamic>;
 
-            double remainingBalance = totalFund - totalSpent;
+            final double amount = (data['amount'] as num).toDouble();
+            final String description = data['description'] ?? 'No description';
+            final Timestamp timestamp = data['timestamp'] ?? Timestamp.now();
+            final String dateTime =
+                DateFormat('dd MMM, hh:mm a').format(timestamp.toDate());
 
-            return Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(15)),
-              clipBehavior: Clip.antiAlias,
+            return GestureDetector(
+              onTap: () {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) =>
+                            ExpenseDetailPage(expenseDoc: doc)));
+              },
               child: Container(
-                decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.blue.shade700, Colors.blue.shade500],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    )),
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Column(
+                margin: const EdgeInsets.symmetric(vertical: 5),
+                decoration: glassCard(radius: 14),
+                child: ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  leading: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentOrange.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.payment,
+                        color: AppColors.accentOrange, size: 20),
+                  ),
+                  title: Text(description,
+                      style: GoogleFonts.poppins(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14)),
+                  subtitle: Text(dateTime,
+                      style: GoogleFonts.poppins(
+                          color: AppColors.textSecondary, fontSize: 12)),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      _buildSummaryRow('Total Fund Received:',
-                          '₹${totalFund.toStringAsFixed(2)}', Colors.white, 22),
-                      const SizedBox(height: 10),
-                      _buildSummaryRow(
-                          'Total Expenditure:',
-                          '₹${totalSpent.toStringAsFixed(2)}',
-                          Colors.white.withOpacity(0.9),
-                          22),
-                      const Divider(color: Colors.white54, height: 20),
-                      _buildSummaryRow(
-                          'Remaining Balance:',
-                          '₹${remainingBalance.toStringAsFixed(2)}',
-                          Colors.white,
-                          26),
+                      Text('₹${amount.toStringAsFixed(0)}',
+                          style: GoogleFonts.poppins(
+                              color: AppColors.accentRed,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15)),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.chevron_right,
+                          size: 16, color: AppColors.textHint),
                     ],
                   ),
                 ),
@@ -285,113 +324,4 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
       },
     );
   }
-
-  Widget _buildSummaryRow(
-      String label, String value, Color color, double fontSize) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w500,
-            color: color.withOpacity(0.9),
-          ),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: fontSize,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // StreamBuilder to show the live list of expenses
-  Widget _buildExpenseList() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _getExpensesStream(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(20.0),
-              child: Text(
-                'No expenses logged for this month yet.',
-                style: TextStyle(color: Colors.grey, fontSize: 16),
-              ),
-            ),
-          );
-        }
-
-        return Card(
-          elevation: 2,
-          shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-          child: ListView.builder(
-            itemCount: snapshot.data!.docs.length,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            itemBuilder: (context, index) {
-              var doc = snapshot.data!.docs[index];
-              var data = doc.data() as Map<String, dynamic>;
-
-              final String amount = (data['amount'] as num).toStringAsFixed(2);
-              final String description =
-                  data['description'] ?? 'No description';
-              final Timestamp timestamp =
-                  data['timestamp'] ?? Timestamp.now();
-              final String dateTime =
-              DateFormat('dd MMM, hh:mm a').format(timestamp.toDate());
-              // final bool hasBillImage = data.containsKey('billImageUrl') && data['billImageUrl'] != null;
-
-              return ListTile(
-                leading: const Icon(Icons.payment, color: Colors.redAccent),
-                title: Text(
-                  "₹$amount - $description",
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text(dateTime),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
-                onTap: () {
-                  // TODO: Navigate to a new page to show data['billImageUrl']
-                  // Navigator.push(context, MaterialPageRoute(builder: (context) =>
-                  //   ExpenseBillDetailPage(expenseDoc: doc)
-                  // ));
-                },
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
-
-  // Helper for text field styling
-  InputDecoration _buildInputDecoration({
-    required String labelText,
-    required IconData icon,
-  }) {
-    return InputDecoration(
-      labelText: labelText,
-      filled: true,
-      fillColor: Colors.grey[100],
-      prefixIcon: Icon(icon, color: const Color(0xFF0066B3)),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFF0066B3), width: 2),
-      ),
-    );
-  }}
+}

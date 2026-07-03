@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-
-// --- ADDED ---
-import 'package:firebase_core/firebase_core.dart'; // Import Firebase
-import 'firebase_options.dart'; // This file was created by the tool
-// -------------
+import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+import 'theme.dart';
 
 import 'splash_page.dart';
 import 'login_page.dart';
@@ -18,27 +17,64 @@ import 'role_splash_page.dart';
 import 'menu_view_page.dart';
 import 'funds_received_page.dart';
 import 'notifications_page.dart';
-import 'daily_sales_report_page.dart'; // Import
+import 'daily_sales_report_page.dart';
 import 'all_bills_page.dart';
 import 'admin_analytics_page.dart';
-import 'monthly_sales_breakdown_page.dart'; // Import
-import 'send_notification_page.dart'; // <-- 1. IMPORT ADDED
-import 'admin_expense_report_page.dart';
+import 'monthly_sales_breakdown_page.dart';
+import 'send_notification_page.dart';
+import 'credit_customers_page.dart';
+import 'cash_reconciliation_page.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
-// --- MODIFIED ---
-void main() async { // Make this 'async'
-  // Make sure Flutter is ready
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Handle background push messages
+}
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase
+  // Lock to portrait mode for a consistent mobile experience
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+
+  // Dark status bar icons to match our dark theme
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+    ),
+  );
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Run the app
+  // Initialize Firebase Cloud Messaging
+  try {
+    final messaging = FirebaseMessaging.instance;
+    await messaging.requestPermission(
+      alert: true,
+      announcement: false,
+      badge: true,
+      carPlay: false,
+      criticalAlert: false,
+      provisional: false,
+      sound: true,
+    );
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    
+    // Retrieve token for debugging / console notification sends
+    final token = await messaging.getToken();
+    debugPrint("FCM Registration Token: $token");
+  } catch (e) {
+    debugPrint("FCM initialization error: $e");
+  }
+
   runApp(const MyApp());
 }
-// ----------------
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -48,39 +84,33 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'FoodPrint',
-      theme: ThemeData(primarySwatch: Colors.blue),
+      theme: buildAppTheme(),
       initialRoute: '/',
       routes: {
-        // Core routes
         '/': (context) => const SplashPage(),
         '/login': (context) => LoginPage(),
         '/admin_dashboard': (context) => const AdminDashboardPage(),
         '/billing_dashboard': (context) => const BillingDashboardPage(),
-
-        // All your other pages
-
-        // --- THIS IS THE FIX ---
-        // We provide a default empty string for the 'role'
-        '/role_splash': (context) =>
-            RoleSplashPage(role: ''),
-        // ---------------------
-
+        '/role_splash': (context) => RoleSplashPage(role: ''),
         '/logout_splash': (context) => LogoutSplashPage(),
         '/print_bill': (context) => const PrintBillPage(),
         '/add_item': (context) => const AddItemPage(),
         '/today_sales': (context) => const TodaySalesPage(),
         '/expenses': (context) => const ExpensesPage(),
         '/view_menu': (context) => const MenuViewPage(),
-        '/funds_received': (context) => const FundsReceivedPage(),
+        '/funds_received': (context) => const FundsReceivedPage(isAdmin: false),
+        '/funds_received_admin': (context) => const FundsReceivedPage(isAdmin: true),
         '/notifications': (context) => const NotificationsPage(),
         '/daily_sales_report': (context) => const DailySalesReportPage(),
         '/all_bills_page': (context) => const AllBillsPage(),
         '/admin_analytics': (context) => const AdminAnalyticsPage(),
         '/monthly_sales_breakdown': (context) => const MonthlySalesBreakdownPage(),
-        '/send_notification': (context) => const SendNotificationPage(), // <-- 2. ROUTE ADDED
-        '/admin_expense_report': (context) => const AdminExpenseReportPage(),
+        '/send_notification': (context) => const SendNotificationPage(),
+        '/admin_expense_report': (context) => const FundsReceivedPage(isAdmin: true),
+        '/credit_customers': (context) => const CreditCustomersPage(),
+        '/cash_reconciliation_cashier': (context) => const CashReconciliationPage(isAdmin: false),
+        '/cash_reconciliation_admin': (context) => const CashReconciliationPage(isAdmin: true),
       },
     );
   }
 }
-
