@@ -20,6 +20,14 @@ subprojects {
 }
 
 subprojects {
+    plugins.withType<com.android.build.gradle.LibraryPlugin> {
+        extensions.configure<com.android.build.gradle.LibraryExtension>("android") {
+            if (namespace.isNullOrBlank()) {
+                namespace = "id.kakzaki.blue_thermal_printer"
+            }
+        }
+    }
+
     tasks.withType<JavaCompile>().configureEach {
         options.compilerArgs.add("-Xlint:-options")
     }

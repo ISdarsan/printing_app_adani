@@ -9,6 +9,7 @@ import 'theme.dart';
 import 'logout_splash_page.dart';
 import 'notifications_page.dart';
 import 'sms_broadcast_helper.dart';
+import 'canteen_provider.dart';
 
 class BillingDashboardPage extends StatefulWidget {
   const BillingDashboardPage({super.key});
@@ -271,6 +272,15 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                       fontWeight: FontWeight.w800,
                       height: 1.1,
                       letterSpacing: -0.5)),
+              const SizedBox(height: 4),
+              Text(
+                'Canteen: ${CanteenProvider.selectedCanteenName}',
+                style: GoogleFonts.poppins(
+                  color: Colors.white70,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
               const SizedBox(height: 2),
               Text(
                 DateFormat('EEEE, d MMMM yyyy').format(DateTime.now()),
@@ -530,7 +540,15 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
               ),
             ),
             const SizedBox(width: 10),
-            Expanded(child: const SizedBox()), // empty placeholder
+            Expanded(
+              child: _tile(
+                icon: Icons.account_balance_wallet_outlined,
+                title: 'Monthly Report',
+                sub: 'View fund status',
+                color: AppColors.accentGreen,
+                route: '/funds_received',
+              ),
+            ),
           ]),
         ],
       ),
@@ -639,8 +657,11 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                   AppColors.accentGreen, () => _nav('/funds_received')),
               _dItem(Icons.money_off_rounded, 'Log Expense',
                   AppColors.accentOrange, () => _nav('/expenses')),
-              _dItem(Icons.account_balance_rounded, 'Cash Reconciliation',
-                  const Color(0xFFCE93D8), () => _nav('/cash_reconciliation_cashier')),
+              _dItem(
+                  Icons.account_balance_rounded,
+                  'Cash Reconciliation',
+                  const Color(0xFFCE93D8),
+                  () => _nav('/cash_reconciliation_cashier')),
               _dItem(Icons.receipt_long_outlined, 'All Bills History',
                   AppColors.accentBlue, () => _nav('/all_bills_page')),
               _dItem(Icons.notifications_outlined, 'Admin Notices',
@@ -702,7 +723,10 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
     final end = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
 
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('monthlyFunds').doc(monthId).snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('monthlyFunds')
+          .doc(monthId)
+          .snapshots(),
       builder: (context, fundSnap) {
         if (fundSnap.hasError) {
           debugPrint("Budget Alert Fund Error: ${fundSnap.error}");
@@ -718,7 +742,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
         if (allocated == 0) return const SizedBox.shrink();
 
         return StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance.collection('expenses')
+          stream: FirebaseFirestore.instance
+              .collection('expenses')
               .where('timestamp', isGreaterThanOrEqualTo: start)
               .where('timestamp', isLessThanOrEqualTo: end)
               .snapshots(),
@@ -740,7 +765,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
             double available = allocated - spent;
             double pctRemaining = available / allocated;
 
-            debugPrint("Budget Alert values: allocated=$allocated, spent=$spent, available=$available, pctRemaining=$pctRemaining");
+            debugPrint(
+                "Budget Alert values: allocated=$allocated, spent=$spent, available=$available, pctRemaining=$pctRemaining");
 
             if (pctRemaining >= 0.15) return const SizedBox.shrink();
 
@@ -752,25 +778,33 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF1F0F11),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.accentRed.withValues(alpha: 0.55)),
+                  border: Border.all(
+                      color: AppColors.accentRed.withValues(alpha: 0.55)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.warning_amber_rounded, color: AppColors.accentRed, size: 20),
+                    const Icon(Icons.warning_amber_rounded,
+                        color: AppColors.accentRed, size: 20),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            available < 0 ? 'Budget Overspent!' : 'Low Budget Alert ($pctStr% Left)',
-                            style: GoogleFonts.poppins(color: AppColors.accentRed, fontSize: 12, fontWeight: FontWeight.bold),
+                            available < 0
+                                ? 'Budget Overspent!'
+                                : 'Low Budget Alert ($pctStr% Left)',
+                            style: GoogleFonts.poppins(
+                                color: AppColors.accentRed,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold),
                           ),
                           Text(
-                            available < 0 
+                            available < 0
                                 ? 'You have exceeded the allocated budget by ₹${available.abs().toStringAsFixed(0)}.'
                                 : 'Available: ₹${available.toStringAsFixed(0)} left of ₹${allocated.toStringAsFixed(0)} allocated.',
-                            style: GoogleFonts.poppins(color: AppColors.textSecondary, fontSize: 10),
+                            style: GoogleFonts.poppins(
+                                color: AppColors.textSecondary, fontSize: 10),
                           ),
                         ],
                       ),

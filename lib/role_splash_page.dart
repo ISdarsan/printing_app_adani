@@ -2,8 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'theme.dart';
+import 'canteen_provider.dart';
 
 class RoleSplashPage extends StatefulWidget {
   final String role;
@@ -56,6 +58,19 @@ class _RoleSplashPageState extends State<RoleSplashPage>
 
       if (doc.exists) {
         actualRole = doc.data()?['role'] ?? 'unknown';
+        await CanteenProvider.initializeForStaff(widget.role);
+
+        final token = await FirebaseMessaging.instance.getToken();
+        if (token != null && token.isNotEmpty) {
+          await FirebaseFirestore.instance
+              .collection('canteenStaff')
+              .doc(widget.role)
+              .set({
+            'fcmToken': token,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        }
+
         if (mounted) {
           setState(() {
             if (actualRole == 'admin') {

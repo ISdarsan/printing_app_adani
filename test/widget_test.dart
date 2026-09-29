@@ -1,30 +1,90 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 
+import 'package:canteen_adani/admin_expense_report_page.dart';
 import 'package:canteen_adani/main.dart';
+import 'package:canteen_adani/print_bill_page.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('Bill item helpers', () {
+    test('normalizes null or invalid quantities to 1', () {
+      expect(normalizeBillQuantity(null), 1);
+      expect(normalizeBillQuantity(''), 1);
+      expect(normalizeBillQuantity('0'), 1);
+      expect(normalizeBillQuantity(-1), 1);
+      expect(normalizeBillQuantity(3), 3);
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    test('merges duplicate bill items with the same code and type', () {
+      final items = [
+        BillItem(
+            code: 'B1',
+            name: 'Chicken Biryani',
+            type: 'Full',
+            quantity: 1,
+            price: 120),
+        BillItem(
+            code: 'B1',
+            name: 'Chicken Biryani',
+            type: 'Full',
+            quantity: 2,
+            price: 120),
+        BillItem(
+            code: 'B1',
+            name: 'Chicken Biryani',
+            type: 'Half',
+            quantity: 1,
+            price: 70),
+      ];
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+      final merged = mergeBillItems(items);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+      expect(merged.length, 2);
+      expect(merged.first.quantity, 3);
+      expect(merged.where((item) => item.type == 'Half').single.quantity, 1);
+    });
+  });
+
+  group('Receipt formatting', () {
+    test('buildReceiptText includes bill summary and totals', () {
+      final items = [
+        BillItem(code: 'B1', name: 'Tea', type: 'Full', quantity: 2, price: 20),
+        BillItem(
+            code: 'C2', name: 'Sandwich', type: 'Full', quantity: 1, price: 80),
+      ];
+
+      final text = buildReceiptText(
+        billNumber: 125,
+        items: items,
+        totalAmount: 120,
+        paymentMode: 'Cash',
+        canteenName: 'Main Canteen',
+        customerName: null,
+        customerPhone: null,
+      );
+
+      expect(text, contains('MAIN CANTEEN'));
+      expect(text, contains('BILL #125'));
+      expect(text, contains('Tea'));
+      expect(text, contains('TOTAL'));
+      expect(text, contains('₹120.00'));
+      expect(text, contains('Cash'));
+    });
+  });
+
+  group('App routing', () {
+    testWidgets('admin expense route opens the expense report page',
+        (tester) async {
+      await tester.pumpWidget(const MyApp());
+      await tester.pumpAndSettle();
+
+      final materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
+      final routes = materialApp.routes ?? const <String, WidgetBuilder>{};
+      final builder = routes['/admin_expense_report'];
+
+      expect(builder, isNotNull);
+      final page = builder!(tester.element(find.byType(MaterialApp)));
+      expect(page, isA<AdminExpenseReportPage>());
+    });
   });
 }

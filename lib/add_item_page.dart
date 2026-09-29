@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'theme.dart';
+import 'canteen_provider.dart';
 
 class AddItemPage extends StatefulWidget {
   const AddItemPage({super.key});
@@ -106,6 +107,8 @@ class _AddItemPageState extends State<AddItemPage>
       await FirebaseFirestore.instance.collection('menuItems').doc(code).set({
         'code': code,
         'name': name,
+        'canteenId': CanteenProvider.selectedCanteenId,
+        'canteenName': CanteenProvider.selectedCanteenName,
         'fullPrice': fullPrice,
         if (halfPrice != null && halfPrice > 0) 'halfPrice': halfPrice,
       });
@@ -243,6 +246,8 @@ class _AddItemPageState extends State<AddItemPage>
                 StreamBuilder<QuerySnapshot>(
                   stream: FirebaseFirestore.instance
                       .collection('menuItems')
+                      .where('canteenId',
+                          isEqualTo: CanteenProvider.selectedCanteenId)
                       .orderBy('name')
                       .snapshots(),
                   builder: (context, snap) {

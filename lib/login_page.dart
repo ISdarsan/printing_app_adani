@@ -71,6 +71,38 @@ class _LoginPageState extends State<LoginPage>
     if (mounted) setState(() => _isLoading = false);
   }
 
+  Future<void> _handleForgotPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      setState(() =>
+          _errorMessage = 'Enter your email first to reset the password.');
+      return;
+    }
+
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (!mounted) return;
+      setState(() => _errorMessage = '');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Password reset email sent to $email',
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: AppColors.accentGreen,
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      setState(
+          () => _errorMessage = e.message ?? 'Unable to send reset email.');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() =>
+          _errorMessage = 'Unable to send reset email. Please try again.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -228,7 +260,7 @@ class _LoginPageState extends State<LoginPage>
 
                             // ── Forgot Password ───────────────────────
                             TextButton(
-                              onPressed: () {},
+                              onPressed: _handleForgotPassword,
                               child: Text(
                                 'Forgot Password?',
                                 style: GoogleFonts.poppins(

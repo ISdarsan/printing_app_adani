@@ -31,15 +31,25 @@ dependencies:
   path_provider: ^2.1.6
   share_plus: ^10.0.0
   url_launcher: ^6.3.0
+  blue_thermal_printer: ^1.2.3
+  esc_pos_utils_plus: ^2.0.4
 
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.2
 
 flutter:
   uses-material-design: true
   assets:
     - assets/LOGO.png
     - assets/neon_ring.json
+    - assets/appicon.png
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/appicon.png"
+  min_sdk_android: 21
