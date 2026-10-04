@@ -38,11 +38,13 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
     _noticeSub = FirebaseFirestore.instance
         .collection('notifications')
         .orderBy('timestamp', descending: true)
-        .limit(1)
         .snapshots()
         .listen((snap) {
-      if (!mounted || snap.docs.isEmpty) return;
-      final doc = snap.docs.first;
+      if (!mounted) return;
+      final matchingDocs = snap.docs.where(
+          (doc) => CanteenProvider.matchesNotificationCanteen(doc.data()));
+      if (matchingDocs.isEmpty) return;
+      final doc = matchingDocs.first;
       final data = doc.data();
       final readBy = List<String>.from(data['readBy'] ?? []);
       final uid = _user?.uid ?? '';
@@ -131,10 +133,10 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
   }
 
   Stream<Map<String, String>> get _statsStream {
-    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final todayId = CanteenProvider.dailyStatsDocumentId(DateTime.now());
     return FirebaseFirestore.instance
         .collection('dailyStats')
-        .doc(today)
+        .doc(todayId)
         .snapshots()
         .map((snap) {
       if (!snap.exists) return {'sales': '₹0', 'bills': '0'};
@@ -273,12 +275,30 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                       height: 1.1,
                       letterSpacing: -0.5)),
               const SizedBox(height: 4),
-              Text(
-                'Canteen: ${CanteenProvider.selectedCanteenName}',
-                style: GoogleFonts.poppins(
-                  color: Colors.white70,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.accentBlue.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppColors.accentBlue.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.storefront_rounded,
+                        color: AppColors.accentBlue, size: 14),
+                    const SizedBox(width: 6),
+                    Text(
+                      CanteenProvider.selectedCanteenName,
+                      style: GoogleFonts.poppins(
+                        color: AppColors.accentBlue,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 2),
@@ -286,7 +306,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                 DateFormat('EEEE, d MMMM yyyy').format(DateTime.now()),
                 style: GoogleFonts.poppins(color: Colors.white60, fontSize: 11),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               // Stat pills
               StreamBuilder<Map<String, String>>(
                 stream: _statsStream,
@@ -328,7 +348,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.13),
             borderRadius: BorderRadius.circular(14),

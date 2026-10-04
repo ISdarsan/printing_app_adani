@@ -8,7 +8,8 @@ class AdminCreditCustomersPage extends StatefulWidget {
   const AdminCreditCustomersPage({super.key});
 
   @override
-  State<AdminCreditCustomersPage> createState() => _AdminCreditCustomersPageState();
+  State<AdminCreditCustomersPage> createState() =>
+      _AdminCreditCustomersPageState();
 }
 
 class _AdminCreditCustomersPageState extends State<AdminCreditCustomersPage> {
@@ -118,8 +119,13 @@ class _CustomerTile extends StatelessWidget {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) =>
-                CreditDetailPage(customerPhone: customerId, customerName: name),
+            builder: (_) => CreditDetailPage(
+              customerId: customerId,
+              customerPhone: phone.toString(),
+              customerName: name.toString(),
+              canteenId: (data['canteenId'] ?? 'main').toString(),
+              canteenName: (data['canteenName'] ?? 'Main Canteen').toString(),
+            ),
           ),
         );
       },
@@ -135,12 +141,15 @@ class _CustomerTile extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: pending <= 0 
+                color: pending <= 0
                     ? AppColors.accentGreen.withValues(alpha: 0.15)
                     : AppColors.accentOrange.withValues(alpha: 0.15),
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.person, color: pending <= 0 ? AppColors.accentGreen : AppColors.accentOrange),
+              child: Icon(Icons.person,
+                  color: pending <= 0
+                      ? AppColors.accentGreen
+                      : AppColors.accentOrange),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -163,10 +172,15 @@ class _CustomerTile extends StatelessWidget {
               children: [
                 Text(pending <= 0 ? 'Settled' : 'Pending',
                     style: GoogleFonts.poppins(
-                        color: pending <= 0 ? AppColors.accentGreen : AppColors.textHint, fontSize: 11)),
+                        color: pending <= 0
+                            ? AppColors.accentGreen
+                            : AppColors.textHint,
+                        fontSize: 11)),
                 Text('₹${pending.toStringAsFixed(2)}',
                     style: GoogleFonts.poppins(
-                        color: pending <= 0 ? AppColors.accentGreen : AppColors.accentRed,
+                        color: pending <= 0
+                            ? AppColors.accentGreen
+                            : AppColors.accentRed,
                         fontSize: 16,
                         fontWeight: FontWeight.w800)),
               ],

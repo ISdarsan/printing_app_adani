@@ -4,6 +4,7 @@ import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
@@ -18,24 +19,29 @@ class BillItem {
   final String code, name, type;
   final int quantity;
   final double price;
+  final double costPrice;
   BillItem({
     required this.code,
     required this.name,
     required this.type,
     required this.quantity,
     required this.price,
+    this.costPrice = 0.0,
   });
   double get subtotal => price * quantity;
+  double get estimatedProfit => (price - costPrice) * quantity;
 }
 
 class MenuItem {
   final String code, name;
   final double fullPrice;
+  final double costPrice;
   final double? halfPrice;
   MenuItem({
     required this.code,
     required this.name,
     required this.fullPrice,
+    required this.costPrice,
     this.halfPrice,
   });
   factory MenuItem.fromFirestore(Map<String, dynamic> data) {
@@ -43,6 +49,7 @@ class MenuItem {
       code: data['code'] ?? '',
       name: data['name'] ?? '',
       fullPrice: (data['fullPrice'] ?? 0.0).toDouble(),
+      costPrice: (data['costPrice'] ?? 0.0).toDouble(),
       halfPrice:
           data['halfPrice'] != null ? (data['halfPrice']).toDouble() : null,
     );
@@ -67,6 +74,7 @@ List<BillItem> mergeBillItems(List<BillItem> items) {
         type: item.type,
         quantity: normalizeBillQuantity(item.quantity),
         price: item.price,
+        costPrice: item.costPrice,
       );
       continue;
     }
@@ -76,6 +84,7 @@ List<BillItem> mergeBillItems(List<BillItem> items) {
       type: existing.type,
       quantity: normalizeBillQuantity(existing.quantity + item.quantity),
       price: existing.price,
+      costPrice: existing.costPrice,
     );
   }
   return merged.values.toList();
@@ -175,9 +184,7 @@ Future<List<int>> buildEscPosReceipt({
 
   // ── Line Items ──
   for (final item in items) {
-    final displayName = item.type == 'Half'
-        ? '${item.name}(H)'
-        : item.name;
+    final displayName = item.type == 'Half' ? '${item.name}(H)' : item.name;
     bytes += generator.row([
       PosColumn(
         text: displayName,
@@ -237,7 +244,15 @@ Future<List<int>> buildEscPosReceipt({
 //  Printer Connection Status enum
 // ─────────────────────────────────────────────────────────────
 
-enum _PrinterStatus { notInitialized, scanning, noBluetooth, noDevice, disconnected, connecting, connected }
+enum _PrinterStatus {
+  notInitialized,
+  scanning,
+  noBluetooth,
+  noDevice,
+  disconnected,
+  connecting,
+  connected
+}
 
 // ─────────────────────────────────────────────────────────────
 //  Page Widget
@@ -274,8 +289,6 @@ class _PrintBillPageState extends State<PrintBillPage> {
   BluetoothDevice? _selectedPrinter;
   _PrinterStatus _printerStatus = _PrinterStatus.notInitialized;
   bool _isPrinting = false;
-
-
 
   @override
   void initState() {
@@ -332,8 +345,11 @@ class _PrintBillPageState extends State<PrintBillPage> {
       final isOn = await _printer.isOn ?? false;
 
       if (!available || !isOn) {
-        if (mounted) setState(() => _printerStatus = _PrinterStatus.noBluetooth);
-        _snack('Bluetooth is OFF. Please turn on Bluetooth in settings.', error: true);
+        if (mounted) {
+          setState(() => _printerStatus = _PrinterStatus.noBluetooth);
+        }
+        _snack('Bluetooth is OFF. Please turn on Bluetooth in settings.',
+            error: true);
         await _showPrinterSheet();
         return;
       }
@@ -346,7 +362,9 @@ class _PrintBillPageState extends State<PrintBillPage> {
         if (devices.isNotEmpty) {
           _selectedPrinter ??= _pickBestDevice(devices);
         }
-        _printerStatus = devices.isEmpty ? _PrinterStatus.noDevice : _PrinterStatus.disconnected;
+        _printerStatus = devices.isEmpty
+            ? _PrinterStatus.noDevice
+            : _PrinterStatus.disconnected;
       });
 
       await _showPrinterSheet();
@@ -380,19 +398,23 @@ class _PrintBillPageState extends State<PrintBillPage> {
     setState(() => _printerStatus = _PrinterStatus.connecting);
     try {
       // Disconnect if previously connected to avoid socket lock
-      try { await _printer.disconnect(); } catch (_) {}
+      try {
+        await _printer.disconnect();
+      } catch (_) {}
 
       final result = await _printer.connect(_selectedPrinter!);
       final connected = result == 'true' || result == true;
       if (!mounted) return;
-      
+
       setState(() => _printerStatus =
           connected ? _PrinterStatus.connected : _PrinterStatus.disconnected);
-          
+
       if (connected) {
         _snack('✓ Connected to ${_selectedPrinter!.name ?? "Printer"}');
       } else {
-        _snack('Could not connect to ${_selectedPrinter!.name ?? "Printer"}. Retrying...', error: true);
+        _snack(
+            'Could not connect to ${_selectedPrinter!.name ?? "Printer"}. Retrying...',
+            error: true);
       }
     } catch (e) {
       if (mounted) {
@@ -480,7 +502,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
       final isAvailable = await _printer.isAvailable ?? false;
       final isOn = await _printer.isOn ?? false;
       if (!isAvailable || !isOn) {
-        _snack('Bluetooth is OFF. Please turn on Bluetooth to print.', error: true);
+        _snack('Bluetooth is OFF. Please turn on Bluetooth to print.',
+            error: true);
         return;
       }
 
@@ -488,7 +511,9 @@ class _PrintBillPageState extends State<PrintBillPage> {
       if (_selectedPrinter == null || _bondedDevices.isEmpty) {
         final devices = await _printer.getBondedDevices();
         if (devices.isEmpty) {
-          _snack('No paired thermal printers found. Pair printer in Bluetooth settings.', error: true);
+          _snack(
+              'No paired thermal printers found. Pair printer in Bluetooth settings.',
+              error: true);
           return;
         }
         _bondedDevices = devices;
@@ -499,11 +524,14 @@ class _PrintBillPageState extends State<PrintBillPage> {
       final isConnected = await _printer.isConnected ?? false;
       if (!isConnected) {
         _snack('Connecting to ${_selectedPrinter!.name ?? "Printer"}...');
-        try { await _printer.disconnect(); } catch (_) {}
+        try {
+          await _printer.disconnect();
+        } catch (_) {}
         final result = await _printer.connect(_selectedPrinter!);
         final connected = result == 'true' || result == true;
         if (!connected) {
-          throw Exception('Could not connect to ${_selectedPrinter!.name ?? "Printer"}');
+          throw Exception(
+              'Could not connect to ${_selectedPrinter!.name ?? "Printer"}');
         }
         if (mounted) setState(() => _printerStatus = _PrinterStatus.connected);
       }
@@ -536,8 +564,10 @@ class _PrintBillPageState extends State<PrintBillPage> {
 
   Future<void> _loadMenu() async {
     try {
-      final snap =
-          await FirebaseFirestore.instance.collection('menuItems').get();
+      final snap = await FirebaseFirestore.instance
+          .collection('menuItems')
+          .where('canteenId', isEqualTo: CanteenProvider.selectedCanteenId)
+          .get();
       final items = snap.docs
           .map((d) => MenuItem.fromFirestore(d.data()))
           .where((m) => m.name.isNotEmpty)
@@ -602,6 +632,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
           type: existing.type,
           quantity: normalizeBillQuantity(existing.quantity + qty),
           price: existing.price,
+          costPrice: existing.costPrice,
         );
       } else {
         _billItems.add(BillItem(
@@ -610,6 +641,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
           type: type,
           quantity: qty,
           price: price,
+          costPrice: item.costPrice,
         ));
       }
       _recalcTotal();
@@ -685,7 +717,12 @@ class _PrintBillPageState extends State<PrintBillPage> {
             ? (counterSnap.data()!['lastNumber'] as int) + 1
             : 38;
         final selectedCanteenId = CanteenProvider.selectedCanteenId;
-        final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
+        final today = DateTime.now();
+        final todayId = CanteenProvider.dailyStatsDocumentId(
+          today,
+          canteenId: selectedCanteenId,
+        );
+        final dateId = DateFormat('yyyy-MM-dd').format(today);
         final billRef = db.collection('bills').doc();
 
         // Generate a bill ID like "BILL-20260915170112"
@@ -695,6 +732,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
 
         final statRef = db.collection('dailyStats').doc(todayId);
 
+        final user = FirebaseAuth.instance.currentUser;
         final billData = <String, dynamic>{
           'billId': generatedBillId,
           'billNumber': newBillNum,
@@ -702,6 +740,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
           'canteenName': CanteenProvider.selectedCanteenName,
           'totalAmount': _totalAmount,
           'paymentMode': _paymentMethod,
+          'createdBy': user?.uid ?? 'system',
+          'createdByEmail': user?.email ?? 'unknown',
           'timestamp': FieldValue.serverTimestamp(),
           'items': _billItems
               .map((i) => {
@@ -710,6 +750,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
                     'type': i.type,
                     'quantity': i.quantity,
                     'price': i.price,
+                    'costPrice': i.costPrice,
                     'subtotal': i.subtotal,
                   })
               .toList(),
@@ -721,8 +762,12 @@ class _PrintBillPageState extends State<PrintBillPage> {
           billData['creditStatus'] = 'Pending';
           billData['pendingAmount'] = _totalAmount;
 
+          final customerDocId = CanteenProvider.creditCustomerDocumentId(
+            customerPhone,
+            canteenId: selectedCanteenId,
+          );
           final customerRef =
-              db.collection('creditCustomers').doc(customerPhone);
+              db.collection('creditCustomers').doc(customerDocId);
           final customerSnap = await tx.get(customerRef);
           if (customerSnap.exists) {
             tx.update(customerRef, {
@@ -734,6 +779,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
             tx.set(customerRef, {
               'phone': customerPhone,
               'name': customerName,
+              'canteenId': selectedCanteenId,
+              'canteenName': CanteenProvider.selectedCanteenName,
               'totalPending': _totalAmount,
               'lastUpdated': FieldValue.serverTimestamp(),
             });
@@ -746,6 +793,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
           {
             'canteenId': selectedCanteenId,
             'canteenName': CanteenProvider.selectedCanteenName,
+            'date': dateId,
             'totalSales': FieldValue.increment(_totalAmount),
             'totalBills': FieldValue.increment(1),
             if (_paymentMethod == 'Cash')
@@ -761,7 +809,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
         tx.set(counterRef, {'lastNumber': newBillNum});
       });
 
-      _snack('✓ Bill saved! ₹${_totalAmount.toStringAsFixed(2)} · $_paymentMethod');
+      _snack(
+          '✓ Bill saved! ₹${_totalAmount.toStringAsFixed(2)} · $_paymentMethod');
       setState(() {
         _billItems.clear();
         _recalcTotal();
@@ -836,8 +885,10 @@ class _PrintBillPageState extends State<PrintBillPage> {
                       optionsBuilder: (TextEditingValue tv) {
                         if (tv.text.isEmpty) return const [];
                         return existingCustomers.where((c) {
-                          final phone = (c['phone'] ?? '').toString().toLowerCase();
-                          final name = (c['name'] ?? '').toString().toLowerCase();
+                          final phone =
+                              (c['phone'] ?? '').toString().toLowerCase();
+                          final name =
+                              (c['name'] ?? '').toString().toLowerCase();
                           final q = tv.text.toLowerCase();
                           return phone.contains(q) || name.contains(q);
                         });
@@ -890,7 +941,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
                               decoration: BoxDecoration(
                                 color: AppColors.bgCard,
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: AppColors.glassBorder),
+                                border:
+                                    Border.all(color: AppColors.glassBorder),
                               ),
                               child: ListView.separated(
                                 padding: EdgeInsets.zero,
@@ -926,8 +978,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: nameCtrl,
-                      style:
-                          GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+                      style: GoogleFonts.poppins(
+                          color: Colors.white, fontSize: 14),
                       decoration: InputDecoration(
                         hintText: 'Enter name…',
                         hintStyle: GoogleFonts.poppins(
@@ -969,13 +1021,15 @@ class _PrintBillPageState extends State<PrintBillPage> {
                               final double currentPending =
                                   (customer['totalPending'] ?? 0.0).toDouble();
                               const double maxCreditLimit = 2000.0;
-                              if (currentPending + _totalAmount > maxCreditLimit) {
+                              if (currentPending + _totalAmount >
+                                  maxCreditLimit) {
                                 showDialog(
                                   context: context,
                                   builder: (dCtx) => AlertDialog(
                                     backgroundColor: const Color(0xFF111827),
                                     shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(20)),
+                                        borderRadius:
+                                            BorderRadius.circular(20)),
                                     title: Text('Credit Limit Exceeded',
                                         style: GoogleFonts.poppins(
                                             color: AppColors.accentRed,
@@ -1102,7 +1156,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
               onTap: _startPrinterSetup,
               child: Container(
                 margin: const EdgeInsets.only(right: 12),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: _printerStatusColor.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(10),
@@ -1175,7 +1230,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
                   });
                   _searchFocus.unfocus();
                 },
-                onTogglePrice: (isFull) => setState(() => _isFullPrice = isFull),
+                onTogglePrice: (isFull) =>
+                    setState(() => _isFullPrice = isFull),
                 onIncrement: () => setState(() => _quantity++),
                 onDecrement: () {
                   if (_quantity > 1) setState(() => _quantity--);
@@ -1301,7 +1357,9 @@ class _PrinterStatusBar extends StatelessWidget {
       ),
       child: Row(children: [
         Icon(
-          isError ? Icons.bluetooth_disabled_rounded : Icons.print_disabled_rounded,
+          isError
+              ? Icons.bluetooth_disabled_rounded
+              : Icons.print_disabled_rounded,
           color: color,
           size: 18,
         ),
@@ -1402,8 +1460,8 @@ class _PrinterSheet extends StatelessWidget {
                 GestureDetector(
                   onTap: onRefresh,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 7),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                     decoration: BoxDecoration(
                       color: AppColors.accentBlue.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
@@ -1468,8 +1526,8 @@ class _PrinterSheet extends StatelessWidget {
                     ),
                   ),
                   child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 4),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                     leading: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
@@ -1666,9 +1724,8 @@ class _SearchField extends StatelessWidget {
               fontSize: 14,
               fontWeight: FontWeight.w500),
           decoration: InputDecoration(
-            hintText: menuLoading
-                ? 'Loading menu…'
-                : 'Search by item code or name…',
+            hintText:
+                menuLoading ? 'Loading menu…' : 'Search by item code or name…',
             hintStyle:
                 GoogleFonts.poppins(color: AppColors.textHint, fontSize: 14),
             filled: true,
@@ -1700,7 +1757,8 @@ class _SearchField extends StatelessWidget {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: AppColors.gradBlue, width: 1.5),
+              borderSide:
+                  const BorderSide(color: AppColors.gradBlue, width: 1.5),
             ),
           ),
         ),
@@ -1784,7 +1842,8 @@ class _QtyStepper extends StatelessWidget {
   final VoidCallback onInc;
   final VoidCallback onDec;
 
-  const _QtyStepper({required this.value, required this.onInc, required this.onDec});
+  const _QtyStepper(
+      {required this.value, required this.onInc, required this.onDec});
 
   @override
   Widget build(BuildContext context) {
@@ -1867,8 +1926,10 @@ class _PriceToggle extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _ToggleChip(label: 'Full', selected: isFull, onTap: () => onToggle(true)),
-          _ToggleChip(label: 'Half', selected: !isFull, onTap: () => onToggle(false)),
+          _ToggleChip(
+              label: 'Full', selected: isFull, onTap: () => onToggle(true)),
+          _ToggleChip(
+              label: 'Half', selected: !isFull, onTap: () => onToggle(false)),
         ],
       ),
     );
@@ -2012,8 +2073,8 @@ class _EmptyCart extends StatelessWidget {
               size: 56, color: AppColors.textHint.withValues(alpha: 0.4)),
           const SizedBox(height: 12),
           Text('No items added yet',
-              style: GoogleFonts.poppins(
-                  color: AppColors.textHint, fontSize: 14)),
+              style:
+                  GoogleFonts.poppins(color: AppColors.textHint, fontSize: 14)),
           const SizedBox(height: 4),
           Text('Search and add items above',
               style: GoogleFonts.poppins(
@@ -2242,7 +2303,8 @@ class _BottomPanel extends StatelessWidget {
                         Text(
                           'Save & Print Bill',
                           style: GoogleFonts.poppins(
-                              color: hasItems ? Colors.white : AppColors.textHint,
+                              color:
+                                  hasItems ? Colors.white : AppColors.textHint,
                               fontWeight: FontWeight.w800,
                               fontSize: 15),
                         ),
@@ -2292,7 +2354,8 @@ class _PayBtn extends StatelessWidget {
           ),
           child: Column(children: [
             Icon(icon,
-                color: selected ? AppColors.accentBlue : AppColors.textSecondary,
+                color:
+                    selected ? AppColors.accentBlue : AppColors.textSecondary,
                 size: 18),
             const SizedBox(height: 3),
             Text(label,
@@ -2305,4 +2368,34 @@ class _PayBtn extends StatelessWidget {
       ),
     );
   }
+}
+
+String buildReceiptText({
+  required int billNumber,
+  required List<BillItem> items,
+  required double totalAmount,
+  required String paymentMode,
+  required String canteenName,
+  String? customerName,
+  String? customerPhone,
+}) {
+  final sb = StringBuffer();
+  sb.writeln('=== ${canteenName.toUpperCase()} ===');
+  sb.writeln('BILL #$billNumber');
+  if (customerName != null && customerName.isNotEmpty) {
+    sb.writeln('Customer: $customerName');
+  }
+  if (customerPhone != null && customerPhone.isNotEmpty) {
+    sb.writeln('Phone: $customerPhone');
+  }
+  sb.writeln('--------------------------------');
+  for (var item in items) {
+    sb.writeln(
+        '${item.name} (${item.type}) x${item.quantity} = ₹${(item.price * item.quantity).toStringAsFixed(2)}');
+  }
+  sb.writeln('--------------------------------');
+  sb.writeln('TOTAL: ₹${totalAmount.toStringAsFixed(2)}');
+  sb.writeln('Payment Mode: $paymentMode');
+  sb.writeln('================================');
+  return sb.toString();
 }

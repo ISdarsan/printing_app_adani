@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'canteen_provider.dart';
 
 class ExpensesPage extends StatefulWidget {
   const ExpensesPage({super.key});
@@ -140,6 +141,8 @@ class _ExpensesPageState extends State<ExpensesPage> {
         'proofImageBase64': base64Image,
         'timestamp': Timestamp.fromDate(_selectedExpenseDate),
         'userId': user.uid,
+        'canteenId': CanteenProvider.selectedCanteenId,
+        'canteenName': CanteenProvider.selectedCanteenName,
       });
 
       if (mounted) {

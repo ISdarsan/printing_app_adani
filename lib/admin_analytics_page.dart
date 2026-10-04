@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'theme.dart';
+import 'canteen_provider.dart';
 
 class AdminAnalyticsPage extends StatefulWidget {
   const AdminAnalyticsPage({super.key});
@@ -21,7 +22,9 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
     super.initState();
     _tabController = TabController(length: 5, vsync: this);
     _tabController.addListener(() {
-      setState(() {});
+      if (mounted) {
+        setState(() {});
+      }
     });
   }
 
@@ -29,6 +32,255 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  String _formatCurrency(double value) =>
+      '₹${value.toStringAsFixed(0).replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',')}';
+
+  List<Map<String, dynamic>> _buildItemPerformance(
+      List<QueryDocumentSnapshot> billDocs) {
+    final itemData = <String, Map<String, dynamic>>{};
+
+    for (final doc in billDocs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final items = List<Map<String, dynamic>>.from(data['items'] ?? const []);
+      for (final item in items) {
+        final name = (item['name'] ?? 'Unknown').toString();
+        final qty = (item['quantity'] is int)
+            ? item['quantity'] as int
+            : int.tryParse(item['quantity']?.toString() ?? '') ?? 0;
+        final unitPrice =
+            ((item['price'] ?? item['fullPrice'] ?? 0.0) as num).toDouble();
+        final rawUnitCost = item['costPrice'];
+        final unitCost = rawUnitCost is num ? rawUnitCost.toDouble() : null;
+        final revenue = qty * unitPrice;
+        final current = itemData.putIfAbsent(
+          name,
+          () => {
+            'qty': 0,
+            'revenue': 0.0,
+            'cost': 0.0,
+            'profit': 0.0,
+            'knownCostQty': 0,
+            'unknownCostQty': 0,
+            'orders': 0,
+          },
+        );
+
+        current['qty'] = (current['qty'] as int) + qty;
+        current['revenue'] = (current['revenue'] as double) + revenue;
+        if (unitCost == null) {
+          current['unknownCostQty'] = (current['unknownCostQty'] as int) + qty;
+        } else {
+          final cost = qty * unitCost;
+          current['cost'] = (current['cost'] as double) + cost;
+          current['profit'] = (current['profit'] as double) + (revenue - cost);
+          current['knownCostQty'] = (current['knownCostQty'] as int) + qty;
+        }
+        current['orders'] = (current['orders'] as int) + 1;
+      }
+    }
+
+    final list = itemData.entries
+        .map((entry) => {
+              'name': entry.key,
+              'qty': entry.value['qty'] as int,
+              'revenue': entry.value['revenue'] as double,
+              'cost': entry.value['cost'] as double,
+              'profit': entry.value['profit'] as double,
+              'knownCostQty': entry.value['knownCostQty'] as int,
+              'unknownCostQty': entry.value['unknownCostQty'] as int,
+              'orders': entry.value['orders'] as int,
+            })
+        .toList();
+
+    list.sort((a, b) {
+      final diff = (b['profit'] as double).compareTo(a['profit'] as double);
+      if (diff != 0) return diff;
+      return (b['qty'] as int).compareTo(a['qty'] as int);
+    });
+    return list;
+  }
+
+  List<Map<String, dynamic>> _buildStaffPerformance(
+      List<QueryDocumentSnapshot> billDocs) {
+    final staffData = <String, Map<String, dynamic>>{};
+
+    for (final doc in billDocs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final staffKey =
+          (data['createdByEmail'] ?? data['createdBy'] ?? 'Unknown').toString();
+      final amount = ((data['totalAmount'] ?? 0.0) as num).toDouble();
+      final current = staffData.putIfAbsent(
+        staffKey,
+        () => {
+          'name': staffKey,
+          'sales': 0.0,
+          'bills': 0,
+        },
+      );
+      current['sales'] = (current['sales'] as double) + amount;
+      current['bills'] = (current['bills'] as int) + 1;
+    }
+
+    final list = staffData.entries
+        .map((entry) => {
+              'name': entry.key,
+              'sales': entry.value['sales'] as double,
+              'bills': entry.value['bills'] as int,
+            })
+        .toList();
+
+    list.sort((a, b) => (b['sales'] as double).compareTo(a['sales'] as double));
+    return list;
+  }
+
+  List<Map<String, dynamic>> _buildTimeSlotData(
+      List<QueryDocumentSnapshot> billDocs) {
+    final slotMap = <String, Map<String, dynamic>>{};
+
+    for (final doc in billDocs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final ts = data['timestamp'] as Timestamp?;
+      if (ts == null) continue;
+
+      final hour = ts.toDate().hour;
+      final bucket = '${hour.toString().padLeft(2, '0')}:00';
+      final amount = ((data['totalAmount'] ?? 0.0) as num).toDouble();
+      final mode = (data['paymentMode'] ?? 'Cash').toString();
+
+      final slot = slotMap.putIfAbsent(
+        bucket,
+        () => {
+          'cash': 0.0,
+          'upi': 0.0,
+          'credit': 0.0,
+          'total': 0.0,
+        },
+      );
+
+      slot['total'] = (slot['total'] as double) + amount;
+      if (mode == 'Cash') {
+        slot['cash'] = (slot['cash'] as double) + amount;
+      } else if (mode == 'UPI') {
+        slot['upi'] = (slot['upi'] as double) + amount;
+      } else if (mode == 'Credit') {
+        slot['credit'] = (slot['credit'] as double) + amount;
+      }
+    }
+
+    final list = slotMap.entries
+        .map((entry) => {
+              'slot': entry.key,
+              'cash': entry.value['cash'] as double,
+              'upi': entry.value['upi'] as double,
+              'credit': entry.value['credit'] as double,
+              'total': entry.value['total'] as double,
+            })
+        .toList();
+
+    list.sort((a, b) => (a['slot'] as String).compareTo(b['slot'] as String));
+    return list;
+  }
+
+  List<Map<String, dynamic>> _buildAnomalyList(
+      Map<String, Map<String, dynamic>> dailyTotalsByDate) {
+    final sortedDates = dailyTotalsByDate.keys.toList()..sort();
+    if (sortedDates.length < 2) return const [];
+
+    final anomalies = <Map<String, dynamic>>[];
+    final window = sortedDates.length >= 7 ? 7 : sortedDates.length;
+
+    for (int i = window; i < sortedDates.length; i++) {
+      final date = sortedDates[i];
+      final currentSales =
+          (dailyTotalsByDate[date]!['totalSales'] ?? 0.0) as double;
+      final priorSales = <double>[];
+      for (int j = i - window; j < i; j++) {
+        priorSales.add((dailyTotalsByDate[sortedDates[j]]!['totalSales'] ?? 0.0)
+            as double);
+      }
+      final avgPrior = priorSales.isEmpty
+          ? 0.0
+          : priorSales.reduce((a, b) => a + b) / priorSales.length;
+      if (avgPrior <= 0) continue;
+      final changePct = ((currentSales - avgPrior) / avgPrior) * 100;
+      if (changePct.abs() > 25) {
+        anomalies.add({
+          'date': date,
+          'currentSales': currentSales,
+          'averageSales': avgPrior,
+          'changePct': changePct,
+          'trend': changePct >= 0 ? 'spike' : 'drop',
+        });
+      }
+    }
+
+    anomalies.sort((a, b) =>
+        (b['changePct'] as double).compareTo(a['changePct'] as double));
+    return anomalies;
+  }
+
+  List<Map<String, dynamic>> _buildForecastList(
+      List<QueryDocumentSnapshot> billDocs) {
+    final now = DateTime.now();
+    final forecastStart = now.subtract(const Duration(days: 30));
+    final priorWeekStart = now.subtract(const Duration(days: 14));
+    final recentWeekStart = now.subtract(const Duration(days: 7));
+    final itemMetrics = <String, Map<String, int>>{};
+
+    for (final doc in billDocs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final timestamp = data['timestamp'] as Timestamp?;
+      if (timestamp == null) continue;
+      final billDate = timestamp.toDate();
+      if (billDate.isBefore(forecastStart)) continue;
+
+      final items = List<Map<String, dynamic>>.from(data['items'] ?? const []);
+      for (final item in items) {
+        final name = (item['name'] ?? 'Unknown').toString();
+        final quantity = item['quantity'] is int
+            ? item['quantity'] as int
+            : int.tryParse(item['quantity']?.toString() ?? '') ?? 0;
+        final metrics = itemMetrics.putIfAbsent(
+          name,
+          () => {'qty': 0, 'priorWeekQty': 0, 'recentWeekQty': 0},
+        );
+        metrics['qty'] = metrics['qty']! + quantity;
+        if (!billDate.isBefore(priorWeekStart) &&
+            billDate.isBefore(recentWeekStart)) {
+          metrics['priorWeekQty'] = metrics['priorWeekQty']! + quantity;
+        } else if (!billDate.isBefore(recentWeekStart)) {
+          metrics['recentWeekQty'] = metrics['recentWeekQty']! + quantity;
+        }
+      }
+    }
+
+    final items = itemMetrics.entries
+        .map((entry) => {'name': entry.key, ...entry.value})
+        .toList()
+      ..sort((a, b) => (b['qty'] as int).compareTo(a['qty'] as int));
+    final forecast = <Map<String, dynamic>>[];
+
+    for (int i = 0; i < items.length && i < 5; i++) {
+      final item = items[i];
+      final avgDailyQty = (item['qty'] as int) / 30.0;
+      final stockTarget = (avgDailyQty * 2.5).ceil();
+      final priorWeekQty = item['priorWeekQty'] as int;
+      final recentWeekQty = item['recentWeekQty'] as int;
+      final trend = recentWeekQty > priorWeekQty
+          ? 'Upward'
+          : recentWeekQty < priorWeekQty
+              ? 'Downward'
+              : 'Stable';
+      forecast.add({
+        'name': item['name'],
+        'avgDailyQty': avgDailyQty,
+        'recommendedStock': stockTarget,
+        'trend': trend,
+      });
+    }
+    return forecast;
   }
 
   @override
@@ -39,116 +291,169 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: buildGradientAppBar(
-        title: "Analytics Insights",
+        title: 'Analytics Insights',
         centerTitle: true,
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('dailyStats').snapshots(),
-        builder: (context, statsSnapshot) {
+        stream: FirebaseFirestore.instance.collection('bills').snapshots(),
+        builder: (context, billsSnapshot) {
           return StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('expenses').snapshots(),
-            builder: (context, expensesSnapshot) {
-              if (statsSnapshot.connectionState == ConnectionState.waiting ||
-                  expensesSnapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
-                    child: CircularProgressIndicator(color: AppColors.accentBlue));
-              }
+            stream:
+                FirebaseFirestore.instance.collection('dailyStats').snapshots(),
+            builder: (context, statsSnapshot) {
+              return StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('expenses')
+                    .snapshots(),
+                builder: (context, expensesSnapshot) {
+                  if (billsSnapshot.connectionState ==
+                          ConnectionState.waiting ||
+                      statsSnapshot.connectionState ==
+                          ConnectionState.waiting ||
+                      expensesSnapshot.connectionState ==
+                          ConnectionState.waiting) {
+                    return const Center(
+                        child: CircularProgressIndicator(
+                            color: AppColors.accentBlue));
+                  }
 
-              final dailyStatsDocs = statsSnapshot.data?.docs ?? [];
-              final expenseDocs = expensesSnapshot.data?.docs ?? [];
+                  final billDocs = (billsSnapshot.data?.docs ?? [])
+                      .where((doc) => CanteenProvider.matchesSelectedCanteen(
+                          doc.data() as Map<String, dynamic>))
+                      .toList();
+                  final dailyStatsDocs = (statsSnapshot.data?.docs ?? [])
+                      .where((doc) => CanteenProvider.matchesSelectedCanteen(
+                          doc.data() as Map<String, dynamic>))
+                      .toList();
+                  final expenseDocs = (expensesSnapshot.data?.docs ?? [])
+                      .where((doc) => CanteenProvider.matchesSelectedCanteen(
+                          doc.data() as Map<String, dynamic>))
+                      .toList();
 
-              // Sort dailyStats chronologically
-              dailyStatsDocs.sort((a, b) => a.id.compareTo(b.id));
+                  final dailyTotalsByDate = <String, Map<String, dynamic>>{};
+                  for (final doc in dailyStatsDocs) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final date = (data['date'] ??
+                            CanteenProvider.dateFromDailyStatsDocumentId(
+                                doc.id))
+                        .toString();
+                    if (DateTime.tryParse(date) == null) continue;
+                    dailyTotalsByDate.putIfAbsent(
+                        date,
+                        () => {
+                              'totalSales': 0.0,
+                              'totalCash': 0.0,
+                              'totalUpi': 0.0,
+                              'totalCredit': 0.0,
+                            });
+                    final totals = dailyTotalsByDate[date]!;
+                    for (final field in [
+                      'totalSales',
+                      'totalCash',
+                      'totalUpi',
+                      'totalCredit'
+                    ]) {
+                      totals[field] = (totals[field] as double) +
+                          ((data[field] ?? 0.0) as num).toDouble();
+                    }
+                  }
 
-              // weekly data (last 7 days)
-              final weeklyDocs = dailyStatsDocs
-                  .where((doc) => doc.id.compareTo(startDateStr) >= 0)
-                  .toList();
+                  final itemPerformance = _buildItemPerformance(billDocs);
+                  final staffPerformance = _buildStaffPerformance(billDocs);
+                  final timeSlotData = _buildTimeSlotData(billDocs);
+                  final anomalyList = _buildAnomalyList(dailyTotalsByDate);
+                  final forecastList = _buildForecastList(billDocs);
 
-              // Monthly aggregation
-              Map<String, double> monthlySalesMap = {};
-              Map<String, double> monthlyExpensesMap = {};
+                  final dailyDates = dailyTotalsByDate.keys.toList()..sort();
+                  final weeklyStats = dailyDates
+                      .where((date) => date.compareTo(startDateStr) >= 0)
+                      .map((date) => MapEntry(date, dailyTotalsByDate[date]!))
+                      .toList();
 
-              for (var doc in dailyStatsDocs) {
-                final data = doc.data() as Map<String, dynamic>;
-                final monthKey = doc.id.substring(0, 7); // yyyy-MM
-                monthlySalesMap[monthKey] = (monthlySalesMap[monthKey] ?? 0.0) +
-                    ((data['totalSales'] ?? 0.0) as num).toDouble();
-              }
+                  Map<String, double> monthlySalesMap = {};
+                  Map<String, double> monthlyExpensesMap = {};
+                  for (final date in dailyDates) {
+                    final data = dailyTotalsByDate[date]!;
+                    final monthKey = date.substring(0, 7);
+                    monthlySalesMap[monthKey] =
+                        (monthlySalesMap[monthKey] ?? 0.0) +
+                            ((data['totalSales'] ?? 0.0) as num).toDouble();
+                  }
 
-              for (var doc in expenseDocs) {
-                final data = doc.data() as Map<String, dynamic>;
-                final ts = data['timestamp'] as Timestamp?;
-                if (ts == null) continue;
-                final monthKey = DateFormat('yyyy-MM').format(ts.toDate());
-                monthlyExpensesMap[monthKey] = (monthlyExpensesMap[monthKey] ?? 0.0) +
-                    ((data['amount'] ?? 0.0) as num).toDouble();
-              }
+                  for (var doc in expenseDocs) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final ts = data['timestamp'] as Timestamp?;
+                    if (ts == null) continue;
+                    final monthKey = DateFormat('yyyy-MM').format(ts.toDate());
+                    monthlyExpensesMap[monthKey] =
+                        (monthlyExpensesMap[monthKey] ?? 0.0) +
+                            ((data['amount'] ?? 0.0) as num).toDouble();
+                  }
 
-              final sortedMonthKeys = {
-                ...monthlySalesMap.keys,
-                ...monthlyExpensesMap.keys
-              }.toList();
-              sortedMonthKeys.sort();
-              final last6MonthKeys = sortedMonthKeys.length > 6
-                  ? sortedMonthKeys.sublist(sortedMonthKeys.length - 6)
-                  : sortedMonthKeys;
+                  final sortedMonthKeys = {
+                    ...monthlySalesMap.keys,
+                    ...monthlyExpensesMap.keys
+                  }.toList()
+                    ..sort();
+                  final last6MonthKeys = sortedMonthKeys.length > 6
+                      ? sortedMonthKeys.sublist(sortedMonthKeys.length - 6)
+                      : sortedMonthKeys;
 
-              return SingleChildScrollView(
-                child: Column(
-                  children: [
-                    const SizedBox(height: 16),
-                    // Navigation Segmented Tabs
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: AppColors.bgCard,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: AppColors.glassBorder),
-                        ),
-                        child: TabBar(
-                          controller: _tabController,
-                          indicator: BoxDecoration(
-                            gradient: AppGradients.blueAccent,
-                            borderRadius: BorderRadius.circular(10),
+                  return SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 16),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: AppColors.bgCard,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: AppColors.glassBorder),
+                            ),
+                            child: TabBar(
+                              controller: _tabController,
+                              indicator: BoxDecoration(
+                                gradient: AppGradients.blueAccent,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              labelColor: Colors.white,
+                              unselectedLabelColor: AppColors.textSecondary,
+                              labelStyle: GoogleFonts.poppins(
+                                  fontSize: 11, fontWeight: FontWeight.bold),
+                              tabs: const [
+                                Tab(text: 'Weekly'),
+                                Tab(text: 'Monthly'),
+                                Tab(text: 'Payments'),
+                                Tab(text: 'Profit'),
+                                Tab(text: 'Ops'),
+                              ],
+                            ),
                           ),
-                          labelColor: Colors.white,
-                          unselectedLabelColor: AppColors.textSecondary,
-                          labelStyle: GoogleFonts.poppins(
-                              fontSize: 11, fontWeight: FontWeight.bold),
-                          tabs: const [
-                            Tab(text: 'Weekly'),
-                            Tab(text: 'Monthly'),
-                            Tab(text: 'Payments'),
-                            Tab(text: 'Sales/Exp'),
-                            Tab(text: 'Top Items'),
-                          ],
                         ),
-                      ),
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          height: 420,
+                          child: TabBarView(
+                            controller: _tabController,
+                            physics: const NeverScrollableScrollPhysics(),
+                            children: [
+                              _buildWeeklyPage(weeklyStats),
+                              _buildMonthlyPage(
+                                  last6MonthKeys, monthlySalesMap),
+                              _buildPaymentAndTimePage(timeSlotData),
+                              _buildProfitPage(itemPerformance),
+                              _buildOpsPage(
+                                  staffPerformance, anomalyList, forecastList),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                      ],
                     ),
-                    const SizedBox(height: 20),
-
-                    // Chart Container with Fixed Height to avoid looking stretched
-                    SizedBox(
-                      height: 380,
-                      child: TabBarView(
-                        controller: _tabController,
-                        physics: const NeverScrollableScrollPhysics(), // avoid horizontal scroll conflict
-                        children: [
-                          _buildWeeklyPage(weeklyDocs),
-                          _buildMonthlyPage(last6MonthKeys, monthlySalesMap),
-                          _buildPaymentBreakdownPage(weeklyDocs),
-                          _buildRevenueVsExpensesPage(
-                              last6MonthKeys, monthlySalesMap, monthlyExpensesMap),
-                          _buildTopItemsPage(),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-                ),
+                  );
+                },
               );
             },
           );
@@ -157,13 +462,432 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
     );
   }
 
-  Widget _buildWeeklyPage(List<DocumentSnapshot> weeklyDocs) {
+  Widget _buildPaymentAndTimePage(List<Map<String, dynamic>> slotData) {
+    if (slotData.isEmpty) {
+      return _buildNoDataPlaceholder('No timeslot data available');
+    }
+
+    final maxTotal = slotData.fold<double>(
+        0, (max, item) => item['total'] > max ? item['total'] : max);
+    final groups = slotData
+        .map((slot) => BarChartGroupData(
+              x: slotData.indexOf(slot),
+              barRods: [
+                BarChartRodData(
+                  toY: (slot['cash'] as double),
+                  color: AppColors.accentGreen,
+                  width: 6,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+                BarChartRodData(
+                  toY: (slot['upi'] as double),
+                  color: AppColors.accentBlue,
+                  width: 6,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+                BarChartRodData(
+                  toY: (slot['credit'] as double),
+                  color: AppColors.accentOrange,
+                  width: 6,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ],
+            ))
+        .toList();
+
+    return _buildChartContainer(
+      title: 'Payment Mix by Time Slot',
+      subtitle: 'Cash, UPI and credit activity by hour',
+      chart: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              _chartLegend('Cash', AppColors.accentGreen),
+              const SizedBox(width: 10),
+              _chartLegend('UPI', AppColors.accentBlue),
+              const SizedBox(width: 10),
+              _chartLegend('Credit', AppColors.accentOrange),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: BarChart(
+              BarChartData(
+                alignment: BarChartAlignment.spaceAround,
+                maxY: maxTotal == 0 ? 100 : maxTotal * 1.15,
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  getDrawingHorizontalLine: (value) => FlLine(
+                      color: AppColors.bgDivider.withValues(alpha: 0.5),
+                      strokeWidth: 1),
+                ),
+                titlesData: FlTitlesData(
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 42,
+                      interval:
+                          maxTotal <= 100 ? 20 : (maxTotal / 5).ceilToDouble(),
+                      getTitlesWidget: (value, meta) {
+                        return SideTitleWidget(
+                          meta: meta,
+                          child: Text(
+                            value >= 1000
+                                ? '${(value / 1000).toStringAsFixed(1)}k'
+                                : value.toStringAsFixed(0),
+                            style: GoogleFonts.poppins(
+                              color: AppColors.textHint,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 30,
+                      getTitlesWidget: (value, meta) {
+                        final index = value.toInt();
+                        if (index < 0 || index >= slotData.length) {
+                          return const SizedBox();
+                        }
+                        final slot = slotData[index]['slot'] as String;
+                        return SideTitleWidget(
+                          meta: meta,
+                          child: Text(
+                            slot,
+                            style: GoogleFonts.poppins(
+                              color: AppColors.textSecondary,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                ),
+                borderData: FlBorderData(show: false),
+                barGroups: groups,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfitPage(List<Map<String, dynamic>> itemPerformance) {
+    if (itemPerformance.isEmpty) {
+      return _buildNoDataPlaceholder('No item performance data');
+    }
+
+    final topItems = itemPerformance.take(6).toList();
+    final totalRevenue = itemPerformance.fold<double>(
+        0, (runningTotal, item) => runningTotal + (item['revenue'] as double));
+
+    return _buildChartContainer(
+      title: 'Item Profit & Contribution',
+      subtitle: 'Profit uses only bills with a recorded item cost',
+      chart: ListView.builder(
+        itemCount: topItems.length,
+        padding: EdgeInsets.zero,
+        itemBuilder: (context, index) {
+          final item = topItems[index];
+          final revenue = item['revenue'] as double;
+          final profit = item['profit'] as double;
+          final knownCostQty = item['knownCostQty'] as int;
+          final unknownCostQty = item['unknownCostQty'] as int;
+          final ratio = totalRevenue > 0 ? revenue / totalRevenue : 0.0;
+          final label = (index + 1).toString();
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.bgCard,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.bgDivider),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text('$label. ${item['name']}',
+                        style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    Text(_formatCurrency(revenue),
+                        style: GoogleFonts.poppins(
+                            color: AppColors.accentBlue,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Text('Qty: ${item['qty']}',
+                        style: GoogleFonts.poppins(
+                            color: AppColors.textSecondary, fontSize: 11)),
+                    const SizedBox(width: 18),
+                    Text(
+                        knownCostQty == 0
+                            ? 'Profit: Unknown'
+                            : 'Known-cost profit: ${_formatCurrency(profit)}',
+                        style: GoogleFonts.poppins(
+                            color: AppColors.accentGreen,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                if (unknownCostQty > 0) ...[
+                  const SizedBox(height: 4),
+                  Text('$unknownCostQty units have no recorded cost',
+                      style: GoogleFonts.poppins(
+                          color: AppColors.accentOrange, fontSize: 10)),
+                ],
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: LinearProgressIndicator(
+                    value: ratio.clamp(0.0, 1.0),
+                    minHeight: 8,
+                    backgroundColor: AppColors.bgDivider,
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                        AppColors.accentBlue),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildOpsPage(
+      List<Map<String, dynamic>> staffPerformance,
+      List<Map<String, dynamic>> anomalyList,
+      List<Map<String, dynamic>> forecastList) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildInsightCard(
+            title: 'Staff Sales Comparison',
+            child: Column(
+              children: staffPerformance.isEmpty
+                  ? [
+                      Text('No staff sales recorded yet.',
+                          style: GoogleFonts.poppins(
+                              color: AppColors.textSecondary, fontSize: 12)),
+                    ]
+                  : List.generate(
+                      staffPerformance.length > 5 ? 5 : staffPerformance.length,
+                      (index) {
+                      final staff = staffPerformance[index];
+                      final total = staff['sales'] as double;
+                      final max = staffPerformance.first['sales'] as double;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                    child: Text(staff['name'].toString(),
+                                        style: GoogleFonts.poppins(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600))),
+                                Text(_formatCurrency(total),
+                                    style: GoogleFonts.poppins(
+                                        color: AppColors.accentBlue,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: LinearProgressIndicator(
+                                value: max > 0
+                                    ? (total / max).clamp(0.0, 1.0)
+                                    : 0.0,
+                                minHeight: 7,
+                                backgroundColor: AppColors.bgDivider,
+                                valueColor: const AlwaysStoppedAnimation<Color>(
+                                    AppColors.accentGreen),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildInsightCard(
+            title: 'Daily Anomaly Detection',
+            child: anomalyList.isEmpty
+                ? Text('No unusual sales variation detected in recent days.',
+                    style: GoogleFonts.poppins(
+                        color: AppColors.textSecondary, fontSize: 12))
+                : Column(
+                    children: anomalyList.take(4).map((item) {
+                      final isSpike = item['trend'] == 'spike';
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: isSpike
+                              ? AppColors.accentGreen.withValues(alpha: 0.08)
+                              : AppColors.accentOrange.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isSpike
+                                  ? Icons.trending_up_rounded
+                                  : Icons.trending_down_rounded,
+                              color: isSpike
+                                  ? AppColors.accentGreen
+                                  : AppColors.accentOrange,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${item['date']} • ${isSpike ? 'sales spike' : 'sales dip'}',
+                                    style: GoogleFonts.poppins(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600),
+                                  ),
+                                  Text(
+                                    '${_formatCurrency(item['currentSales'] as double)} vs ${_formatCurrency(item['averageSales'] as double)} (${item['changePct'].toStringAsFixed(1)}%)',
+                                    style: GoogleFonts.poppins(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 10),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+          ),
+          const SizedBox(height: 14),
+          _buildInsightCard(
+            title: 'Forecasted Demand & Prep Suggestion',
+            child: forecastList.isEmpty
+                ? Text('No demand forecast available yet.',
+                    style: GoogleFonts.poppins(
+                        color: AppColors.textSecondary, fontSize: 12))
+                : Column(
+                    children: forecastList.map((item) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.bgCard,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.bgDivider),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(item['name'].toString(),
+                                      style: GoogleFonts.poppins(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600)),
+                                  Text(
+                                      'Avg/day: ${((item['avgDailyQty'] as double)).toStringAsFixed(1)} • Suggested prep: ${item['recommendedStock']}',
+                                      style: GoogleFonts.poppins(
+                                          color: AppColors.textSecondary,
+                                          fontSize: 10)),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.accentBlue
+                                    .withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(item['trend'].toString(),
+                                  style: GoogleFonts.poppins(
+                                      color: AppColors.accentBlue,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInsightCard({required String title, required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: glassCard(radius: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.poppins(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWeeklyPage(
+      List<MapEntry<String, Map<String, dynamic>>> weeklyDocs) {
     if (weeklyDocs.isEmpty) return _buildNoDataPlaceholder('No weekly data');
 
     List<FlSpot> spots = [];
     double maxVal = 100.0;
     for (int i = 0; i < weeklyDocs.length; i++) {
-      final data = weeklyDocs[i].data() as Map<String, dynamic>;
+      final data = weeklyDocs[i].value;
       final sales = ((data['totalSales'] ?? 0.0) as num).toDouble();
       spots.add(FlSpot(i.toDouble(), sales));
       if (sales > maxVal) maxVal = sales;
@@ -181,7 +905,8 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
             show: true,
             drawVerticalLine: false,
             getDrawingHorizontalLine: (val) => FlLine(
-                color: AppColors.bgDivider.withValues(alpha: 0.5), strokeWidth: 1),
+                color: AppColors.bgDivider.withValues(alpha: 0.5),
+                strokeWidth: 1),
           ),
           titlesData: FlTitlesData(
             bottomTitles: AxisTitles(
@@ -191,8 +916,10 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                 reservedSize: 30,
                 getTitlesWidget: (val, meta) {
                   final idx = val.toInt();
-                  if (idx < 0 || idx >= weeklyDocs.length) return const SizedBox();
-                  final date = DateTime.parse(weeklyDocs[idx].id);
+                  if (idx < 0 || idx >= weeklyDocs.length) {
+                    return const SizedBox();
+                  }
+                  final date = DateTime.parse(weeklyDocs[idx].key);
                   return SideTitleWidget(
                       meta: meta,
                       space: 8,
@@ -224,8 +951,10 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                 },
               ),
             ),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
           borderData: FlBorderData(show: false),
           minX: 0,
@@ -258,7 +987,8 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
     );
   }
 
-  Widget _buildMonthlyPage(List<String> monthKeys, Map<String, double> salesMap) {
+  Widget _buildMonthlyPage(
+      List<String> monthKeys, Map<String, double> salesMap) {
     if (monthKeys.isEmpty) return _buildNoDataPlaceholder('No monthly data');
 
     List<BarChartGroupData> barGroups = [];
@@ -295,7 +1025,8 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
             show: true,
             drawVerticalLine: false,
             getDrawingHorizontalLine: (val) => FlLine(
-                color: AppColors.bgDivider.withValues(alpha: 0.5), strokeWidth: 1),
+                color: AppColors.bgDivider.withValues(alpha: 0.5),
+                strokeWidth: 1),
           ),
           titlesData: FlTitlesData(
             bottomTitles: AxisTitles(
@@ -303,7 +1034,9 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                 showTitles: true,
                 getTitlesWidget: (val, meta) {
                   final idx = val.toInt();
-                  if (idx < 0 || idx >= monthKeys.length) return const SizedBox();
+                  if (idx < 0 || idx >= monthKeys.length) {
+                    return const SizedBox();
+                  }
                   final date = DateFormat('yyyy-MM').parse(monthKeys[idx]);
                   return SideTitleWidget(
                       meta: meta,
@@ -335,8 +1068,10 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                 },
               ),
             ),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
           borderData: FlBorderData(show: false),
           barGroups: barGroups,
@@ -346,208 +1081,10 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
     );
   }
 
-  Widget _buildPaymentBreakdownPage(List<DocumentSnapshot> weeklyDocs) {
-    if (weeklyDocs.isEmpty) return _buildNoDataPlaceholder('No transactions');
-
-    double cashTotal = 0;
-    double upiTotal = 0;
-    double creditTotal = 0;
-
-    for (var doc in weeklyDocs) {
-      final data = doc.data() as Map<String, dynamic>;
-      cashTotal += ((data['totalCash'] ?? 0.0) as num).toDouble();
-      upiTotal += ((data['totalUpi'] ?? 0.0) as num).toDouble();
-      creditTotal += ((data['totalCredit'] ?? 0.0) as num).toDouble();
-    }
-
-    final total = cashTotal + upiTotal + creditTotal;
-    if (total == 0) return _buildNoDataPlaceholder('No sales logged');
-
-    return _buildChartContainer(
-      title: 'Payment Breakdown',
-      subtitle: 'Breakdown of payment modes (Last 7 Days)',
-      chart: Row(
-        children: [
-          Expanded(
-            flex: 2,
-            child: PieChart(
-              PieChartData(
-                sectionsSpace: 3,
-                centerSpaceRadius: 35,
-                sections: [
-                  PieChartSectionData(
-                    color: AppColors.accentGreen,
-                    value: cashTotal,
-                    title: '${((cashTotal / total) * 100).toStringAsFixed(0)}%',
-                    radius: 20,
-                    titleStyle: GoogleFonts.poppins(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white),
-                  ),
-                  PieChartSectionData(
-                    color: AppColors.accentBlue,
-                    value: upiTotal,
-                    title: '${((upiTotal / total) * 100).toStringAsFixed(0)}%',
-                    radius: 20,
-                    titleStyle: GoogleFonts.poppins(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white),
-                  ),
-                  PieChartSectionData(
-                    color: AppColors.accentOrange,
-                    value: creditTotal,
-                    title: '${((creditTotal / total) * 100).toStringAsFixed(0)}%',
-                    radius: 20,
-                    titleStyle: GoogleFonts.poppins(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildLegendItem('💵 Cash', cashTotal, AppColors.accentGreen),
-                const SizedBox(height: 12),
-                _buildLegendItem('📱 UPI', upiTotal, AppColors.accentBlue),
-                const SizedBox(height: 12),
-                _buildLegendItem('💳 Credit', creditTotal, AppColors.accentOrange),
-              ],
-            ),
-          )
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRevenueVsExpensesPage(List<String> monthKeys,
-      Map<String, double> salesMap, Map<String, double> expensesMap) {
-    if (monthKeys.isEmpty) return _buildNoDataPlaceholder('No data');
-
-    List<BarChartGroupData> barGroups = [];
-    double maxVal = 100.0;
-
-    for (int i = 0; i < monthKeys.length; i++) {
-      final key = monthKeys[i];
-      final sales = salesMap[key] ?? 0.0;
-      final expenses = expensesMap[key] ?? 0.0;
-
-      if (sales > maxVal) maxVal = sales;
-      if (expenses > maxVal) maxVal = expenses;
-
-      barGroups.add(
-        BarChartGroupData(
-          x: i,
-          barRods: [
-            BarChartRodData(
-              toY: sales,
-              color: AppColors.accentBlue,
-              width: 10,
-              borderRadius: BorderRadius.circular(2),
-            ),
-            BarChartRodData(
-              toY: expenses,
-              color: AppColors.accentRed,
-              width: 10,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ],
-        ),
-      );
-    }
-    maxVal *= 1.15;
-    double yInterval = (maxVal / 5).ceilToDouble();
-    if (yInterval < 10) yInterval = 10;
-
-    return _buildChartContainer(
-      title: 'Sales vs Expenses',
-      subtitle: 'Comparison of monthly revenues & expenditures',
-      chart: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              _chartLegend('Sales', AppColors.accentBlue),
-              const SizedBox(width: 12),
-              _chartLegend('Expenses', AppColors.accentRed),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: BarChart(
-              BarChartData(
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: false,
-                  getDrawingHorizontalLine: (val) => FlLine(
-                      color: AppColors.bgDivider.withValues(alpha: 0.5),
-                      strokeWidth: 1),
-                ),
-                titlesData: FlTitlesData(
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      getTitlesWidget: (val, meta) {
-                        final idx = val.toInt();
-                        if (idx < 0 || idx >= monthKeys.length) {
-                          return const SizedBox();
-                        }
-                        final date = DateFormat('yyyy-MM').parse(monthKeys[idx]);
-                        return SideTitleWidget(
-                            meta: meta,
-                            child: Text(DateFormat('MMM yy').format(date),
-                                style: GoogleFonts.poppins(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w500)));
-                      },
-                    ),
-                  ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 45,
-                      interval: yInterval,
-                      getTitlesWidget: (val, meta) {
-                        return SideTitleWidget(
-                            meta: meta,
-                            space: 6,
-                            child: Text(
-                                val >= 1000
-                                    ? '${(val / 1000).toStringAsFixed(1)}k'
-                                    : val.toStringAsFixed(0),
-                                style: GoogleFonts.poppins(
-                                    color: AppColors.textHint,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w500)));
-                      },
-                    ),
-                  ),
-                  topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false)),
-                ),
-                borderData: FlBorderData(show: false),
-                barGroups: barGroups,
-                maxY: maxVal,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildChartContainer(
-      {required String title, required String subtitle, required Widget chart}) {
+      {required String title,
+      required String subtitle,
+      required Widget chart}) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(16),
@@ -557,7 +1094,9 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
         children: [
           Text(title,
               style: GoogleFonts.poppins(
-                  color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold)),
           Text(subtitle,
               style: GoogleFonts.poppins(
                   color: AppColors.textSecondary, fontSize: 11)),
@@ -581,29 +1120,6 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
     );
   }
 
-  Widget _buildLegendItem(String label, double amount, Color color) {
-    return Row(
-      children: [
-        Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-        const SizedBox(width: 6),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label,
-                style:
-                    GoogleFonts.poppins(color: AppColors.textSecondary, fontSize: 11)),
-            Text('₹${amount.toStringAsFixed(0)}',
-                style: GoogleFonts.poppins(
-                    color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-          ],
-        )
-      ],
-    );
-  }
-
   Widget _chartLegend(String label, Color color) {
     return Row(
       children: [
@@ -613,92 +1129,9 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
             decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
         const SizedBox(width: 4),
         Text(label,
-            style:
-                GoogleFonts.poppins(color: AppColors.textSecondary, fontSize: 11)),
+            style: GoogleFonts.poppins(
+                color: AppColors.textSecondary, fontSize: 11)),
       ],
-    );
-  }
-
-  Widget _buildTopItemsPage() {
-    final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
-
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('bills')
-          .where('timestamp', isGreaterThanOrEqualTo: thirtyDaysAgo)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.accentBlue));
-        }
-
-        final docs = snapshot.data?.docs ?? [];
-        Map<String, int> itemCounts = {};
-        int totalQuantity = 0;
-
-        for (var doc in docs) {
-          final data = doc.data() as Map<String, dynamic>;
-          final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
-          for (var item in items) {
-            final name = item['name'] ?? 'Unknown';
-            final qty = (item['quantity'] ?? 0) as int;
-            itemCounts[name] = (itemCounts[name] ?? 0) + qty;
-            totalQuantity += qty;
-          }
-        }
-
-        final sortedItems = itemCounts.entries.toList()
-          ..sort((a, b) => b.value.compareTo(a.value));
-
-        final top5 = sortedItems.length > 5 ? sortedItems.sublist(0, 5) : sortedItems;
-
-        if (top5.isEmpty) {
-          return _buildNoDataPlaceholder('No sales in the last 30 days');
-        }
-
-        return _buildChartContainer(
-          title: 'Top Selling Menu Items',
-          subtitle: 'Best selling portions in the last 30 days',
-          chart: ListView.builder(
-            padding: EdgeInsets.zero,
-            itemCount: top5.length,
-            itemBuilder: (context, i) {
-              final item = top5[i];
-              final name = item.key;
-              final qty = item.value;
-              final pct = totalQuantity > 0 ? (qty / totalQuantity) : 0.0;
-
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('${i + 1}. $name',
-                            style: GoogleFonts.poppins(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                        Text('$qty portions',
-                            style: GoogleFonts.poppins(color: AppColors.accentBlue, fontSize: 12, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: LinearProgressIndicator(
-                        value: pct,
-                        minHeight: 8,
-                        backgroundColor: AppColors.bgDivider,
-                        valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accentGreen),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        );
-      },
     );
   }
 }

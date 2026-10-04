@@ -4,8 +4,90 @@ import 'package:flutter/material.dart';
 import 'package:canteen_adani/admin_expense_report_page.dart';
 import 'package:canteen_adani/main.dart';
 import 'package:canteen_adani/print_bill_page.dart';
+import 'package:canteen_adani/canteen_provider.dart';
 
 void main() {
+  group('Canteen-scoped document IDs', () {
+    test('creates separate daily stats and closing IDs per canteen', () {
+      final date = DateTime(2026, 10, 4);
+
+      expect(
+        CanteenProvider.dailyStatsDocumentId(date, canteenId: 'main'),
+        'main_2026-10-04',
+      );
+      expect(
+        CanteenProvider.dailyStatsDocumentId(date, canteenId: 'branch_2'),
+        'branch_2_2026-10-04',
+      );
+      expect(
+        CanteenProvider.cashReconciliationDocumentId(date, canteenId: 'main'),
+        'main_2026-10-04',
+      );
+    });
+
+    test('creates separate credit accounts for the same phone per canteen', () {
+      expect(
+        CanteenProvider.creditCustomerDocumentId(' 5551234 ',
+            canteenId: 'main'),
+        'main_5551234',
+      );
+      expect(
+        CanteenProvider.creditCustomerDocumentId('5551234',
+            canteenId: 'branch_2'),
+        'branch_2_5551234',
+      );
+    });
+
+    test('extracts date suffixes while supporting legacy date-only IDs', () {
+      expect(
+        CanteenProvider.dateFromDailyStatsDocumentId('branch_2_2026-10-04'),
+        '2026-10-04',
+      );
+      expect(
+        CanteenProvider.dateFromDailyStatsDocumentId('2026-10-04'),
+        '2026-10-04',
+      );
+    });
+
+    test('treats untagged records as Main only', () {
+      CanteenProvider.setSelectedCanteen(id: 'branch_2', name: 'Branch 2');
+      expect(CanteenProvider.matchesSelectedCanteen({}), isFalse);
+      expect(
+        CanteenProvider.matchesSelectedCanteen({'canteenId': 'branch_2'}),
+        isTrue,
+      );
+
+      CanteenProvider.setSelectedCanteen(id: 'main', name: 'Main Canteen');
+      expect(CanteenProvider.matchesSelectedCanteen({}), isTrue);
+      expect(
+        CanteenProvider.matchesSelectedCanteen({'canteenId': 'branch_2'}),
+        isFalse,
+      );
+    });
+
+    test('keeps legacy notifications in Main and scopes new notifications', () {
+      CanteenProvider.setSelectedCanteen(id: 'branch_2', name: 'Branch 2');
+      expect(
+        CanteenProvider.matchesNotificationCanteen({'title': 'Old notice'}),
+        isFalse,
+      );
+      expect(
+        CanteenProvider.matchesNotificationCanteen({'canteenId': 'branch_2'}),
+        isTrue,
+      );
+      expect(
+        CanteenProvider.matchesNotificationCanteen({'canteenId': 'main'}),
+        isFalse,
+      );
+
+      CanteenProvider.setSelectedCanteen(id: 'main', name: 'Main Canteen');
+      expect(
+        CanteenProvider.matchesNotificationCanteen({'title': 'Old notice'}),
+        isTrue,
+      );
+    });
+  });
+
   group('Bill item helpers', () {
     test('normalizes null or invalid quantities to 1', () {
       expect(normalizeBillQuantity(null), 1);

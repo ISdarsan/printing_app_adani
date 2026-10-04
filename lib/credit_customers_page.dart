@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'theme.dart';
 import 'credit_detail_page.dart';
+import 'canteen_provider.dart';
 
 class CreditCustomersPage extends StatefulWidget {
   const CreditCustomersPage({super.key});
@@ -47,6 +48,8 @@ class _CreditCustomersPageState extends State<CreditCustomersPage> {
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('creditCustomers')
+                  .where('canteenId',
+                      isEqualTo: CanteenProvider.selectedCanteenId)
                   .where('totalPending', isGreaterThan: 0)
                   .orderBy('totalPending', descending: true)
                   .snapshots(),
@@ -90,7 +93,11 @@ class _CreditCustomersPageState extends State<CreditCustomersPage> {
                   itemBuilder: (context, index) {
                     final data = docs[index].data() as Map<String, dynamic>;
                     return _CustomerTile(
-                        data: data, customerId: docs[index].id);
+                        data: data,
+                        customerId: docs[index].id,
+                        canteenId: (data['canteenId'] ??
+                                CanteenProvider.selectedCanteenId)
+                            .toString());
                   },
                 );
               },
@@ -105,22 +112,32 @@ class _CreditCustomersPageState extends State<CreditCustomersPage> {
 class _CustomerTile extends StatelessWidget {
   final Map<String, dynamic> data;
   final String customerId;
+  final String canteenId;
 
-  const _CustomerTile({required this.data, required this.customerId});
+  const _CustomerTile({
+    required this.data,
+    required this.customerId,
+    required this.canteenId,
+  });
 
   @override
   Widget build(BuildContext context) {
     final pending = (data['totalPending'] ?? 0.0) as num;
     final name = data['name'] ?? 'Unknown';
-    final phone = data['phone'] ?? 'Unknown';
+    final phone = (data['phone'] ?? '').toString();
 
     return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) =>
-                CreditDetailPage(customerPhone: customerId, customerName: name),
+            builder: (_) => CreditDetailPage(
+              customerId: customerId,
+              customerPhone: phone,
+              customerName: name,
+              canteenId: canteenId,
+              canteenName: (data['canteenName'] ?? 'Main Canteen').toString(),
+            ),
           ),
         );
       },

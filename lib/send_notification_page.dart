@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'theme.dart';
+import 'canteen_provider.dart';
 
 class SendNotificationPage extends StatefulWidget {
   const SendNotificationPage({super.key});
@@ -38,19 +39,26 @@ class _SendNotificationPageState extends State<SendNotificationPage> {
         'message': message,
         'timestamp': Timestamp.now(),
         'sentBy': user?.email ?? 'Admin',
+        'canteenId': CanteenProvider.selectedCanteenId,
+        'canteenName': CanteenProvider.selectedCanteenName,
       });
 
       _titleController.clear();
       _messageController.clear();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('✓ Notification sent', style: GoogleFonts.poppins()), backgroundColor: const Color(0xFF1B4332)),
+          SnackBar(
+              content:
+                  Text('✓ Notification sent', style: GoogleFonts.poppins()),
+              backgroundColor: const Color(0xFF1B4332)),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e', style: GoogleFonts.poppins()), backgroundColor: AppColors.accentRed),
+          SnackBar(
+              content: Text('Failed: $e', style: GoogleFonts.poppins()),
+              backgroundColor: AppColors.accentRed),
         );
       }
     } finally {
@@ -77,7 +85,8 @@ class _SendNotificationPageState extends State<SendNotificationPage> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.campaign_outlined, color: AppColors.accentBlue, size: 22),
+                        const Icon(Icons.campaign_outlined,
+                            color: AppColors.accentBlue, size: 22),
                         const SizedBox(width: 8),
                         sectionTitle('New Message Details'),
                       ],
@@ -85,17 +94,23 @@ class _SendNotificationPageState extends State<SendNotificationPage> {
                     const SizedBox(height: 20),
                     TextFormField(
                       controller: _titleController,
-                      style: GoogleFonts.poppins(color: AppColors.textPrimary, fontSize: 14),
-                      decoration: darkInput(label: 'Title', prefixIcon: Icons.title),
-                      validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                      style: GoogleFonts.poppins(
+                          color: AppColors.textPrimary, fontSize: 14),
+                      decoration:
+                          darkInput(label: 'Title', prefixIcon: Icons.title),
+                      validator: (v) =>
+                          v == null || v.isEmpty ? 'Required' : null,
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _messageController,
                       maxLines: 5,
-                      style: GoogleFonts.poppins(color: AppColors.textPrimary, fontSize: 14),
-                      decoration: darkInput(label: 'Message', prefixIcon: Icons.message_outlined),
-                      validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                      style: GoogleFonts.poppins(
+                          color: AppColors.textPrimary, fontSize: 14),
+                      decoration: darkInput(
+                          label: 'Message', prefixIcon: Icons.message_outlined),
+                      validator: (v) =>
+                          v == null || v.isEmpty ? 'Required' : null,
                     ),
                   ],
                 ),

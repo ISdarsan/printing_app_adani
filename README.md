@@ -34,7 +34,7 @@ A premium, feature-rich Flutter billing and management application developed for
 - **Share & Print**: Share Excel worksheets instantly via system share options (`share_plus`).
 
 ### 6. Notifications & SMS Broadcasts
-- **Push Notifications**: Broadcast urgent administrative announcements to all active terminals using Firebase Cloud Messaging.
+- **In-App Notices**: Canteen-scoped administrative notices are stored in Firestore and shown in the app while staff are signed in.
 - **SMS Specials**: Utility templates for broadcasting special menus or updates.
 
 ---
@@ -45,7 +45,6 @@ A premium, feature-rich Flutter billing and management application developed for
 - **Database & Backend**: Firebase Suite
   - **Firebase Auth**: Role-based access control (Admin vs. Cashier).
   - **Cloud Firestore**: Real-time document storage for sales, expenses, and ledgers.
-  - **Firebase Messaging**: Cloud-to-device push notifications.
 - **Libraries**:
   - `fl_chart`: For responsive visual data analytics.
   - `excel`: Programmatic worksheet creation.
@@ -86,7 +85,7 @@ lib/
 ├── monthly_sales_breakdown_page.dart   # Monthly revenue overview
 │
 ├── notifications_page.dart             # Received announcements and alerts
-├── send_notification_page.dart         # Admin-only push notification broadcaster
+├── send_notification_page.dart         # Admin-only in-app notice broadcaster
 │
 ├── login_page.dart                     # User sign-in interface
 ├── role_splash_page.dart               # Role verification and authorization gate

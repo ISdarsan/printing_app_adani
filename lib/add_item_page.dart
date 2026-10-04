@@ -18,6 +18,7 @@ class _AddItemPageState extends State<AddItemPage>
   final _nameController = TextEditingController();
   final _fullPriceController = TextEditingController();
   final _halfPriceController = TextEditingController();
+  final _costPriceController = TextEditingController();
   final _searchController = TextEditingController();
 
   bool _isLoading = false;
@@ -43,6 +44,7 @@ class _AddItemPageState extends State<AddItemPage>
     _nameController.dispose();
     _fullPriceController.dispose();
     _halfPriceController.dispose();
+    _costPriceController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -56,6 +58,8 @@ class _AddItemPageState extends State<AddItemPage>
       _fullPriceController.text = (data['fullPrice'] ?? '').toString();
       _halfPriceController.text =
           data['halfPrice'] != null ? data['halfPrice'].toString() : '';
+      _costPriceController.text =
+          data['costPrice'] != null ? data['costPrice'].toString() : '';
     });
     _tabController.animateTo(1);
   }
@@ -70,6 +74,7 @@ class _AddItemPageState extends State<AddItemPage>
     _nameController.clear();
     _fullPriceController.clear();
     _halfPriceController.clear();
+    _costPriceController.clear();
   }
 
   String? _validateCode(String? v) {
@@ -103,13 +108,18 @@ class _AddItemPageState extends State<AddItemPage>
       final name = _nameController.text.trim();
       final fullPrice = double.tryParse(_fullPriceController.text) ?? 0.0;
       final halfPrice = double.tryParse(_halfPriceController.text);
+      final costPrice = double.tryParse(_costPriceController.text) ?? 0.0;
 
-      await FirebaseFirestore.instance.collection('menuItems').doc(code).set({
+      final canteenId = CanteenProvider.selectedCanteenId;
+      final docId = '${canteenId}_$code';
+
+      await FirebaseFirestore.instance.collection('menuItems').doc(docId).set({
         'code': code,
         'name': name,
-        'canteenId': CanteenProvider.selectedCanteenId,
+        'canteenId': canteenId,
         'canteenName': CanteenProvider.selectedCanteenName,
         'fullPrice': fullPrice,
+        'costPrice': costPrice,
         if (halfPrice != null && halfPrice > 0) 'halfPrice': halfPrice,
       });
 
@@ -139,7 +149,7 @@ class _AddItemPageState extends State<AddItemPage>
     }
   }
 
-  Future<void> _deleteItem(String code, String name) async {
+  Future<void> _deleteItem(String docId, String name) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -175,7 +185,7 @@ class _AddItemPageState extends State<AddItemPage>
       try {
         await FirebaseFirestore.instance
             .collection('menuItems')
-            .doc(code)
+            .doc(docId)
             .delete();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -287,9 +297,11 @@ class _AddItemPageState extends State<AddItemPage>
                     }
 
                     // Cache items for validation
-                    _allItems = snap.data!.docs
-                        .map((d) => d.data() as Map<String, dynamic>)
-                        .toList();
+                    _allItems = snap.data!.docs.map((d) {
+                      final m = d.data() as Map<String, dynamic>;
+                      m['docId'] = d.id;
+                      return m;
+                    }).toList();
 
                     // Filter by search query
                     final filtered = _allItems.where((item) {
@@ -407,6 +419,8 @@ class _AddItemPageState extends State<AddItemPage>
                                     final name = data['name'] ?? '';
                                     final fullPrice =
                                         (data['fullPrice'] ?? 0.0).toDouble();
+                                    final costPrice =
+                                        (data['costPrice'] ?? 0.0).toDouble();
                                     final halfPrice = data['halfPrice'] != null
                                         ? (data['halfPrice']).toDouble()
                                         : null;
@@ -466,6 +480,10 @@ class _AddItemPageState extends State<AddItemPage>
                                                   const SizedBox(height: 4),
                                                   Row(children: [
                                                     _priceBadge(
+                                                        'Cost ₹${costPrice.toStringAsFixed(0)}',
+                                                        AppColors.accentBlue),
+                                                    const SizedBox(width: 6),
+                                                    _priceBadge(
                                                         'Full ₹${fullPrice.toStringAsFixed(0)}',
                                                         AppColors.accentGreen),
                                                     if (halfPrice != null &&
@@ -493,7 +511,7 @@ class _AddItemPageState extends State<AddItemPage>
                                                         .delete_outline_rounded,
                                                     AppColors.accentRed,
                                                     () => _deleteItem(
-                                                        code, name)),
+                                                        data['docId'], name)),
                                               ],
                                             ),
                                           ],
@@ -572,6 +590,21 @@ class _AddItemPageState extends State<AddItemPage>
                         Row(children: [
                           Expanded(
                               child: _field(
+                            controller: _costPriceController,
+                            label: 'Cost Price (₹)',
+                            icon: Icons.attach_money_rounded,
+                            hint: '0',
+                            keyboardType: TextInputType.number,
+                            validator: (v) {
+                              if (v == null || v.isEmpty) return 'Required';
+                              final value = double.tryParse(v);
+                              if (value == null || value < 0) return 'Invalid';
+                              return null;
+                            },
+                          )),
+                          const SizedBox(width: 12),
+                          Expanded(
+                              child: _field(
                             controller: _fullPriceController,
                             label: 'Full Price (₹) *',
                             icon: Icons.currency_rupee,
@@ -583,16 +616,15 @@ class _AddItemPageState extends State<AddItemPage>
                               return null;
                             },
                           )),
-                          const SizedBox(width: 12),
-                          Expanded(
-                              child: _field(
-                            controller: _halfPriceController,
-                            label: 'Half Price (₹)',
-                            icon: Icons.currency_rupee,
-                            hint: 'Optional',
-                            keyboardType: TextInputType.number,
-                          )),
                         ]),
+                        const SizedBox(height: 14),
+                        _field(
+                          controller: _halfPriceController,
+                          label: 'Half Price (₹)',
+                          icon: Icons.currency_rupee,
+                          hint: 'Optional',
+                          keyboardType: TextInputType.number,
+                        ),
                         const SizedBox(height: 28),
                         buildGradientButton(
                           label: _isEditing ? 'Update Item' : 'Save Item',

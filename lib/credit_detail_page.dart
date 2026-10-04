@@ -4,15 +4,22 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'canteen_provider.dart';
 
 class CreditDetailPage extends StatefulWidget {
+  final String customerId;
   final String customerPhone;
   final String customerName;
+  final String canteenId;
+  final String canteenName;
 
   const CreditDetailPage({
     super.key,
+    required this.customerId,
     required this.customerPhone,
     required this.customerName,
+    required this.canteenId,
+    required this.canteenName,
   });
 
   @override
@@ -32,16 +39,18 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
     super.initState();
     _customerStream = FirebaseFirestore.instance
         .collection('creditCustomers')
-        .doc(widget.customerPhone)
+        .doc(widget.customerId)
         .snapshots();
     _billsStream = FirebaseFirestore.instance
         .collection('bills')
         .where('customerPhone', isEqualTo: widget.customerPhone)
+        .where('canteenId', isEqualTo: widget.canteenId)
         .where('creditStatus', isEqualTo: 'Pending')
         .snapshots();
     _repaymentsStream = FirebaseFirestore.instance
         .collection('repayments')
         .where('customerPhone', isEqualTo: widget.customerPhone)
+        .where('canteenId', isEqualTo: widget.canteenId)
         .snapshots();
   }
 
@@ -58,7 +67,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
             final data = customerSnap.data!.data() as Map<String, dynamic>;
             currentTotalPending = (data['totalPending'] ?? 0.0).toDouble();
           }
-          
+
           // Update instance variable so dialog can use it
           _totalPending = currentTotalPending;
 
@@ -90,6 +99,9 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                     Text(widget.customerPhone,
                         style: GoogleFonts.poppins(
                             color: Colors.white70, fontSize: 14)),
+                    Text(widget.canteenName,
+                        style: GoogleFonts.poppins(
+                            color: Colors.white54, fontSize: 12)),
                     const SizedBox(height: 16),
                     Text('Total Pending',
                         style: GoogleFonts.poppins(
@@ -107,7 +119,8 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
 
               // Tab Selector (Pending Bills / Repayments)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
@@ -123,14 +136,18 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             decoration: BoxDecoration(
-                              gradient: _activeTab == 0 ? AppGradients.blueAccent : null,
+                              gradient: _activeTab == 0
+                                  ? AppGradients.blueAccent
+                                  : null,
                               borderRadius: BorderRadius.circular(10),
                             ),
                             alignment: Alignment.center,
                             child: Text(
                               'Pending Bills',
                               style: GoogleFonts.poppins(
-                                color: _activeTab == 0 ? Colors.white : AppColors.textSecondary,
+                                color: _activeTab == 0
+                                    ? Colors.white
+                                    : AppColors.textSecondary,
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -144,14 +161,18 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             decoration: BoxDecoration(
-                              gradient: _activeTab == 1 ? AppGradients.orangeAccent : null,
+                              gradient: _activeTab == 1
+                                  ? AppGradients.orangeAccent
+                                  : null,
                               borderRadius: BorderRadius.circular(10),
                             ),
                             alignment: Alignment.center,
                             child: Text(
                               'Repayments',
                               style: GoogleFonts.poppins(
-                                color: _activeTab == 1 ? Colors.white : AppColors.textSecondary,
+                                color: _activeTab == 1
+                                    ? Colors.white
+                                    : AppColors.textSecondary,
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -406,20 +427,24 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
     try {
       await db.runTransaction((tx) async {
         // 1. Fetch pending bills
-        final billsSnap = await db.collection('bills')
+        final billsSnap = await db
+            .collection('bills')
             .where('customerPhone', isEqualTo: widget.customerPhone)
+            .where('canteenId', isEqualTo: widget.canteenId)
             .where('creditStatus', isEqualTo: 'Pending')
-            .get(); 
+            .get();
 
         List<DocumentSnapshot> billDocs = [];
         for (var doc in billsSnap.docs) {
           billDocs.add(await tx.get(doc.reference));
         }
-        
+
         // Sort bills locally to apply payments to oldest bills first
         billDocs.sort((a, b) {
-          final tsA = (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
-          final tsB = (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+          final tsA =
+              (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+          final tsB =
+              (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
           if (tsA == null && tsB == null) return 0;
           if (tsA == null) return -1;
           if (tsB == null) return 1;
@@ -427,11 +452,17 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
         });
 
         final customerRef =
-            db.collection('creditCustomers').doc(widget.customerPhone);
+            db.collection('creditCustomers').doc(widget.customerId);
         final customerSnap = await tx.get(customerRef);
 
-        final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
-        final statRef = db.collection('dailyStats').doc(todayId);
+        final today = DateTime.now();
+        final todayId = DateFormat('yyyy-MM-dd').format(today);
+        final statRef = db.collection('dailyStats').doc(
+              CanteenProvider.dailyStatsDocumentId(
+                today,
+                canteenId: widget.canteenId,
+              ),
+            );
 
         // 2. Distribute payment
         double remainingAmount = amount;
@@ -471,6 +502,8 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
         tx.set(repaymentRef, {
           'customerPhone': widget.customerPhone,
           'customerName': widget.customerName,
+          'canteenId': widget.canteenId,
+          'canteenName': widget.canteenName,
           'amount': amount,
           'paymentMode': paymentMode,
           'timestamp': FieldValue.serverTimestamp(),
@@ -481,6 +514,9 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
         tx.set(
           statRef,
           {
+            'canteenId': widget.canteenId,
+            'canteenName': widget.canteenName,
+            'date': todayId,
             if (paymentMode == 'Cash')
               'totalCash': FieldValue.increment(amount),
             if (paymentMode == 'UPI') 'totalUpi': FieldValue.increment(amount),
@@ -514,16 +550,21 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
       stream: _billsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.accentBlue));
+          return const Center(
+              child: CircularProgressIndicator(color: AppColors.accentBlue));
         }
         if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.white)));
+          return Center(
+              child: Text('Error: ${snapshot.error}',
+                  style: const TextStyle(color: Colors.white)));
         }
 
         var docs = snapshot.data?.docs ?? [];
         docs.sort((a, b) {
-          final tsA = (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
-          final tsB = (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+          final tsA =
+              (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+          final tsB =
+              (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
           if (tsA == null && tsB == null) return 0;
           if (tsA == null) return -1;
           if (tsB == null) return 1;
@@ -532,7 +573,9 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
 
         if (docs.isEmpty) {
           return Center(
-            child: Text('No pending bills found', style: GoogleFonts.poppins(color: AppColors.textHint, fontSize: 15)),
+            child: Text('No pending bills found',
+                style: GoogleFonts.poppins(
+                    color: AppColors.textHint, fontSize: 15)),
           );
         }
 
@@ -543,9 +586,13 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
             final ts = data['timestamp'] as Timestamp?;
-            final dateStr = ts != null ? DateFormat('dd MMM yyyy, hh:mm a').format(ts.toDate()) : 'Unknown Date';
+            final dateStr = ts != null
+                ? DateFormat('dd MMM yyyy, hh:mm a').format(ts.toDate())
+                : 'Unknown Date';
             final billNum = data['billNumber']?.toString() ?? '-';
-            final pendingAmt = (data['pendingAmount'] ?? data['totalAmount'] ?? 0.0).toDouble();
+            final pendingAmt =
+                (data['pendingAmount'] ?? data['totalAmount'] ?? 0.0)
+                    .toDouble();
             final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
 
             return Container(
@@ -557,12 +604,22 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Bill #$billNum', style: GoogleFonts.poppins(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-                      Text('₹${pendingAmt.toStringAsFixed(2)}', style: GoogleFonts.poppins(color: AppColors.accentRed, fontSize: 15, fontWeight: FontWeight.bold)),
+                      Text('Bill #$billNum',
+                          style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold)),
+                      Text('₹${pendingAmt.toStringAsFixed(2)}',
+                          style: GoogleFonts.poppins(
+                              color: AppColors.accentRed,
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold)),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(dateStr, style: GoogleFonts.poppins(color: AppColors.textHint, fontSize: 11)),
+                  Text(dateStr,
+                      style: GoogleFonts.poppins(
+                          color: AppColors.textHint, fontSize: 11)),
                   const Divider(color: AppColors.bgDivider, height: 20),
                   ...items.map((item) {
                     return Padding(
@@ -570,8 +627,17 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Expanded(child: Text('${item['quantity']}x ${item['name']}', style: GoogleFonts.poppins(color: AppColors.textSecondary, fontSize: 12))),
-                          Text('₹${(item['subtotal'] ?? 0.0).toStringAsFixed(0)}', style: GoogleFonts.poppins(color: AppColors.textSecondary, fontSize: 12)),
+                          Expanded(
+                              child: Text(
+                                  '${item['quantity']}x ${item['name']}',
+                                  style: GoogleFonts.poppins(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 12))),
+                          Text(
+                              '₹${(item['subtotal'] ?? 0.0).toStringAsFixed(0)}',
+                              style: GoogleFonts.poppins(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12)),
                         ],
                       ),
                     );
@@ -590,16 +656,21 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
       stream: _repaymentsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.accentBlue));
+          return const Center(
+              child: CircularProgressIndicator(color: AppColors.accentBlue));
         }
         if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.white)));
+          return Center(
+              child: Text('Error: ${snapshot.error}',
+                  style: const TextStyle(color: Colors.white)));
         }
 
         var docs = snapshot.data?.docs ?? [];
         docs.sort((a, b) {
-          final tsA = (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
-          final tsB = (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+          final tsA =
+              (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+          final tsB =
+              (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
           if (tsA == null && tsB == null) return 0;
           if (tsA == null) return 1; // puts nulls at end
           if (tsB == null) return -1;
@@ -608,7 +679,9 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
 
         if (docs.isEmpty) {
           return Center(
-            child: Text('No repayment history found', style: GoogleFonts.poppins(color: AppColors.textHint, fontSize: 15)),
+            child: Text('No repayment history found',
+                style: GoogleFonts.poppins(
+                    color: AppColors.textHint, fontSize: 15)),
           );
         }
 
@@ -619,7 +692,9 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
             final ts = data['timestamp'] as Timestamp?;
-            final dateStr = ts != null ? DateFormat('dd MMM yyyy, hh:mm a').format(ts.toDate()) : 'Unknown Date';
+            final dateStr = ts != null
+                ? DateFormat('dd MMM yyyy, hh:mm a').format(ts.toDate())
+                : 'Unknown Date';
             final amount = (data['amount'] ?? 0.0).toDouble();
             final mode = data['paymentMode'] ?? 'Cash';
             final user = data['processedBy'] ?? 'Staff';
@@ -636,7 +711,9 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      mode == 'Cash' ? Icons.money_rounded : Icons.phone_android_rounded,
+                      mode == 'Cash'
+                          ? Icons.money_rounded
+                          : Icons.phone_android_rounded,
                       color: AppColors.accentGreen,
                       size: 20,
                     ),
@@ -646,16 +723,27 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Cleared via $mode', style: GoogleFonts.poppins(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                        Text('Cleared via $mode',
+                            style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold)),
                         const SizedBox(height: 2),
-                        Text(dateStr, style: GoogleFonts.poppins(color: AppColors.textHint, fontSize: 11)),
-                        Text('By: $user', style: GoogleFonts.poppins(color: AppColors.textHint, fontSize: 10)),
+                        Text(dateStr,
+                            style: GoogleFonts.poppins(
+                                color: AppColors.textHint, fontSize: 11)),
+                        Text('By: $user',
+                            style: GoogleFonts.poppins(
+                                color: AppColors.textHint, fontSize: 10)),
                       ],
                     ),
                   ),
                   Text(
                     '+₹${amount.toStringAsFixed(0)}',
-                    style: GoogleFonts.poppins(color: AppColors.accentGreen, fontSize: 15, fontWeight: FontWeight.bold),
+                    style: GoogleFonts.poppins(
+                        color: AppColors.accentGreen,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold),
                   ),
                 ],
               ),

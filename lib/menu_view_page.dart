@@ -90,6 +90,7 @@ class _MenuViewPageState extends State<MenuViewPage> {
                   return {
                     'code': data['code'] ?? '',
                     'name': data['name'] ?? '',
+                    'costPrice': (data['costPrice'] ?? 0.0).toDouble(),
                     'fullPrice': (data['fullPrice'] ?? 0.0).toDouble(),
                     'halfPrice': data['halfPrice'] != null
                         ? (data['halfPrice']).toDouble()
@@ -155,6 +156,10 @@ class _MenuViewPageState extends State<MenuViewPage> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
+                            buildBadge(
+                                'Cost  ₹${(item['costPrice'] as double).toStringAsFixed(0)}',
+                                AppColors.accentBlue),
+                            const SizedBox(height: 4),
                             buildBadge(
                                 'Full  ₹${(item['fullPrice'] as double).toStringAsFixed(0)}',
                                 AppColors.accentGreen),

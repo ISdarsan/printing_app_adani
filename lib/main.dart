@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
 import 'theme.dart';
 
@@ -29,34 +27,6 @@ import 'send_notification_page.dart';
 import 'credit_customers_page.dart';
 import 'cash_reconciliation_page.dart';
 
-@pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Background notifications are handled by the app lifecycle; this is kept as a safe no-op.
-  debugPrint(
-      'Background FCM message received: ${message.messageId ?? 'unknown'}');
-}
-
-Future<void> _persistFcmToken() async {
-  final user = FirebaseAuth.instance.currentUser;
-  if (user == null) return;
-
-  try {
-    final messaging = FirebaseMessaging.instance;
-    final token = await messaging.getToken();
-    if (token == null || token.isEmpty) return;
-
-    await FirebaseFirestore.instance
-        .collection('canteenStaff')
-        .doc(user.uid)
-        .set({
-      'fcmToken': token,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-  } catch (e) {
-    debugPrint('FCM token persistence error: $e');
-  }
-}
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -78,26 +48,20 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Initialize Firebase Cloud Messaging
+  // Seed default canteen if not present
   try {
-    final messaging = FirebaseMessaging.instance;
-    await messaging.requestPermission(
-      alert: true,
-      announcement: false,
-      badge: true,
-      carPlay: false,
-      criticalAlert: false,
-      provisional: false,
-      sound: true,
-    );
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
-    // Retrieve token for debugging / console notification sends
-    final token = await messaging.getToken();
-    debugPrint("FCM Registration Token: $token");
-    await _persistFcmToken();
+    final doc = await FirebaseFirestore.instance
+        .collection('canteens')
+        .doc('main')
+        .get();
+    if (!doc.exists) {
+      await FirebaseFirestore.instance.collection('canteens').doc('main').set({
+        'name': 'Main Canteen',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
   } catch (e) {
-    debugPrint("FCM initialization error: $e");
+    debugPrint('Canteen seed error: $e');
   }
 
   runApp(const MyApp());

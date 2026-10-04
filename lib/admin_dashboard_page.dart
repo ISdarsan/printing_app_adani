@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -13,6 +14,7 @@ import 'logout_splash_page.dart';
 import 'admin_master_credit_ledger_page.dart';
 import 'bill_detail_page.dart';
 import 'sms_broadcast_helper.dart';
+import 'canteen_provider.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -23,13 +25,53 @@ class AdminDashboardPage extends StatefulWidget {
 
 class _AdminDashboardPageState extends State<AdminDashboardPage> {
   final User? _currentUser = FirebaseAuth.instance.currentUser;
+  String _selectedCanteenFilter = 'all'; // 'all' or canteenId e.g. 'canteen_1'
 
-  Stream<DocumentSnapshot> _getDailyStatsStream() {
-    final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
+  Stream<Map<String, dynamic>> _getDailyStatsStream() {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day);
+    final end = start.add(const Duration(days: 1));
+
     return FirebaseFirestore.instance
-        .collection('dailyStats')
-        .doc(todayId)
-        .snapshots();
+        .collection('bills')
+        .where('timestamp', isGreaterThanOrEqualTo: start)
+        .where('timestamp', isLessThan: end)
+        .snapshots()
+        .map((s) {
+      double sales = 0.0;
+      double credit = 0.0;
+      double cash = 0.0;
+      double upi = 0.0;
+      int count = 0;
+      for (var d in s.docs) {
+        final data = d.data();
+        final cId = (data['canteenId'] ?? 'main').toString();
+        if (_selectedCanteenFilter != 'all' &&
+            cId != _selectedCanteenFilter &&
+            !(_selectedCanteenFilter == 'main' && cId.isEmpty)) {
+          continue;
+        }
+
+        final amount = ((data['totalAmount'] ?? 0.0) as num).toDouble();
+        sales += amount;
+        count++;
+        switch (data['paymentMode']) {
+          case 'Cash':
+            cash += amount;
+          case 'UPI':
+            upi += amount;
+          case 'Credit':
+            credit += amount;
+        }
+      }
+      return {
+        'totalSales': sales,
+        'totalCredit': credit,
+        'totalCash': cash,
+        'totalUpi': upi,
+        'billCount': count,
+      };
+    });
   }
 
   Stream<double> _getMonthlySalesStream() {
@@ -41,18 +83,34 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         .where('timestamp', isGreaterThanOrEqualTo: start)
         .where('timestamp', isLessThanOrEqualTo: end)
         .snapshots()
-        .map((s) => s.docs.fold(0.0,
-            (acc, d) => acc + (d.data()['totalAmount'] as num).toDouble()));
+        .map((s) => s.docs.fold(0.0, (acc, d) {
+              final data = d.data();
+              if (_selectedCanteenFilter != 'all') {
+                final cId = (data['canteenId'] ?? 'main').toString();
+                if (cId != _selectedCanteenFilter &&
+                    !(_selectedCanteenFilter == 'main' && cId.isEmpty)) {
+                  return acc;
+                }
+              }
+              return acc + ((data['totalAmount'] ?? 0.0) as num).toDouble();
+            }));
   }
 
   Stream<double> _getTotalPendingCreditStream() {
     return FirebaseFirestore.instance
         .collection('creditCustomers')
         .snapshots()
-        .map((s) => s.docs.fold(
-            0.0,
-            (acc, d) => acc +
-                ((d.data()['totalPending'] ?? 0.0) as num).toDouble()));
+        .map((s) => s.docs.fold(0.0, (acc, d) {
+              final data = d.data();
+              if (_selectedCanteenFilter != 'all') {
+                final cId = (data['canteenId'] ?? 'main').toString();
+                if (cId != _selectedCanteenFilter &&
+                    !(_selectedCanteenFilter == 'main' && cId.isEmpty)) {
+                  return acc;
+                }
+              }
+              return acc + ((data['totalPending'] ?? 0.0) as num).toDouble();
+            }));
   }
 
   Stream<double> _getMonthlyExpensesStream() {
@@ -64,19 +122,40 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         .where('timestamp', isGreaterThanOrEqualTo: start)
         .where('timestamp', isLessThanOrEqualTo: end)
         .snapshots()
-        .map((s) => s.docs.fold(0.0,
-            (acc, d) => acc + ((d.data()['amount'] ?? 0.0) as num).toDouble()));
+        .map((s) => s.docs.fold(0.0, (acc, d) {
+              final data = d.data();
+              if (_selectedCanteenFilter != 'all') {
+                final cId = (data['canteenId'] ?? 'main').toString();
+                if (cId != _selectedCanteenFilter &&
+                    !(_selectedCanteenFilter == 'main' && cId.isEmpty)) {
+                  return acc;
+                }
+              }
+              return acc + ((data['amount'] ?? 0.0) as num).toDouble();
+            }));
   }
 
-  Stream<QuerySnapshot> _getRecentBillsStream() {
+  Stream<List<DocumentSnapshot>> _getRecentBillsStream() {
     return FirebaseFirestore.instance
         .collection('bills')
         .orderBy('timestamp', descending: true)
-        .limit(4)
-        .snapshots();
+        .snapshots()
+        .map((s) {
+      if (_selectedCanteenFilter == 'all') {
+        return s.docs.take(4).toList();
+      }
+      return s.docs
+          .where((d) {
+            final cId = (d.data()['canteenId'] ?? 'main').toString();
+            return cId == _selectedCanteenFilter ||
+                (_selectedCanteenFilter == 'main' && cId.isEmpty);
+          })
+          .take(4)
+          .toList();
+    });
   }
 
-  Stream<List<DocumentSnapshot>> _getWeeklyStatsStream() {
+  Stream<List<MapEntry<String, Map<String, dynamic>>>> _getWeeklyStatsStream() {
     final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
     final startDateStr = DateFormat('yyyy-MM-dd').format(sevenDaysAgo);
     return FirebaseFirestore.instance
@@ -84,10 +163,28 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         .where(FieldPath.documentId, isGreaterThanOrEqualTo: startDateStr)
         .snapshots()
         .map((s) {
-          final docs = s.docs;
-          docs.sort((a, b) => a.id.compareTo(b.id));
-          return docs;
-        });
+      final totalsByDate = <String, Map<String, dynamic>>{};
+      for (final doc in s.docs) {
+        final data = doc.data();
+        final date = (data['date'] ??
+                CanteenProvider.dateFromDailyStatsDocumentId(doc.id))
+            .toString();
+        if (date.compareTo(startDateStr) < 0) continue;
+
+        final totals = totalsByDate.putIfAbsent(
+            date,
+            () => {
+                  'totalSales': 0.0,
+                  'totalCredit': 0.0,
+                });
+        totals['totalSales'] = (totals['totalSales'] as double) +
+            ((data['totalSales'] ?? 0.0) as num).toDouble();
+        totals['totalCredit'] = (totals['totalCredit'] as double) +
+            ((data['totalCredit'] ?? 0.0) as num).toDouble();
+      }
+      final dates = totalsByDate.keys.toList()..sort();
+      return dates.map((date) => MapEntry(date, totalsByDate[date]!)).toList();
+    });
   }
 
   Future<void> _exportExcelReport(BuildContext context) async {
@@ -102,223 +199,463 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     try {
       final db = FirebaseFirestore.instance;
 
-      // Fetch data
-      final billsSnap = await db.collection('bills').orderBy('timestamp', descending: true).get();
-      final expensesSnap = await db.collection('expenses').orderBy('timestamp', descending: true).get();
-      final creditSnap = await db.collection('creditCustomers').orderBy('totalPending', descending: true).get();
-      final repaymentsSnap = await db.collection('repayments').orderBy('timestamp', descending: true).get();
-      final reconSnap = await db.collection('cashReconciliations').orderBy('timestamp', descending: true).get();
+      // Fetch all data
+      final billsSnap = await db
+          .collection('bills')
+          .orderBy('timestamp', descending: true)
+          .get();
+      final expensesSnap = await db
+          .collection('expenses')
+          .orderBy('timestamp', descending: true)
+          .get();
+      final creditSnap = await db
+          .collection('creditCustomers')
+          .orderBy('totalPending', descending: true)
+          .get();
+      final repaymentsSnap = await db
+          .collection('repayments')
+          .orderBy('timestamp', descending: true)
+          .get();
+      final reconSnap = await db
+          .collection('cashReconciliations')
+          .orderBy('timestamp', descending: true)
+          .get();
+      final canteensSnap = await db.collection('canteens').get();
 
-      // Create workbook
+      // Build canteen name map: id -> name
+      final Map<String, String> canteenNames = {'main': 'Main Canteen'};
+      for (final doc in canteensSnap.docs) {
+        final d = doc.data();
+        canteenNames[doc.id] = d['name'] ?? doc.id;
+      }
+
+      String resolveCanteenName(String? cId) {
+        if (cId == null || cId.isEmpty || cId == 'main') return 'Main Canteen';
+        return canteenNames[cId] ?? cId;
+      }
+
+      // Collect unique canteen IDs present in bills/expenses
+      final Set<String> branchIds = {'main'};
+      for (final doc in billsSnap.docs) {
+        final cId = (doc.data()['canteenId'] ?? 'main').toString();
+        branchIds.add(cId.isEmpty ? 'main' : cId);
+      }
+      for (final doc in expensesSnap.docs) {
+        final cId = (doc.data()['canteenId'] ?? 'main').toString();
+        branchIds.add(cId.isEmpty ? 'main' : cId);
+      }
+
       var excel = Excel.createExcel();
       String defaultSheet = excel.getDefaultSheet() ?? 'Sheet1';
       excel.rename(defaultSheet, 'Dashboard Summary');
       Sheet dashboardSheet = excel['Dashboard Summary'];
 
-      // Summary Header
-      dashboardSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0)).value = TextCellValue('CANTEEN MANAGEMENT SUMMARY');
-      dashboardSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1)).value = TextCellValue('Report Generated: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}');
+      void writeHeader(Sheet s, List<String> cols) {
+        for (int c = 0; c < cols.length; c++) {
+          s
+              .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 0))
+              .value = TextCellValue(cols[c]);
+        }
+      }
 
-      // Aggregations
-      double totalSales = 0.0;
-      double cashSales = 0.0;
-      double upiSales = 0.0;
-      double creditSales = 0.0;
+      // SHEET 1: Dashboard Summary
+      dashboardSheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0))
+          .value = TextCellValue('CANTEEN MANAGEMENT SUMMARY - ALL BRANCHES');
+      dashboardSheet
+              .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1))
+              .value =
+          TextCellValue(
+              'Report Generated: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}');
+
+      double totalSales = 0, cashSales = 0, upiSales = 0, creditSales = 0;
       for (var doc in billsSnap.docs) {
         final d = doc.data();
         final amt = ((d['totalAmount'] ?? 0.0) as num).toDouble();
         totalSales += amt;
         final mode = d['paymentMode'] ?? '';
-        if (mode == 'Cash') {
+        if (mode == 'Cash')
           cashSales += amt;
-        } else if (mode == 'UPI') {
+        else if (mode == 'UPI')
           upiSales += amt;
-        } else if (mode == 'Credit') {
-          creditSales += amt;
-        }
+        else if (mode == 'Credit') creditSales += amt;
       }
+      double totalExpenses = expensesSnap.docs.fold(
+          0.0, (s, d) => s + ((d.data()['amount'] ?? 0.0) as num).toDouble());
+      double totalOutstandingCredit = creditSnap.docs.fold(0.0,
+          (s, d) => s + ((d.data()['totalPending'] ?? 0.0) as num).toDouble());
+      double totalRepayments = repaymentsSnap.docs.fold(
+          0.0, (s, d) => s + ((d.data()['amount'] ?? 0.0) as num).toDouble());
+      double totalDiscrepancy = reconSnap.docs.fold(0.0,
+          (s, d) => s + ((d.data()['discrepancy'] ?? 0.0) as num).toDouble());
 
-      double totalExpenses = 0.0;
-      for (var doc in expensesSnap.docs) {
-        final d = doc.data();
-        final amt = ((d['amount'] ?? 0.0) as num).toDouble();
-        totalExpenses += amt;
-      }
-
-      double totalOutstandingCredit = 0.0;
-      for (var doc in creditSnap.docs) {
-        final d = doc.data();
-        final amt = ((d['totalPending'] ?? 0.0) as num).toDouble();
-        totalOutstandingCredit += amt;
-      }
-
-      double totalRepayments = 0.0;
-      for (var doc in repaymentsSnap.docs) {
-        final d = doc.data();
-        final amt = ((d['amount'] ?? 0.0) as num).toDouble();
-        totalRepayments += amt;
-      }
-
-      double totalDiscrepancy = 0.0;
-      for (var doc in reconSnap.docs) {
-        final d = doc.data();
-        final amt = ((d['discrepancy'] ?? 0.0) as num).toDouble();
-        totalDiscrepancy += amt;
-      }
-
-      // Populate summary sheet
-      dashboardSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 3)).value = TextCellValue('Financial Metrics');
-      dashboardSheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 3)).value = TextCellValue('Total Value (INR)');
-
-      List<List<dynamic>> summaryData = [
-        ['Overall Revenue (All Sales)', totalSales],
-        ['Cash Collected from Sales', cashSales],
-        ['UPI Collected from Sales', upiSales],
-        ['Outstanding Credits Issued', creditSales],
-        ['Total Credits Due', totalOutstandingCredit],
+      final List<List<dynamic>> summaryData = [
+        ['Overall Revenue (All Branches)', totalSales],
+        ['Cash Collected', cashSales],
+        ['UPI Collected', upiSales],
+        ['Credit Issued', creditSales],
+        ['Total Credits Still Due', totalOutstandingCredit],
         ['Total Credit Repayments Received', totalRepayments],
-        ['Overall Expenses Spent', totalExpenses],
-        ['Cumulative Register Cash Discrepancy', totalDiscrepancy],
-        ['Net Position (Sales + Repayments - Expenses)', totalSales + totalRepayments - totalExpenses],
+        ['Overall Expenses', totalExpenses],
+        ['Cumulative Cash Discrepancy', totalDiscrepancy],
+        [
+          'Net Position (Sales + Repayments - Expenses)',
+          totalSales + totalRepayments - totalExpenses
+        ],
       ];
 
+      dashboardSheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 3))
+          .value = TextCellValue('Metric');
+      dashboardSheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 3))
+          .value = TextCellValue('Total Value (INR)');
       for (int i = 0; i < summaryData.length; i++) {
-        dashboardSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 4 + i)).value = TextCellValue(summaryData[i][0] as String);
-        dashboardSheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 4 + i)).value = DoubleCellValue(summaryData[i][1] as double);
+        dashboardSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 4 + i))
+            .value = TextCellValue(summaryData[i][0] as String);
+        dashboardSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 4 + i))
+            .value = DoubleCellValue(summaryData[i][1] as double);
       }
 
-      // Sheet 2: Sales Ledger
-      Sheet billsSheet = excel['Sales Bills'];
-      billsSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0)).value = TextCellValue('Date & Time');
-      billsSheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0)).value = TextCellValue('Bill Number');
-      billsSheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: 0)).value = TextCellValue('Customer Name');
-      billsSheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: 0)).value = TextCellValue('Customer Phone');
-      billsSheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: 0)).value = TextCellValue('Payment Mode');
-      billsSheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: 0)).value = TextCellValue('Total Amount (INR)');
+      // Per-branch summary in the dashboard sheet
+      int bRow = 4 + summaryData.length + 2;
+      dashboardSheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: bRow++))
+          .value = TextCellValue('BRANCH-WISE BREAKDOWN');
+      dashboardSheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: bRow))
+          .value = TextCellValue('Branch');
+      dashboardSheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: bRow))
+          .value = TextCellValue('Sales (INR)');
+      dashboardSheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: bRow))
+          .value = TextCellValue('Bills Count');
+      dashboardSheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: bRow))
+          .value = TextCellValue('Expenses (INR)');
+      bRow++;
+      for (final bId in branchIds) {
+        double bSales = 0;
+        int bCount = 0;
+        double bExp = 0;
+        for (final doc in billsSnap.docs) {
+          final d = doc.data();
+          final cId = ((d['canteenId'] ?? 'main') as String);
+          if ((cId.isEmpty ? 'main' : cId) == bId) {
+            bSales += ((d['totalAmount'] ?? 0.0) as num).toDouble();
+            bCount++;
+          }
+        }
+        for (final doc in expensesSnap.docs) {
+          final d = doc.data();
+          final cId = ((d['canteenId'] ?? 'main') as String);
+          if ((cId.isEmpty ? 'main' : cId) == bId)
+            bExp += ((d['amount'] ?? 0.0) as num).toDouble();
+        }
+        dashboardSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: bRow))
+            .value = TextCellValue(resolveCanteenName(bId));
+        dashboardSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: bRow))
+            .value = DoubleCellValue(bSales);
+        dashboardSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: bRow))
+            .value = IntCellValue(bCount);
+        dashboardSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: bRow))
+            .value = DoubleCellValue(bExp);
+        bRow++;
+      }
 
+      // SHEET: All Bills (combined with canteen column)
+      Sheet billsSheet = excel['All Bills'];
+      writeHeader(billsSheet, [
+        'Date & Time',
+        'Bill Number',
+        'Canteen Branch',
+        'Customer Name',
+        'Customer Phone',
+        'Payment Mode',
+        'Total Amount (INR)'
+      ]);
       for (int i = 0; i < billsSnap.docs.length; i++) {
         final d = billsSnap.docs[i].data();
         final ts = d['timestamp'] as Timestamp?;
-        final dateStr = ts != null ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate()) : 'N/A';
-        
-        billsSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1)).value = TextCellValue(dateStr);
-        billsSheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1)).value = IntCellValue((d['billNumber'] ?? 0) as int);
-        billsSheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1)).value = TextCellValue((d['customerName'] ?? 'Walk-in') as String);
-        billsSheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: i + 1)).value = TextCellValue((d['customerPhone'] ?? '-') as String);
-        billsSheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: i + 1)).value = TextCellValue((d['paymentMode'] ?? '') as String);
-        billsSheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: i + 1)).value = DoubleCellValue(((d['totalAmount'] ?? 0.0) as num).toDouble());
+        final dateStr = ts != null
+            ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
+            : 'N/A';
+        final cId = (d['canteenId'] ?? 'main').toString();
+        billsSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
+            .value = TextCellValue(dateStr);
+        billsSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
+            .value = IntCellValue((d['billNumber'] ?? 0) as int);
+        billsSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1))
+            .value = TextCellValue(resolveCanteenName(cId));
+        billsSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: i + 1))
+            .value = TextCellValue((d['customerName'] ?? 'Walk-in').toString());
+        billsSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: i + 1))
+            .value = TextCellValue((d['customerPhone'] ?? '-').toString());
+        billsSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: i + 1))
+            .value = TextCellValue((d['paymentMode'] ?? '').toString());
+        billsSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: i + 1))
+            .value = DoubleCellValue(((d['totalAmount'] ?? 0.0)
+                as num)
+            .toDouble());
       }
 
-      // Sheet 3: Expenses
-      Sheet expSheet = excel['Expenses'];
-      expSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0)).value = TextCellValue('Date & Time');
-      expSheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0)).value = TextCellValue('Description');
-      expSheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: 0)).value = TextCellValue('Amount (INR)');
+      // Per-branch Bills sheets
+      for (final bId in branchIds) {
+        final bName = resolveCanteenName(bId);
+        final sheetName =
+            '${bName.length > 22 ? bName.substring(0, 22) : bName} Bills';
+        Sheet branchSheet = excel[sheetName];
+        writeHeader(branchSheet, [
+          'Date & Time',
+          'Bill Number',
+          'Customer Name',
+          'Customer Phone',
+          'Payment Mode',
+          'Total Amount (INR)'
+        ]);
+        int row = 1;
+        for (final doc in billsSnap.docs) {
+          final d = doc.data();
+          final cId = (d['canteenId'] ?? 'main').toString();
+          if ((cId.isEmpty ? 'main' : cId) != bId) continue;
+          final ts = d['timestamp'] as Timestamp?;
+          final dateStr = ts != null
+              ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
+              : 'N/A';
+          branchSheet
+              .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row))
+              .value = TextCellValue(dateStr);
+          branchSheet
+              .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row))
+              .value = IntCellValue((d['billNumber'] ?? 0) as int);
+          branchSheet
+              .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row))
+              .value = TextCellValue((d['customerName'] ??
+                  'Walk-in')
+              .toString());
+          branchSheet
+              .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: row))
+              .value = TextCellValue((d['customerPhone'] ?? '-').toString());
+          branchSheet
+              .cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: row))
+              .value = TextCellValue((d['paymentMode'] ?? '').toString());
+          branchSheet
+              .cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: row))
+              .value = DoubleCellValue(((d['totalAmount'] ?? 0.0)
+                  as num)
+              .toDouble());
+          row++;
+        }
+      }
 
+      // SHEET: All Expenses (combined with canteen column)
+      Sheet expSheet = excel['All Expenses'];
+      writeHeader(expSheet,
+          ['Date & Time', 'Canteen Branch', 'Description', 'Amount (INR)']);
       for (int i = 0; i < expensesSnap.docs.length; i++) {
         final d = expensesSnap.docs[i].data();
         final ts = d['timestamp'] as Timestamp?;
-        final dateStr = ts != null ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate()) : 'N/A';
-
-        expSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1)).value = TextCellValue(dateStr);
-        expSheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1)).value = TextCellValue((d['description'] ?? '') as String);
-        expSheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1)).value = DoubleCellValue(((d['amount'] ?? 0.0) as num).toDouble());
+        final dateStr = ts != null
+            ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
+            : 'N/A';
+        final cId = (d['canteenId'] ?? 'main').toString();
+        expSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
+            .value = TextCellValue(dateStr);
+        expSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
+            .value = TextCellValue(resolveCanteenName(cId));
+        expSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1))
+            .value = TextCellValue((d['description'] ?? '').toString());
+        expSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: i + 1))
+            .value = DoubleCellValue(((d['amount'] ?? 0.0) as num).toDouble());
       }
 
-      // Sheet 4: Credit Balances
-      Sheet creditSheet = excel['Credit Accounts'];
-      creditSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0)).value = TextCellValue('Customer Name');
-      creditSheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0)).value = TextCellValue('Phone Number');
-      creditSheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: 0)).value = TextCellValue('Total Pending Due (INR)');
+      // Per-branch Expenses sheets
+      for (final bId in branchIds) {
+        final bName = resolveCanteenName(bId);
+        final sheetName =
+            '${bName.length > 19 ? bName.substring(0, 19) : bName} Expenses';
+        Sheet branchExp = excel[sheetName];
+        writeHeader(branchExp, ['Date & Time', 'Description', 'Amount (INR)']);
+        int row = 1;
+        for (final doc in expensesSnap.docs) {
+          final d = doc.data();
+          final cId = (d['canteenId'] ?? 'main').toString();
+          if ((cId.isEmpty ? 'main' : cId) != bId) continue;
+          final ts = d['timestamp'] as Timestamp?;
+          final dateStr = ts != null
+              ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
+              : 'N/A';
+          branchExp
+              .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row))
+              .value = TextCellValue(dateStr);
+          branchExp
+              .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row))
+              .value = TextCellValue((d['description'] ?? '').toString());
+          branchExp
+              .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row))
+              .value = DoubleCellValue(((d['amount'] ?? 0.0)
+                  as num)
+              .toDouble());
+          row++;
+        }
+      }
 
+      // Credit Accounts
+      Sheet creditSheet = excel['Credit Accounts'];
+      writeHeader(creditSheet,
+          ['Customer Name', 'Phone Number', 'Total Pending Due (INR)']);
       for (int i = 0; i < creditSnap.docs.length; i++) {
         final d = creditSnap.docs[i].data();
-        creditSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1)).value = TextCellValue((d['name'] ?? 'Unknown') as String);
-        creditSheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1)).value = TextCellValue((d['phone'] ?? '') as String);
-        creditSheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1)).value = DoubleCellValue(((d['totalPending'] ?? 0.0) as num).toDouble());
+        creditSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
+            .value = TextCellValue((d['name'] ?? 'Unknown').toString());
+        creditSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
+            .value = TextCellValue((d['phone'] ?? '').toString());
+        creditSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1))
+            .value = DoubleCellValue(((d['totalPending'] ?? 0.0)
+                as num)
+            .toDouble());
       }
 
-      // Sheet 5: Repayment Logs
+      // Repayment Logs
       Sheet repSheet = excel['Repayment Logs'];
-      repSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0)).value = TextCellValue('Date & Time');
-      repSheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0)).value = TextCellValue('Customer Name');
-      repSheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: 0)).value = TextCellValue('Customer Phone');
-      repSheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: 0)).value = TextCellValue('Cleared Mode');
-      repSheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: 0)).value = TextCellValue('Repayment Amount (INR)');
-      repSheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: 0)).value = TextCellValue('Processed By');
-
+      writeHeader(repSheet, [
+        'Date & Time',
+        'Customer Name',
+        'Customer Phone',
+        'Cleared Mode',
+        'Repayment Amount (INR)',
+        'Processed By'
+      ]);
       for (int i = 0; i < repaymentsSnap.docs.length; i++) {
         final d = repaymentsSnap.docs[i].data();
         final ts = d['timestamp'] as Timestamp?;
-        final dateStr = ts != null ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate()) : 'N/A';
-
-        repSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1)).value = TextCellValue(dateStr);
-        repSheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1)).value = TextCellValue((d['customerName'] ?? 'Unknown') as String);
-        repSheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1)).value = TextCellValue((d['customerPhone'] ?? '-') as String);
-        repSheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: i + 1)).value = TextCellValue((d['paymentMode'] ?? '') as String);
-        repSheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: i + 1)).value = DoubleCellValue(((d['amount'] ?? 0.0) as num).toDouble());
-        repSheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: i + 1)).value = TextCellValue((d['processedBy'] ?? '') as String);
+        final dateStr = ts != null
+            ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
+            : 'N/A';
+        repSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
+            .value = TextCellValue(dateStr);
+        repSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
+            .value = TextCellValue((d['customerName'] ?? 'Unknown').toString());
+        repSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1))
+            .value = TextCellValue((d['customerPhone'] ?? '-').toString());
+        repSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: i + 1))
+            .value = TextCellValue((d['paymentMode'] ?? '').toString());
+        repSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: i + 1))
+            .value = DoubleCellValue(((d['amount'] ?? 0.0) as num).toDouble());
+        repSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: i + 1))
+            .value = TextCellValue((d['processedBy'] ?? '').toString());
       }
 
-      // Sheet 6: Cash Reconciliations
+      // Cash Reconciliations
       Sheet reconSheet = excel['Cash Reconciliations'];
-      reconSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0)).value = TextCellValue('Reconciled Date');
-      reconSheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0)).value = TextCellValue('Expected (System) Cash (INR)');
-      reconSheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: 0)).value = TextCellValue('Actual (Counted) Cash (INR)');
-      reconSheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: 0)).value = TextCellValue('Discrepancy (INR)');
-      reconSheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: 0)).value = TextCellValue('Audited By');
-      reconSheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: 0)).value = TextCellValue('Audit Notes');
-      reconSheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: 0)).value = TextCellValue('Timestamp');
-
+      writeHeader(reconSheet, [
+        'Reconciled Date',
+        'System Cash (INR)',
+        'Actual Cash (INR)',
+        'Discrepancy (INR)',
+        'Audited By',
+        'Notes',
+        'Timestamp'
+      ]);
       for (int i = 0; i < reconSnap.docs.length; i++) {
         final d = reconSnap.docs[i].data();
         final ts = d['timestamp'] as Timestamp?;
-        final dateStr = ts != null ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate()) : 'N/A';
-
-        reconSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1)).value = TextCellValue((d['date'] ?? '') as String);
-        reconSheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1)).value = DoubleCellValue(((d['systemCash'] ?? 0.0) as num).toDouble());
-        reconSheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1)).value = DoubleCellValue(((d['actualCash'] ?? 0.0) as num).toDouble());
-        reconSheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: i + 1)).value = DoubleCellValue(((d['discrepancy'] ?? 0.0) as num).toDouble());
-        reconSheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: i + 1)).value = TextCellValue((d['submittedBy'] ?? '') as String);
-        reconSheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: i + 1)).value = TextCellValue((d['note'] ?? '') as String);
-        reconSheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: i + 1)).value = TextCellValue(dateStr);
+        final dateStr = ts != null
+            ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
+            : 'N/A';
+        reconSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
+            .value = TextCellValue((d['date'] ?? '').toString());
+        reconSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
+            .value = DoubleCellValue(((d['systemCash'] ?? 0.0)
+                as num)
+            .toDouble());
+        reconSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1))
+            .value = DoubleCellValue(((d['actualCash'] ?? 0.0)
+                as num)
+            .toDouble());
+        reconSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: i + 1))
+            .value = DoubleCellValue(((d['discrepancy'] ?? 0.0)
+                as num)
+            .toDouble());
+        reconSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: i + 1))
+            .value = TextCellValue((d['submittedBy'] ?? '').toString());
+        reconSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: i + 1))
+            .value = TextCellValue((d['note'] ?? '').toString());
+        reconSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: i + 1))
+            .value = TextCellValue(dateStr);
       }
 
-      // Sheet 7: Top Selling Items
+      // Top Selling Items
       Sheet topSheet = excel['Top Selling Items'];
-      topSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0)).value = TextCellValue('Menu Item Name');
-      topSheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0)).value = TextCellValue('Portions Sold (Total)');
-
+      writeHeader(topSheet, ['Menu Item Name', 'Portions Sold (Total)']);
       Map<String, int> topItemsMap = {};
       for (var doc in billsSnap.docs) {
-        final d = doc.data();
-        final items = List<Map<String, dynamic>>.from(d['items'] ?? []);
+        final items =
+            List<Map<String, dynamic>>.from(doc.data()['items'] ?? []);
         for (var item in items) {
-          final name = item['name'] ?? 'Unknown';
+          final name = item['name']?.toString() ?? 'Unknown';
           final qty = (item['quantity'] ?? 0) as int;
           topItemsMap[name] = (topItemsMap[name] ?? 0) + qty;
         }
       }
-
       final sortedTopItems = topItemsMap.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
-
       for (int i = 0; i < sortedTopItems.length; i++) {
-        final entry = sortedTopItems[i];
-        topSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1)).value = TextCellValue(entry.key);
-        topSheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1)).value = IntCellValue(entry.value);
+        topSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
+            .value = TextCellValue(sortedTopItems[i].key);
+        topSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
+            .value = IntCellValue(sortedTopItems[i].value);
       }
 
+      // Save & Share
       final bytes = excel.encode();
       if (bytes != null) {
         final tempDir = await getTemporaryDirectory();
-        final file = await File('${tempDir.path}/Canteen_Ledger_Report.xlsx').create();
+        final file = await File(
+                '${tempDir.path}/Canteen_Report_${DateFormat('yyyyMMdd').format(DateTime.now())}.xlsx')
+            .create();
         await file.writeAsBytes(bytes);
-
         if (context.mounted) {
-          Navigator.pop(context); // Pop loading indicator
+          Navigator.pop(context);
           final xFile = XFile(file.path);
-          await Share.shareXFiles([xFile], text: 'Canteen Full Ledger & Analytics');
+          await Share.shareXFiles([xFile],
+              text: 'Canteen Full Ledger & Analytics - All Branches');
         }
       }
     } catch (e) {
@@ -326,7 +663,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to export Excel: $e', style: GoogleFonts.poppins()),
+            content: Text('Failed to export Excel: $e',
+                style: GoogleFonts.poppins()),
             backgroundColor: AppColors.accentRed,
           ),
         );
@@ -374,6 +712,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             ),
           ),
           const SizedBox(height: 8),
+          _drawerTile(Icons.storefront_rounded, 'Manage Canteens & Staff',
+              AppColors.accentGreen, () {
+            Navigator.pop(context);
+            _showManageCanteensAndStaffDialog();
+          }),
           _drawerTile(Icons.restaurant_menu_rounded, 'Manage Menu Items',
               AppColors.accentBlue, () {
             Navigator.pop(context);
@@ -387,8 +730,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           _drawerTile(Icons.history_edu_rounded, 'Master Credit Ledger',
               AppColors.accentOrange, () {
             Navigator.pop(context);
-            Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const AdminMasterCreditLedgerPage()));
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const AdminMasterCreditLedgerPage()));
           }),
           _drawerTile(Icons.bar_chart_rounded, 'Analytics & Graphs',
               AppColors.accentBlue, () {
@@ -510,7 +855,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Widget _buildWeeklyChartSection() {
-    return StreamBuilder<List<DocumentSnapshot>>(
+    return StreamBuilder<List<MapEntry<String, Map<String, dynamic>>>>(
       stream: _getWeeklyStatsStream(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -541,7 +886,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         double maxVal = 1000.0;
 
         for (int i = 0; i < docs.length; i++) {
-          final data = docs[i].data() as Map<String, dynamic>;
+          final data = docs[i].value;
           final sales = (data['totalSales'] ?? 0.0).toDouble();
           final credit = (data['totalCredit'] ?? 0.0).toDouble();
 
@@ -639,8 +984,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             if (index < 0 || index >= docs.length) {
                               return const SizedBox();
                             }
-                            final dateStr = docs[index].id;
-                            final date = DateTime.parse(dateStr);
+                            final date = DateTime.parse(docs[index].key);
                             return SideTitleWidget(
                               meta: meta,
                               space: 4,
@@ -775,7 +1119,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               elevation: 0,
               actions: [
                 IconButton(
-                  icon: const Icon(Icons.file_download_outlined, color: Colors.white, size: 24),
+                  icon: const Icon(Icons.file_download_outlined,
+                      color: Colors.white, size: 24),
                   tooltip: 'Export Excel Report',
                   onPressed: () => _exportExcelReport(context),
                 ),
@@ -865,6 +1210,105 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildBudgetAlertBanner(),
+                // Multi-Canteen Switcher Bar
+                StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('canteens')
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    List<Map<String, String>> canteenOptions = [
+                      {'id': 'all', 'name': 'All Canteens (Overall)'},
+                      {'id': 'main', 'name': 'Main Canteen'},
+                    ];
+                    if (snapshot.hasData) {
+                      for (var doc in snapshot.data!.docs) {
+                        if (doc.id != 'main') {
+                          canteenOptions.add({
+                            'id': doc.id,
+                            'name':
+                                (doc.data() as Map<String, dynamic>)['name'] ??
+                                    doc.id,
+                          });
+                        }
+                      }
+                    }
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: glassCard(
+                        radius: 16,
+                        borderColor:
+                            AppColors.accentBlue.withValues(alpha: 0.3),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color:
+                                  AppColors.accentBlue.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.storefront_rounded,
+                                color: AppColors.accentBlue, size: 20),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'ACTIVE CANTEEN VIEW',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textSecondary,
+                                    letterSpacing: 0.8,
+                                  ),
+                                ),
+                                DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
+                                    value: canteenOptions.any((c) =>
+                                            c['id'] == _selectedCanteenFilter)
+                                        ? _selectedCanteenFilter
+                                        : 'all',
+                                    isExpanded: true,
+                                    dropdownColor: AppColors.bgCard,
+                                    icon: const Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        color: Colors.white),
+                                    items: canteenOptions.map((c) {
+                                      return DropdownMenuItem<String>(
+                                        value: c['id'],
+                                        child: Text(
+                                          c['name']!,
+                                          style: GoogleFonts.poppins(
+                                            color: Colors.white,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onChanged: (newVal) {
+                                      if (newVal != null) {
+                                        setState(() {
+                                          _selectedCanteenFilter = newVal;
+                                        });
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
                 // Live Analytics Section
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -886,12 +1330,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   childAspectRatio: 1.45,
                   children: [
                     // Today's Sales
-                    StreamBuilder<DocumentSnapshot>(
+                    StreamBuilder<Map<String, dynamic>>(
                       stream: _getDailyStatsStream(),
                       builder: (context, snap) {
                         String sales = '₹0';
-                        if (snap.hasData && snap.data!.exists) {
-                          final d = snap.data!.data() as Map<String, dynamic>;
+                        if (snap.hasData) {
+                          final d = snap.data!;
                           sales =
                               '₹${(d['totalSales'] ?? 0).toStringAsFixed(0)}';
                         }
@@ -982,7 +1426,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 ),
                 const SizedBox(height: 12),
 
-                StreamBuilder<QuerySnapshot>(
+                StreamBuilder<List<DocumentSnapshot>>(
                   stream: _getRecentBillsStream(),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
@@ -994,7 +1438,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         ),
                       );
                     }
-                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
                       return Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(20),
@@ -1010,7 +1454,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       );
                     }
 
-                    final bills = snapshot.data!.docs;
+                    final bills = snapshot.data!;
 
                     return ListView.separated(
                       shrinkWrap: true,
@@ -1134,7 +1578,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     final end = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
 
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('monthlyFunds').doc(monthId).snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('monthlyFunds')
+          .doc(monthId)
+          .snapshots(),
       builder: (context, fundSnap) {
         if (fundSnap.hasError) {
           debugPrint("Budget Alert Fund Error: ${fundSnap.error}");
@@ -1150,7 +1597,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         if (allocated == 0) return const SizedBox.shrink();
 
         return StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance.collection('expenses')
+          stream: FirebaseFirestore.instance
+              .collection('expenses')
               .where('timestamp', isGreaterThanOrEqualTo: start)
               .where('timestamp', isLessThanOrEqualTo: end)
               .snapshots(),
@@ -1172,7 +1620,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             double available = allocated - spent;
             double pctRemaining = available / allocated;
 
-            debugPrint("Budget Alert values: allocated=$allocated, spent=$spent, available=$available, pctRemaining=$pctRemaining");
+            debugPrint(
+                "Budget Alert values: allocated=$allocated, spent=$spent, available=$available, pctRemaining=$pctRemaining");
 
             if (pctRemaining >= 0.15) return const SizedBox.shrink();
 
@@ -1184,25 +1633,33 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF1F0F11),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.accentRed.withValues(alpha: 0.55)),
+                  border: Border.all(
+                      color: AppColors.accentRed.withValues(alpha: 0.55)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.warning_amber_rounded, color: AppColors.accentRed, size: 20),
+                    const Icon(Icons.warning_amber_rounded,
+                        color: AppColors.accentRed, size: 20),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            available < 0 ? 'Budget Overspent!' : 'Low Budget Alert ($pctStr% Left)',
-                            style: GoogleFonts.poppins(color: AppColors.accentRed, fontSize: 12, fontWeight: FontWeight.bold),
+                            available < 0
+                                ? 'Budget Overspent!'
+                                : 'Low Budget Alert ($pctStr% Left)',
+                            style: GoogleFonts.poppins(
+                                color: AppColors.accentRed,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold),
                           ),
                           Text(
-                            available < 0 
+                            available < 0
                                 ? 'You have exceeded the allocated budget by ₹${available.abs().toStringAsFixed(0)}.'
                                 : 'Available: ₹${available.toStringAsFixed(0)} left of ₹${allocated.toStringAsFixed(0)} allocated.',
-                            style: GoogleFonts.poppins(color: AppColors.textSecondary, fontSize: 10),
+                            style: GoogleFonts.poppins(
+                                color: AppColors.textSecondary, fontSize: 10),
                           ),
                         ],
                       ),
@@ -1214,6 +1671,1281 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           },
         );
       },
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MANAGE CANTEENS & STAFF — full CRUD dialog
+  // ─────────────────────────────────────────────────────────────────────────
+
+  void _showManageCanteensAndStaffDialog() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _ManageCanteensSheet(),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOTTOM SHEET WIDGET — Manage Canteens & Staff
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ManageCanteensSheet extends StatefulWidget {
+  const _ManageCanteensSheet();
+
+  @override
+  State<_ManageCanteensSheet> createState() => _ManageCanteensSheetState();
+}
+
+class _ManageCanteensSheetState extends State<_ManageCanteensSheet>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.92,
+      maxChildSize: 0.95,
+      minChildSize: 0.5,
+      builder: (_, scrollController) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF0D1120),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            // Handle bar
+            Container(
+              margin: const EdgeInsets.only(top: 10),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentGreen.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.storefront_rounded,
+                        color: AppColors.accentGreen, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Manage Canteens & Staff',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white54),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            TabBar(
+              controller: _tabController,
+              indicatorColor: AppColors.accentGreen,
+              labelColor: AppColors.accentGreen,
+              unselectedLabelColor: Colors.white54,
+              labelStyle: GoogleFonts.poppins(
+                  fontSize: 13, fontWeight: FontWeight.w600),
+              tabs: const [
+                Tab(
+                    icon: Icon(Icons.store_rounded, size: 18),
+                    text: 'Canteens'),
+                Tab(icon: Icon(Icons.people_rounded, size: 18), text: 'Staff'),
+              ],
+            ),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: const [
+                  _CanteensTab(),
+                  _StaffTab(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB 1 — CANTEENS
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CanteensTab extends StatefulWidget {
+  const _CanteensTab();
+
+  @override
+  State<_CanteensTab> createState() => _CanteensTabState();
+}
+
+class _CanteensTabState extends State<_CanteensTab> {
+  String? _expandedCanteenId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: AppColors.accentGreen,
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: Text('Add Branch',
+            style: GoogleFonts.poppins(
+                color: Colors.white, fontWeight: FontWeight.w600)),
+        onPressed: () => _showAddCanteenDialog(context),
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('canteens').snapshots(),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(
+                child: CircularProgressIndicator(color: AppColors.accentGreen));
+          }
+          final docs = snap.data?.docs ?? [];
+          if (docs.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.store_rounded,
+                      size: 56, color: Colors.white24),
+                  const SizedBox(height: 12),
+                  Text('No canteen branches yet',
+                      style: GoogleFonts.poppins(
+                          color: Colors.white54, fontSize: 14)),
+                  const SizedBox(height: 6),
+                  Text('Tap + Add Branch to create one',
+                      style: GoogleFonts.poppins(
+                          color: Colors.white38, fontSize: 12)),
+                ],
+              ),
+            );
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            itemCount: docs.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, i) {
+              final doc = docs[i];
+              final data = doc.data() as Map<String, dynamic>;
+              final name = data['name'] ?? doc.id;
+              final isMain = doc.id == 'main';
+              final isExpanded = _expandedCanteenId == doc.id;
+              return Column(
+                children: [
+                  InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => setState(() {
+                      _expandedCanteenId = isExpanded ? null : doc.id;
+                    }),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF111827),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isMain
+                              ? AppColors.accentGreen.withValues(alpha: 0.4)
+                              : AppColors.glassBorder,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color:
+                                  AppColors.accentGreen.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(Icons.store_rounded,
+                                color: AppColors.accentGreen, size: 22),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(name,
+                                        style: GoogleFonts.poppins(
+                                            color: Colors.white,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600)),
+                                    if (isMain) ...[
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.accentGreen
+                                              .withValues(alpha: 0.15),
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                        ),
+                                        child: Text('Default',
+                                            style: GoogleFonts.poppins(
+                                                color: AppColors.accentGreen,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600)),
+                                      ),
+                                    ]
+                                  ],
+                                ),
+                                Text('ID: ${doc.id}',
+                                    style: GoogleFonts.poppins(
+                                        color: Colors.white38, fontSize: 10)),
+                              ],
+                            ),
+                          ),
+                          if (!isMain)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit_rounded,
+                                      color: AppColors.accentBlue, size: 18),
+                                  onPressed: () => _showEditCanteenDialog(
+                                      context, doc.id, name),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline_rounded,
+                                      color: AppColors.accentRed, size: 18),
+                                  onPressed: () => _confirmDeleteCanteen(
+                                      context, doc.id, name),
+                                ),
+                              ],
+                            ),
+                          AnimatedRotation(
+                            turns: isExpanded ? 0.5 : 0,
+                            duration: const Duration(milliseconds: 180),
+                            child: const Icon(Icons.expand_more_rounded,
+                                color: Colors.white54),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (isExpanded) _AssignedCanteenStaff(canteenId: doc.id),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  void _showAddCanteenDialog(BuildContext context) {
+    final nameCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (_) => _InputDialog(
+        title: 'Add Canteen Branch',
+        icon: Icons.add_business_rounded,
+        iconColor: AppColors.accentGreen,
+        fields: [
+          _FieldDef(
+              ctrl: nameCtrl,
+              label: 'Branch Name',
+              hint: 'e.g. Canteen 2 – North Wing'),
+        ],
+        onConfirm: () async {
+          final name = nameCtrl.text.trim();
+          if (name.isEmpty) return;
+          // Generate a clean ID from name
+          final id = name
+              .toLowerCase()
+              .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+              .replaceAll(RegExp(r'_+'), '_')
+              .replaceAll(RegExp(r'^_|_$'), '');
+          await FirebaseFirestore.instance.collection('canteens').doc(id).set({
+            'name': name,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        },
+      ),
+    );
+  }
+
+  void _showEditCanteenDialog(
+      BuildContext context, String id, String currentName) {
+    final nameCtrl = TextEditingController(text: currentName);
+    showDialog(
+      context: context,
+      builder: (_) => _InputDialog(
+        title: 'Rename Branch',
+        icon: Icons.edit_rounded,
+        iconColor: AppColors.accentBlue,
+        fields: [
+          _FieldDef(ctrl: nameCtrl, label: 'Branch Name', hint: ''),
+        ],
+        onConfirm: () async {
+          final name = nameCtrl.text.trim();
+          if (name.isEmpty) return;
+          await FirebaseFirestore.instance
+              .collection('canteens')
+              .doc(id)
+              .update({'name': name});
+          // Also update all staff assigned to this canteen
+          final staffSnap = await FirebaseFirestore.instance
+              .collection('canteenStaff')
+              .where('canteenId', isEqualTo: id)
+              .get();
+          final batch = FirebaseFirestore.instance.batch();
+          for (final s in staffSnap.docs) {
+            batch.update(s.reference, {'canteenName': name});
+          }
+          await batch.commit();
+        },
+      ),
+    );
+  }
+
+  void _confirmDeleteCanteen(BuildContext context, String id, String name) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF111827),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Delete "$name"?',
+            style: GoogleFonts.poppins(
+                color: Colors.white, fontWeight: FontWeight.w700)),
+        content: Text(
+          'This removes the branch record. Staff assigned here will fall back to Main Canteen. Existing bills are not deleted.',
+          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancel',
+                  style: GoogleFonts.poppins(color: Colors.white54))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.accentRed,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
+            onPressed: () async {
+              Navigator.pop(context);
+              await FirebaseFirestore.instance
+                  .collection('canteens')
+                  .doc(id)
+                  .delete();
+              // Unassign staff from this canteen
+              final staffSnap = await FirebaseFirestore.instance
+                  .collection('canteenStaff')
+                  .where('canteenId', isEqualTo: id)
+                  .get();
+              final batch = FirebaseFirestore.instance.batch();
+              for (final s in staffSnap.docs) {
+                batch.update(s.reference, {
+                  'canteenId': 'main',
+                  'canteenName': 'Main Canteen',
+                });
+              }
+              await batch.commit();
+            },
+            child: Text('Delete',
+                style: GoogleFonts.poppins(
+                    color: Colors.white, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AssignedCanteenStaff extends StatelessWidget {
+  final String canteenId;
+
+  const _AssignedCanteenStaff({required this.canteenId});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('canteenStaff').snapshots(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(
+                child: CircularProgressIndicator(
+                    color: AppColors.accentGreen, strokeWidth: 2)),
+          );
+        }
+        if (snap.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Unable to load assigned staff.',
+                style: GoogleFonts.poppins(
+                    color: AppColors.accentRed, fontSize: 12)),
+          );
+        }
+
+        final staff = (snap.data?.docs ?? []).where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return (data['canteenId'] ?? 'main').toString() == canteenId;
+        }).toList()
+          ..sort((a, b) {
+            final aData = a.data() as Map<String, dynamic>;
+            final bData = b.data() as Map<String, dynamic>;
+            return (aData['email'] ?? '').toString().compareTo(
+                  (bData['email'] ?? '').toString(),
+                );
+          });
+
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0A0E1A),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.glassBorder),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.groups_rounded,
+                      color: AppColors.accentBlue, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Assigned Staff (${staff.length})',
+                    style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+              if (staff.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    'No staff assigned to this canteen.',
+                    style: GoogleFonts.poppins(
+                        color: AppColors.textSecondary, fontSize: 12),
+                  ),
+                )
+              else ...[
+                const SizedBox(height: 8),
+                for (final doc in staff) ...[
+                  if (doc != staff.first)
+                    const Divider(color: AppColors.bgDivider, height: 1),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.person_outline_rounded,
+                            color: AppColors.textSecondary, size: 18),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            ((doc.data() as Map<String, dynamic>)['email'] ??
+                                    'No email')
+                                .toString(),
+                            style: GoogleFonts.poppins(
+                                color: AppColors.textPrimary, fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          (((doc.data() as Map<String, dynamic>)['role'] ??
+                                  'cashier') as String)
+                              .toUpperCase(),
+                          style: GoogleFonts.poppins(
+                              color: AppColors.accentBlue,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB 2 — STAFF
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StaffTab extends StatelessWidget {
+  const _StaffTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: AppColors.accentBlue,
+        icon: const Icon(Icons.person_add_rounded, color: Colors.white),
+        label: Text('Add Staff',
+            style: GoogleFonts.poppins(
+                color: Colors.white, fontWeight: FontWeight.w600)),
+        onPressed: () => _showAddStaffDialog(context),
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('canteenStaff')
+            .orderBy('email')
+            .snapshots(),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(
+                child: CircularProgressIndicator(color: AppColors.accentBlue));
+          }
+          final docs = snap.data?.docs ?? [];
+          if (docs.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.people_outline_rounded,
+                      size: 56, color: Colors.white24),
+                  const SizedBox(height: 12),
+                  Text('No staff accounts yet',
+                      style: GoogleFonts.poppins(
+                          color: Colors.white54, fontSize: 14)),
+                  const SizedBox(height: 6),
+                  Text('Tap + Add Staff to create one',
+                      style: GoogleFonts.poppins(
+                          color: Colors.white38, fontSize: 12)),
+                ],
+              ),
+            );
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            itemCount: docs.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, i) {
+              final doc = docs[i];
+              final data = doc.data() as Map<String, dynamic>;
+              final email = data['email'] ?? 'No email';
+              final role = data['role'] ?? 'cashier';
+              final canteenName = data['canteenName'] ?? 'Main Canteen';
+              final isAdmin = role == 'admin';
+              final roleColor =
+                  isAdmin ? AppColors.accentOrange : AppColors.accentBlue;
+
+              return Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111827),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.glassBorder),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 22,
+                      backgroundColor: roleColor.withValues(alpha: 0.15),
+                      child: Text(
+                        (email.isNotEmpty ? email[0] : '?').toUpperCase(),
+                        style: GoogleFonts.poppins(
+                          color: roleColor,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(email,
+                              style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600),
+                              overflow: TextOverflow.ellipsis),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: roleColor.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  role.toUpperCase(),
+                                  style: GoogleFonts.poppins(
+                                      color: roleColor,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  '🏪 $canteenName',
+                                  style: GoogleFonts.poppins(
+                                      color: Colors.white54, fontSize: 10),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    PopupMenuButton<String>(
+                      color: const Color(0xFF1A2035),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                      icon: const Icon(Icons.more_vert,
+                          color: Colors.white54, size: 20),
+                      onSelected: (val) {
+                        if (val == 'reassign') {
+                          _showReassignDialog(context, doc.id, data);
+                        } else if (val == 'reset_pass') {
+                          _sendPasswordReset(context, email);
+                        } else if (val == 'delete') {
+                          _confirmDeleteStaff(context, doc.id, email);
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        PopupMenuItem(
+                          value: 'reassign',
+                          child: Row(children: [
+                            const Icon(Icons.swap_horiz_rounded,
+                                size: 16, color: AppColors.accentBlue),
+                            const SizedBox(width: 8),
+                            Text('Reassign Canteen',
+                                style: GoogleFonts.poppins(
+                                    color: Colors.white, fontSize: 13)),
+                          ]),
+                        ),
+                        PopupMenuItem(
+                          value: 'reset_pass',
+                          child: Row(children: [
+                            const Icon(Icons.lock_reset_rounded,
+                                size: 16, color: AppColors.accentOrange),
+                            const SizedBox(width: 8),
+                            Text('Send Password Reset',
+                                style: GoogleFonts.poppins(
+                                    color: Colors.white, fontSize: 13)),
+                          ]),
+                        ),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Row(children: [
+                            const Icon(Icons.person_remove_rounded,
+                                size: 16, color: AppColors.accentRed),
+                            const SizedBox(width: 8),
+                            Text('Remove Staff',
+                                style: GoogleFonts.poppins(
+                                    color: AppColors.accentRed, fontSize: 13)),
+                          ]),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  // ── Add Staff (uses secondary FirebaseApp so admin stays logged in) ──────
+  void _showAddStaffDialog(BuildContext context) {
+    final emailCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+    String selectedRole = 'cashier';
+    String selectedCanteenId = 'main';
+    String selectedCanteenName = 'Main Canteen';
+    bool isLoading = false;
+    String errorMsg = '';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) {
+        return StatefulBuilder(builder: (dialogCtx, setDialogState) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF111827),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.accentBlue.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.person_add_rounded,
+                    color: AppColors.accentBlue, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Text('Add Staff Account',
+                  style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700)),
+            ]),
+            content: SizedBox(
+              width: 340,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (errorMsg.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.accentRed.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color:
+                                  AppColors.accentRed.withValues(alpha: 0.4)),
+                        ),
+                        child: Text(errorMsg,
+                            style: GoogleFonts.poppins(
+                                color: AppColors.accentRed, fontSize: 12)),
+                      ),
+                    TextField(
+                      controller: emailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      style: GoogleFonts.poppins(
+                          color: Colors.white, fontSize: 13),
+                      decoration:
+                          _inputDeco('Email Address', Icons.email_outlined),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: passCtrl,
+                      obscureText: true,
+                      style: GoogleFonts.poppins(
+                          color: Colors.white, fontSize: 13),
+                      decoration: _inputDeco(
+                          'Password (min 6 chars)', Icons.lock_outline),
+                    ),
+                    const SizedBox(height: 12),
+                    // Role picker
+                    Text('Role',
+                        style: GoogleFonts.poppins(
+                            color: Colors.white54, fontSize: 11)),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      _roleChip('cashier', selectedRole,
+                          (v) => setDialogState(() => selectedRole = v)),
+                      const SizedBox(width: 8),
+                      _roleChip('admin', selectedRole,
+                          (v) => setDialogState(() => selectedRole = v)),
+                    ]),
+                    const SizedBox(height: 12),
+                    // Canteen picker
+                    Text('Assign to Canteen',
+                        style: GoogleFonts.poppins(
+                            color: Colors.white54, fontSize: 11)),
+                    const SizedBox(height: 6),
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('canteens')
+                          .snapshots(),
+                      builder: (_, snap) {
+                        final List<DropdownMenuItem<String>> items = [];
+                        if (snap.hasData) {
+                          for (final doc in snap.data!.docs) {
+                            final d = doc.data() as Map<String, dynamic>;
+                            items.add(DropdownMenuItem(
+                              value: doc.id,
+                              child: Text(
+                                d['name'] ?? doc.id,
+                                style: GoogleFonts.poppins(
+                                    color: Colors.white, fontSize: 13),
+                              ),
+                            ));
+                          }
+                        }
+                        if (items.isEmpty) {
+                          items.add(DropdownMenuItem(
+                            value: 'main',
+                            child: Text('Main Canteen',
+                                style: GoogleFonts.poppins(
+                                    color: Colors.white, fontSize: 13)),
+                          ));
+                        }
+                        return DropdownButtonFormField<String>(
+                          value: selectedCanteenId,
+                          dropdownColor: const Color(0xFF1A2035),
+                          decoration: _inputDeco(
+                              'Select Branch', Icons.storefront_rounded),
+                          items: items,
+                          onChanged: (val) {
+                            if (val == null) return;
+                            final d = (snap.data?.docs
+                                .where((e) => e.id == val)
+                                .firstOrNull
+                                ?.data() as Map<String, dynamic>?);
+                            setDialogState(() {
+                              selectedCanteenId = val;
+                              selectedCanteenName =
+                                  d?['name'] ?? 'Main Canteen';
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isLoading ? null : () => Navigator.pop(dialogCtx),
+                child: Text('Cancel',
+                    style: GoogleFonts.poppins(color: Colors.white54)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accentBlue,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: isLoading
+                    ? null
+                    : () async {
+                        final email = emailCtrl.text.trim();
+                        final pass = passCtrl.text.trim();
+                        if (email.isEmpty || pass.isEmpty) {
+                          setDialogState(() =>
+                              errorMsg = 'Email and password are required.');
+                          return;
+                        }
+                        if (pass.length < 6) {
+                          setDialogState(() => errorMsg =
+                              'Password must be at least 6 characters.');
+                          return;
+                        }
+                        setDialogState(() {
+                          isLoading = true;
+                          errorMsg = '';
+                        });
+                        try {
+                          // Use secondary FirebaseApp to create user without
+                          // signing out the currently logged-in admin.
+                          FirebaseApp? secondaryApp;
+                          try {
+                            secondaryApp = Firebase.app('StaffCreator');
+                          } catch (_) {
+                            secondaryApp = await Firebase.initializeApp(
+                              name: 'StaffCreator',
+                              options: Firebase.app().options,
+                            );
+                          }
+                          final secondaryAuth =
+                              FirebaseAuth.instanceFor(app: secondaryApp);
+                          final cred = await secondaryAuth
+                              .createUserWithEmailAndPassword(
+                                  email: email, password: pass);
+                          await secondaryAuth.signOut();
+                          final uid = cred.user!.uid;
+                          // Write staff Firestore doc
+                          await FirebaseFirestore.instance
+                              .collection('canteenStaff')
+                              .doc(uid)
+                              .set({
+                            'email': email,
+                            'role': selectedRole,
+                            'canteenId': selectedCanteenId,
+                            'canteenName': selectedCanteenName,
+                            'createdAt': FieldValue.serverTimestamp(),
+                          });
+                          if (dialogCtx.mounted) Navigator.pop(dialogCtx);
+                        } on FirebaseAuthException catch (e) {
+                          setDialogState(() {
+                            isLoading = false;
+                            errorMsg = e.message ?? 'Failed to create account.';
+                          });
+                        } catch (e) {
+                          setDialogState(() {
+                            isLoading = false;
+                            errorMsg = 'Error: $e';
+                          });
+                        }
+                      },
+                child: isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : Text('Create',
+                        style: GoogleFonts.poppins(
+                            color: Colors.white, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          );
+        });
+      },
+    );
+  }
+
+  // ── Reassign canteen ─────────────────────────────────────────────────────
+  void _showReassignDialog(
+      BuildContext context, String uid, Map<String, dynamic> data) {
+    String selectedId = data['canteenId'] ?? 'main';
+    String selectedName = data['canteenName'] ?? 'Main Canteen';
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (dialogCtx, setSt) => AlertDialog(
+          backgroundColor: const Color(0xFF111827),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text('Reassign Canteen',
+              style: GoogleFonts.poppins(
+                  color: Colors.white, fontWeight: FontWeight.w700)),
+          content: StreamBuilder<QuerySnapshot>(
+            stream:
+                FirebaseFirestore.instance.collection('canteens').snapshots(),
+            builder: (_, snap) {
+              final List<DropdownMenuItem<String>> items = [];
+              if (snap.hasData) {
+                for (final doc in snap.data!.docs) {
+                  final d = doc.data() as Map<String, dynamic>;
+                  items.add(DropdownMenuItem(
+                    value: doc.id,
+                    child: Text(d['name'] ?? doc.id,
+                        style: GoogleFonts.poppins(
+                            color: Colors.white, fontSize: 13)),
+                  ));
+                }
+              }
+              if (items.isEmpty) {
+                items.add(DropdownMenuItem(
+                  value: 'main',
+                  child: Text('Main Canteen',
+                      style: GoogleFonts.poppins(
+                          color: Colors.white, fontSize: 13)),
+                ));
+              }
+              return DropdownButtonFormField<String>(
+                value: selectedId,
+                dropdownColor: const Color(0xFF1A2035),
+                decoration:
+                    _inputDeco('Select Branch', Icons.storefront_rounded),
+                items: items,
+                onChanged: (val) {
+                  if (val == null) return;
+                  final d = (snap.data?.docs
+                      .where((e) => e.id == val)
+                      .firstOrNull
+                      ?.data() as Map<String, dynamic>?);
+                  setSt(() {
+                    selectedId = val;
+                    selectedName = d?['name'] ?? 'Main Canteen';
+                  });
+                },
+              );
+            },
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogCtx),
+                child: Text('Cancel',
+                    style: GoogleFonts.poppins(color: Colors.white54))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accentBlue,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12))),
+              onPressed: () async {
+                await FirebaseFirestore.instance
+                    .collection('canteenStaff')
+                    .doc(uid)
+                    .update({
+                  'canteenId': selectedId,
+                  'canteenName': selectedName,
+                });
+                if (dialogCtx.mounted) Navigator.pop(dialogCtx);
+              },
+              child: Text('Save',
+                  style: GoogleFonts.poppins(
+                      color: Colors.white, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Send password reset email ─────────────────────────────────────────────
+  void _sendPasswordReset(BuildContext context, String email) async {
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Password reset email sent to $email',
+              style: GoogleFonts.poppins()),
+          backgroundColor: AppColors.accentGreen,
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed: $e', style: GoogleFonts.poppins()),
+          backgroundColor: AppColors.accentRed,
+        ));
+      }
+    }
+  }
+
+  // ── Delete staff Firestore doc ────────────────────────────────────────────
+  void _confirmDeleteStaff(BuildContext context, String uid, String email) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF111827),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Remove "$email"?',
+            style: GoogleFonts.poppins(
+                color: Colors.white, fontWeight: FontWeight.w700)),
+        content: Text(
+          'This removes their staff access record. Their Firebase Auth account is disabled. They will no longer be able to log in.',
+          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancel',
+                  style: GoogleFonts.poppins(color: Colors.white54))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.accentRed,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
+            onPressed: () async {
+              Navigator.pop(context);
+              await FirebaseFirestore.instance
+                  .collection('canteenStaff')
+                  .doc(uid)
+                  .delete();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text('Staff "$email" removed.',
+                      style: GoogleFonts.poppins()),
+                  backgroundColor: AppColors.accentGreen,
+                ));
+              }
+            },
+            child: Text('Remove',
+                style: GoogleFonts.poppins(
+                    color: Colors.white, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+InputDecoration _inputDeco(String label, IconData icon) => InputDecoration(
+      labelText: label,
+      labelStyle: GoogleFonts.poppins(color: Colors.white54, fontSize: 12),
+      prefixIcon: Icon(icon, color: Colors.white38, size: 18),
+      filled: true,
+      fillColor: const Color(0xFF1A2035),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF2A3550)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF2A3550)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.accentBlue, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    );
+
+Widget _roleChip(String role, String selectedRole, ValueChanged<String> onTap) {
+  final selected = role == selectedRole;
+  final color = role == 'admin' ? AppColors.accentOrange : AppColors.accentBlue;
+  return GestureDetector(
+    onTap: () => onTap(role),
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color:
+            selected ? color.withValues(alpha: 0.2) : const Color(0xFF1A2035),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: selected ? color : const Color(0xFF2A3550),
+          width: selected ? 1.5 : 1,
+        ),
+      ),
+      child: Text(
+        role[0].toUpperCase() + role.substring(1),
+        style: GoogleFonts.poppins(
+          color: selected ? color : Colors.white54,
+          fontSize: 12,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+        ),
+      ),
+    ),
+  );
+}
+
+// ── Generic multi-field input dialog ─────────────────────────────────────────
+class _FieldDef {
+  final TextEditingController ctrl;
+  final String label;
+  final String hint;
+  const _FieldDef(
+      {required this.ctrl, required this.label, required this.hint});
+}
+
+class _InputDialog extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Color iconColor;
+  final List<_FieldDef> fields;
+  final Future<void> Function() onConfirm;
+
+  const _InputDialog({
+    required this.title,
+    required this.icon,
+    required this.iconColor,
+    required this.fields,
+    required this.onConfirm,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF111827),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: iconColor.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: iconColor, size: 20),
+        ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(title,
+              style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700)),
+        ),
+      ]),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: fields
+            .expand((f) => [
+                  TextField(
+                    controller: f.ctrl,
+                    style:
+                        GoogleFonts.poppins(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      labelText: f.label,
+                      hintText: f.hint,
+                      labelStyle: GoogleFonts.poppins(
+                          color: Colors.white54, fontSize: 12),
+                      hintStyle: GoogleFonts.poppins(
+                          color: Colors.white24, fontSize: 12),
+                      filled: true,
+                      fillColor: const Color(0xFF1A2035),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFF2A3550)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFF2A3550)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: iconColor, width: 1.5),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ])
+            .toList(),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel',
+                style: GoogleFonts.poppins(color: Colors.white54))),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+              backgroundColor: iconColor,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12))),
+          onPressed: () async {
+            await onConfirm();
+            if (context.mounted) Navigator.pop(context);
+          },
+          child: Text('Save',
+              style: GoogleFonts.poppins(
+                  color: Colors.white, fontWeight: FontWeight.w600)),
+        ),
+      ],
     );
   }
 }
