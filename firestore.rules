@@ -1,0 +1,208 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function staffPath(uid) {
+      return /databases/$(database)/documents/canteenStaff/$(uid);
+    }
+
+    function staffExists() {
+      return signedIn() && exists(staffPath(request.auth.uid));
+    }
+
+    function staffData() {
+      return get(staffPath(request.auth.uid)).data;
+    }
+
+    function activeStaff() {
+      return staffExists() && staffData().get('active', true) == true;
+    }
+
+    function isAdmin() {
+      return activeStaff() && staffData().get('role', '') == 'admin';
+    }
+
+    function staffCanteenId() {
+      return staffData().get('canteenId', 'main');
+    }
+
+    function canReadBranch(data) {
+      return isAdmin() ||
+        (activeStaff() && data.get('canteenId', 'main') == staffCanteenId());
+    }
+
+    function canWriteBranch(data) {
+      return activeStaff() &&
+        (isAdmin() || data.get('canteenId', 'main') == staffCanteenId());
+    }
+
+    function nonDecreasing(field) {
+      return !request.resource.data.keys().hasAny([field]) ||
+        request.resource.data[field] >= resource.data.get(field, 0);
+    }
+
+    match /canteenStaff/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid || isAdmin();
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /canteens/{canteenId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /menuItems/{itemId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if canWriteBranch(request.resource.data) &&
+        request.resource.data.canteenId is string;
+      allow update: if canWriteBranch(resource.data) &&
+        request.resource.data.canteenId == resource.data.get('canteenId', 'main');
+      allow delete: if canReadBranch(resource.data);
+    }
+
+    match /bills/{billId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if canWriteBranch(request.resource.data) &&
+        request.resource.data.get('createdBy', '') == request.auth.uid &&
+        request.resource.data.get('items', []) is list &&
+        request.resource.data.get('totalAmount', -1) is number &&
+        request.resource.data.totalAmount >= 0;
+      allow update: if isAdmin() || (
+        canReadBranch(resource.data) &&
+        request.resource.data.canteenId == resource.data.get('canteenId', 'main') &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['pendingAmount', 'creditStatus']) &&
+        request.resource.data.get('pendingAmount', 0) is number &&
+        request.resource.data.pendingAmount >= 0
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /dailyStats/{statsId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if canWriteBranch(request.resource.data) &&
+        request.resource.data.canteenId is string &&
+        request.resource.data.date is string &&
+        request.resource.data.keys().hasOnly([
+          'canteenId', 'canteenName', 'date', 'totalSales', 'totalBills',
+          'totalCash', 'totalUpi', 'totalCredit', 'creditReceived', 'lastUpdated'
+        ]);
+      allow update: if isAdmin() || (
+        canReadBranch(resource.data) &&
+        request.resource.data.canteenId == resource.data.get('canteenId', 'main') &&
+        request.resource.data.date == resource.data.date &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'canteenName', 'totalSales', 'totalBills', 'totalCash', 'totalUpi',
+          'totalCredit', 'creditReceived', 'lastUpdated'
+        ]) &&
+        nonDecreasing('totalSales') &&
+        nonDecreasing('totalBills') &&
+        nonDecreasing('totalCash') &&
+        nonDecreasing('totalUpi') &&
+        nonDecreasing('totalCredit') &&
+        nonDecreasing('creditReceived')
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if canWriteBranch(request.resource.data) &&
+        request.resource.data.get('userId', '') == request.auth.uid &&
+        request.resource.data.get('amount', -1) is number &&
+        request.resource.data.amount > 0;
+      allow update, delete: if isAdmin();
+    }
+
+    match /creditCustomers/{customerId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if canWriteBranch(request.resource.data) &&
+        request.resource.data.get('phone', '') is string &&
+        request.resource.data.get('totalPending', 0) is number &&
+        request.resource.data.totalPending >= 0;
+      allow update: if isAdmin() || (
+        canReadBranch(resource.data) &&
+        request.resource.data.canteenId == resource.data.get('canteenId', 'main') &&
+        request.resource.data.phone == resource.data.phone &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'totalPending', 'lastUpdated'
+        ]) &&
+        request.resource.data.get('totalPending', 0) is number &&
+        request.resource.data.totalPending >= 0
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /repayments/{repaymentId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if canWriteBranch(request.resource.data) &&
+        request.resource.data.get('amount', 0) is number &&
+        request.resource.data.amount > 0;
+      allow update, delete: if isAdmin();
+    }
+
+    match /cashReconciliations/{reconciliationId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if canWriteBranch(request.resource.data) &&
+        request.resource.data.get('submittedByUid', '') == request.auth.uid &&
+        request.resource.data.get('actualCash', -1) is number &&
+        request.resource.data.actualCash >= 0;
+      allow update, delete: if isAdmin();
+    }
+
+    match /notifications/{noticeId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if isAdmin() &&
+        request.resource.data.get('canteenId', '') is string &&
+        request.resource.data.get('title', '') is string &&
+        request.resource.data.get('message', '') is string;
+      allow update: if activeStaff() &&
+        canReadBranch(resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']) &&
+        request.resource.data.get('readBy', []) is list &&
+        request.resource.data.readBy.hasOnly(
+          resource.data.get('readBy', []).concat([request.auth.uid])
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /monthlyFunds/{monthId} {
+      allow read: if activeStaff();
+      allow create, update: if isAdmin() &&
+        request.resource.data.get('fundAmount', -1) is number &&
+        request.resource.data.fundAmount >= 0;
+      allow delete: if isAdmin();
+    }
+
+    match /counters/{counterId} {
+      // Per-canteen counters: billCounter_<canteenId>. The legacy global
+      // 'billCounter' stays readable so 'main' can continue its sequence.
+      allow get: if activeStaff() && (
+        counterId == 'billCounter' ||
+        isAdmin() ||
+        counterId == 'billCounter_' + staffCanteenId()
+      );
+      allow list: if false;
+      allow create: if activeStaff() &&
+        (isAdmin() || counterId == 'billCounter_' + staffCanteenId()) &&
+        counterId.matches('billCounter_.+') &&
+        request.resource.data.keys().hasOnly(['canteenId', 'lastNumber']) &&
+        counterId == 'billCounter_' + request.resource.data.canteenId &&
+        request.resource.data.lastNumber is int &&
+        request.resource.data.lastNumber >= 1;
+      allow update: if activeStaff() &&
+        (isAdmin() || counterId == 'billCounter_' + staffCanteenId()) &&
+        counterId.matches('billCounter_.+') &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastNumber']) &&
+        request.resource.data.lastNumber == resource.data.lastNumber + 1;
+      allow delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

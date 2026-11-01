@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'bill_detail_page.dart';
+import 'canteen_provider.dart';
 
 class TodaySalesPage extends StatelessWidget {
   const TodaySalesPage({super.key});
@@ -39,21 +39,33 @@ class TodaySalesPage extends StatelessWidget {
                 child: CircularProgressIndicator(color: AppColors.gradBlue));
           }
           if (snap.hasError) {
+            debugPrint('[TodaySales] Error: ${snap.error}');
             return Center(
-                child: Text('Error: ${snap.error}',
-                    style: GoogleFonts.poppins(color: AppColors.accentRed)));
+                child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text('Error: ${snap.error}',
+                  style: AppText.style(color: AppColors.accentRed)),
+            ));
           }
 
-          final bills = snap.data?.docs ?? [];
-          double total = 0, cash = 0, upi = 0;
+          final allDocs = snap.data?.docs ?? [];
+          final bills = allDocs.where((doc) {
+            final d = doc.data() as Map<String, dynamic>;
+            return CanteenProvider.matchesSelectedCanteen(d);
+          }).toList();
+
+          double total = 0, cash = 0, upi = 0, credit = 0;
           for (final b in bills) {
             final d = b.data() as Map<String, dynamic>;
-            final amt = (d['totalAmount'] as num).toDouble();
+            final amt = ((d['totalAmount'] ?? 0) as num).toDouble();
             total += amt;
-            if (d['paymentMode'] == 'Cash') {
+            final mode = d['paymentMode']?.toString() ?? 'N/A';
+            if (mode == 'Cash') {
               cash += amt;
-            } else {
+            } else if (mode == 'UPI') {
               upi += amt;
+            } else if (mode == 'Credit') {
+              credit += amt;
             }
           }
 
@@ -71,26 +83,28 @@ class TodaySalesPage extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(DateFormat('MMMM dd, yyyy').format(DateTime.now()),
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: Colors.white70, fontSize: 13)),
                       const SizedBox(height: 4),
                       Text('₹ ${total.toStringAsFixed(2)}',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: Colors.white,
                               fontSize: 36,
                               fontWeight: FontWeight.w800)),
                       Text("Total Sales Today",
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: Colors.white70, fontSize: 13)),
                       const SizedBox(height: 16),
                       Row(
                           mainAxisAlignment: MainAxisAlignment.start,
                           children: [
-                            _pill('💵 Cash', '₹${cash.toStringAsFixed(0)}'),
-                            const SizedBox(width: 16),
-                            _pill('📱 UPI', '₹${upi.toStringAsFixed(0)}'),
-                            const SizedBox(width: 16),
-                            _pill('🧾 Bills', '${bills.length}'),
+                            _pill('Cash', '₹${cash.toStringAsFixed(0)}'),
+                            const SizedBox(width: 12),
+                            _pill('UPI', '₹${upi.toStringAsFixed(0)}'),
+                            const SizedBox(width: 12),
+                            _pill('Credit', '₹${credit.toStringAsFixed(0)}'),
+                            const SizedBox(width: 12),
+                            _pill('Bills', '${bills.length}'),
                           ]),
                     ],
                   ),
@@ -117,7 +131,7 @@ class TodaySalesPage extends StatelessWidget {
                                 size: 56, color: AppColors.textHint),
                             const SizedBox(height: 12),
                             Text('No bills today yet.',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                     color: AppColors.textSecondary,
                                     fontSize: 15)),
                           ]))
@@ -127,10 +141,14 @@ class TodaySalesPage extends StatelessWidget {
                         itemBuilder: (_, i) {
                           final doc = bills[i];
                           final d = doc.data() as Map<String, dynamic>;
-                          final amt = (d['totalAmount'] as num).toDouble();
-                          final ts = (d['timestamp'] as Timestamp).toDate();
+                          final amt =
+                              ((d['totalAmount'] ?? 0) as num).toDouble();
+                          DateTime ts = DateTime.now();
+                          if (d['timestamp'] is Timestamp) {
+                            ts = (d['timestamp'] as Timestamp).toDate();
+                          }
                           final billNum = d['billNumber'] ?? 0;
-                          final mode = d['paymentMode'] ?? 'N/A';
+                          final mode = d['paymentMode']?.toString() ?? 'N/A';
 
                           return GestureDetector(
                             onTap: () => Navigator.push(
@@ -152,18 +170,18 @@ class TodaySalesPage extends StatelessWidget {
                                       borderRadius: BorderRadius.circular(10)),
                                   child: Center(
                                       child: Text('#$billNum',
-                                          style: GoogleFonts.poppins(
+                                          style: AppText.style(
                                               color: Colors.white,
                                               fontWeight: FontWeight.w700,
                                               fontSize: 11))),
                                 ),
                                 title: Text('Bill #$billNum',
-                                    style: GoogleFonts.poppins(
+                                    style: AppText.style(
                                         color: AppColors.textPrimary,
                                         fontWeight: FontWeight.w600,
                                         fontSize: 13)),
                                 subtitle: Text(DateFormat.jm().format(ts),
-                                    style: GoogleFonts.poppins(
+                                    style: AppText.style(
                                         color: AppColors.textSecondary,
                                         fontSize: 12)),
                                 trailing: Column(
@@ -171,7 +189,7 @@ class TodaySalesPage extends StatelessWidget {
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Text('₹${amt.toStringAsFixed(0)}',
-                                          style: GoogleFonts.poppins(
+                                          style: AppText.style(
                                               color: AppColors.accentGreen,
                                               fontWeight: FontWeight.w700,
                                               fontSize: 15)),
@@ -202,12 +220,11 @@ class TodaySalesPage extends StatelessWidget {
           borderRadius: BorderRadius.circular(20)),
       child: Column(children: [
         Text(value,
-            style: GoogleFonts.poppins(
+            style: AppText.style(
                 color: Colors.white,
                 fontSize: 13,
                 fontWeight: FontWeight.w700)),
-        Text(label,
-            style: GoogleFonts.poppins(color: Colors.white70, fontSize: 10)),
+        Text(label, style: AppText.style(color: Colors.white70, fontSize: 10)),
       ]),
     );
   }

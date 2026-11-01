@@ -4,7 +4,6 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'canteen_provider.dart';
@@ -47,16 +46,15 @@ class _ExpensesPageState extends State<ExpensesPage> {
         backgroundColor: AppColors.bgCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Text('Select Proof',
-            style: GoogleFonts.poppins(
+            style: AppText.style(
                 color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
         content: Text('Choose image source',
-            style: GoogleFonts.poppins(
-                color: AppColors.textSecondary, fontSize: 13)),
+            style: AppText.style(color: AppColors.textSecondary, fontSize: 13)),
         actions: [
           TextButton.icon(
             icon: const Icon(Icons.camera_alt, color: AppColors.accentBlue),
             label: Text('Camera',
-                style: GoogleFonts.poppins(color: AppColors.accentBlue)),
+                style: AppText.style(color: AppColors.accentBlue)),
             onPressed: () {
               Navigator.pop(context);
               _pickImage(ImageSource.camera);
@@ -65,7 +63,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
           TextButton.icon(
             icon: const Icon(Icons.photo_library, color: AppColors.gradPurple),
             label: Text('Gallery',
-                style: GoogleFonts.poppins(color: AppColors.gradPurple)),
+                style: AppText.style(color: AppColors.gradPurple)),
             onPressed: () {
               Navigator.pop(context);
               _pickImage(ImageSource.gallery);
@@ -84,8 +82,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content:
-                Text('Failed to pick image: $e', style: GoogleFonts.poppins()),
+            content: Text('Failed to pick image: $e', style: AppText.style()),
             backgroundColor: AppColors.accentRed));
       }
     }
@@ -147,7 +144,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('✓ Expense logged!', style: GoogleFonts.poppins()),
+            content: Text('Expense logged!', style: AppText.style()),
             backgroundColor: const Color(0xFF1B4332)));
       }
 
@@ -162,8 +159,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content:
-                Text('Failed to log expense: $e', style: GoogleFonts.poppins()),
+            content: Text('Failed to log expense: $e', style: AppText.style()),
             backgroundColor: AppColors.accentRed));
       }
     } finally {
@@ -218,13 +214,13 @@ class _ExpensesPageState extends State<ExpensesPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text('Date of Expense',
-                                      style: GoogleFonts.poppins(
+                                      style: AppText.style(
                                           color: AppColors.textSecondary,
                                           fontSize: 11)),
                                   Text(
                                       DateFormat('MMMM dd, yyyy')
                                           .format(_selectedExpenseDate),
-                                      style: GoogleFonts.poppins(
+                                      style: AppText.style(
                                           color: AppColors.textPrimary,
                                           fontSize: 14,
                                           fontWeight: FontWeight.w500)),
@@ -242,7 +238,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
                     DropdownButtonFormField<String>(
                       initialValue: _selectedCategory,
                       dropdownColor: AppColors.bgCard,
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textPrimary, fontSize: 14),
                       decoration: darkInput(
                           label: 'Expense Category *',
@@ -251,7 +247,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
                           .map((c) => DropdownMenuItem(
                                 value: c,
                                 child: Text(c,
-                                    style: GoogleFonts.poppins(
+                                    style: AppText.style(
                                         color: AppColors.textPrimary)),
                               ))
                           .toList(),
@@ -267,7 +263,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
                     if (_selectedCategory == 'Other') ...[
                       TextFormField(
                         controller: _otherReasonController,
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: AppColors.textPrimary, fontSize: 14),
                         decoration: darkInput(
                             label: 'Reason for Other *',
@@ -283,7 +279,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
                     TextFormField(
                       controller: _amountController,
                       keyboardType: TextInputType.number,
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textPrimary, fontSize: 14),
                       decoration: darkInput(
                           label: 'Amount (₹) *',
@@ -340,11 +336,11 @@ class _ExpensesPageState extends State<ExpensesPage> {
                                         color: AppColors.textHint, size: 44),
                                     const SizedBox(height: 10),
                                     Text('Tap to upload receipt',
-                                        style: GoogleFonts.poppins(
+                                        style: AppText.style(
                                             color: AppColors.textSecondary,
                                             fontSize: 13)),
                                     Text('Camera or Gallery',
-                                        style: GoogleFonts.poppins(
+                                        style: AppText.style(
                                             color: AppColors.textHint,
                                             fontSize: 11)),
                                   ])

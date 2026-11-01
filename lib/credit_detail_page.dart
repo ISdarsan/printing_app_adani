@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'canteen_provider.dart';
@@ -91,25 +90,25 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                 child: Column(
                   children: [
                     Text(widget.customerName,
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: Colors.white,
                             fontSize: 20,
                             fontWeight: FontWeight.w700)),
                     const SizedBox(height: 4),
                     Text(widget.customerPhone,
-                        style: GoogleFonts.poppins(
-                            color: Colors.white70, fontSize: 14)),
+                        style:
+                            AppText.style(color: Colors.white70, fontSize: 14)),
                     Text(widget.canteenName,
-                        style: GoogleFonts.poppins(
-                            color: Colors.white54, fontSize: 12)),
+                        style:
+                            AppText.style(color: Colors.white54, fontSize: 12)),
                     const SizedBox(height: 16),
                     Text('Total Pending',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: Colors.white70,
                             fontSize: 12,
                             fontWeight: FontWeight.w600)),
                     Text('₹${currentTotalPending.toStringAsFixed(2)}',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: Colors.white,
                             fontSize: 32,
                             fontWeight: FontWeight.w800)),
@@ -144,7 +143,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                             alignment: Alignment.center,
                             child: Text(
                               'Pending Bills',
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                 color: _activeTab == 0
                                     ? Colors.white
                                     : AppColors.textSecondary,
@@ -169,7 +168,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                             alignment: Alignment.center,
                             child: Text(
                               'Repayments',
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                 color: _activeTab == 1
                                     ? Colors.white
                                     : AppColors.textSecondary,
@@ -215,7 +214,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                                 child: CircularProgressIndicator(
                                     color: Colors.white, strokeWidth: 2))
                             : Text('Pay Now',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                     color: Colors.white,
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700)),
@@ -240,7 +239,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
       builder: (ctx) {
         return StatefulBuilder(builder: (context, setDialogState) {
           return Dialog(
-            backgroundColor: const Color(0xFF111827),
+            backgroundColor: AppColors.bgCard,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             child: Padding(
@@ -250,13 +249,13 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Receive Payment',
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: Colors.white,
                           fontSize: 18,
                           fontWeight: FontWeight.w700)),
                   const SizedBox(height: 24),
                   Text('Amount Received',
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textSecondary,
                           fontSize: 13,
                           fontWeight: FontWeight.w500)),
@@ -266,7 +265,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                       Expanded(
                         child: TextFormField(
                           controller: amountCtrl,
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: Colors.white,
                               fontSize: 16,
                               fontWeight: FontWeight.w600),
@@ -274,7 +273,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                               decimal: true),
                           decoration: InputDecoration(
                             prefixText: '₹ ',
-                            prefixStyle: GoogleFonts.poppins(
+                            prefixStyle: AppText.style(
                                 color: Colors.white,
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600),
@@ -302,14 +301,13 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                           amountCtrl.text = _totalPending.toStringAsFixed(2);
                         },
                         child: Text('Full',
-                            style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.w700)),
+                            style: AppText.style(fontWeight: FontWeight.w700)),
                       ),
                     ],
                   ),
                   const SizedBox(height: 20),
                   Text('Payment Mode',
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textSecondary,
                           fontSize: 13,
                           fontWeight: FontWeight.w500)),
@@ -324,20 +322,19 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             decoration: BoxDecoration(
                               color: paymentMode == 'Cash'
-                                  ? const Color(0xFF00C853)
-                                      .withValues(alpha: 0.2)
+                                  ? AppColors.accentGreen.withValues(alpha: 0.2)
                                   : AppColors.bgInput,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
                                   color: paymentMode == 'Cash'
-                                      ? const Color(0xFF00C853)
+                                      ? AppColors.accentGreen
                                       : AppColors.glassBorder),
                             ),
                             alignment: Alignment.center,
                             child: Text('Cash',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                     color: paymentMode == 'Cash'
-                                        ? const Color(0xFF00C853)
+                                        ? AppColors.accentGreen
                                         : AppColors.textSecondary,
                                     fontWeight: FontWeight.w600)),
                           ),
@@ -362,7 +359,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                             ),
                             alignment: Alignment.center,
                             child: Text('UPI',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                     color: paymentMode == 'UPI'
                                         ? AppColors.accentBlue
                                         : AppColors.textSecondary,
@@ -379,7 +376,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                         child: TextButton(
                           onPressed: () => Navigator.pop(context),
                           child: Text('Cancel',
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: AppColors.textSecondary,
                                   fontWeight: FontWeight.w600)),
                         ),
@@ -404,7 +401,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                             }
                           },
                           child: Text('Confirm',
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700)),
                         ),
@@ -574,8 +571,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
         if (docs.isEmpty) {
           return Center(
             child: Text('No pending bills found',
-                style: GoogleFonts.poppins(
-                    color: AppColors.textHint, fontSize: 15)),
+                style: AppText.style(color: AppColors.textHint, fontSize: 15)),
           );
         }
 
@@ -605,12 +601,12 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('Bill #$billNum',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: Colors.white,
                               fontSize: 15,
                               fontWeight: FontWeight.bold)),
                       Text('₹${pendingAmt.toStringAsFixed(2)}',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: AppColors.accentRed,
                               fontSize: 15,
                               fontWeight: FontWeight.bold)),
@@ -618,7 +614,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                   ),
                   const SizedBox(height: 4),
                   Text(dateStr,
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textHint, fontSize: 11)),
                   const Divider(color: AppColors.bgDivider, height: 20),
                   ...items.map((item) {
@@ -630,12 +626,12 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                           Expanded(
                               child: Text(
                                   '${item['quantity']}x ${item['name']}',
-                                  style: GoogleFonts.poppins(
+                                  style: AppText.style(
                                       color: AppColors.textSecondary,
                                       fontSize: 12))),
                           Text(
                               '₹${(item['subtotal'] ?? 0.0).toStringAsFixed(0)}',
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: AppColors.textSecondary,
                                   fontSize: 12)),
                         ],
@@ -680,8 +676,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
         if (docs.isEmpty) {
           return Center(
             child: Text('No repayment history found',
-                style: GoogleFonts.poppins(
-                    color: AppColors.textHint, fontSize: 15)),
+                style: AppText.style(color: AppColors.textHint, fontSize: 15)),
           );
         }
 
@@ -724,23 +719,23 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Cleared via $mode',
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                                 color: Colors.white,
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold)),
                         const SizedBox(height: 2),
                         Text(dateStr,
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                                 color: AppColors.textHint, fontSize: 11)),
                         Text('By: $user',
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                                 color: AppColors.textHint, fontSize: 10)),
                       ],
                     ),
                   ),
                   Text(
                     '+₹${amount.toStringAsFixed(0)}',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: AppColors.accentGreen,
                         fontSize: 15,
                         fontWeight: FontWeight.bold),

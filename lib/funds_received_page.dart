@@ -1,10 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'expense_detail_page.dart';
+import 'canteen_provider.dart';
 
 class FundsReceivedPage extends StatefulWidget {
   final bool isAdmin;
@@ -29,7 +29,8 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
 
   Stream<QuerySnapshot> get _monthExpensesStream {
     final start = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
-    final end = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0, 23, 59, 59);
+    final end =
+        DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0, 23, 59, 59);
     return FirebaseFirestore.instance
         .collection('expenses')
         .where('timestamp', isGreaterThanOrEqualTo: start)
@@ -41,8 +42,7 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
     final amount = double.tryParse(_fundController.text);
     if (amount == null || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content:
-            Text('Please enter a valid amount', style: GoogleFonts.poppins()),
+        content: Text('Please enter a valid amount', style: AppText.style()),
         backgroundColor: AppColors.accentRed,
       ));
       return;
@@ -62,15 +62,15 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Fund for $_monthLabel updated!',
-              style: GoogleFonts.poppins()),
+          content:
+              Text('Fund for $_monthLabel updated!', style: AppText.style()),
           backgroundColor: const Color(0xFF1B4332),
         ));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e', style: GoogleFonts.poppins()),
+          content: Text('Error: $e', style: AppText.style()),
           backgroundColor: AppColors.accentRed,
         ));
       }
@@ -88,7 +88,7 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
         backgroundColor: AppColors.bgCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('Set Fund - $_monthLabel',
-            style: GoogleFonts.poppins(
+            style: AppText.style(
                 color: AppColors.textPrimary,
                 fontWeight: FontWeight.w700,
                 fontSize: 16)),
@@ -96,13 +96,13 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text('Enter the total fund allocated by management for this month.',
-                style: GoogleFonts.poppins(
+                style: AppText.style(
                     color: AppColors.textSecondary, fontSize: 13)),
             const SizedBox(height: 16),
             TextField(
               controller: _fundController,
               keyboardType: TextInputType.number,
-              style: GoogleFonts.poppins(color: AppColors.textPrimary),
+              style: AppText.style(color: AppColors.textPrimary),
               decoration: darkInput(
                   label: 'Amount (INR)', prefixIcon: Icons.currency_rupee),
               autofocus: true,
@@ -113,7 +113,7 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text('Cancel',
-                style: GoogleFonts.poppins(color: AppColors.textSecondary)),
+                style: AppText.style(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -129,7 +129,7 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                     child: CircularProgressIndicator(
                         color: Colors.white, strokeWidth: 2))
                 : Text('Save',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: Colors.white, fontWeight: FontWeight.w600)),
           ),
         ],
@@ -139,7 +139,8 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
 
   void _changeMonth(int offset) {
     setState(() {
-      _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + offset);
+      _selectedMonth =
+          DateTime(_selectedMonth.year, _selectedMonth.month + offset);
     });
   }
 
@@ -154,7 +155,9 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: buildGradientAppBar(
-        title: widget.isAdmin ? 'Canteen Cashflow Control' : 'Monthly Budget & Expenses',
+        title: widget.isAdmin
+            ? 'Canteen Cashflow Control'
+            : 'Monthly Budget & Expenses',
         centerTitle: true,
       ),
       body: Column(
@@ -167,13 +170,14 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.chevron_left_rounded, color: Colors.white, size: 28),
+                  icon: const Icon(Icons.chevron_left_rounded,
+                      color: Colors.white, size: 28),
                   onPressed: () => _changeMonth(-1),
                 ),
                 const SizedBox(width: 8),
                 Text(
                   _monthLabel,
-                  style: GoogleFonts.poppins(
+                  style: AppText.style(
                     color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -181,7 +185,8 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  icon: const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 28),
+                  icon: const Icon(Icons.chevron_right_rounded,
+                      color: Colors.white, size: 28),
                   onPressed: () => _changeMonth(1),
                 ),
               ],
@@ -210,11 +215,14 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                     double totalSpent = 0;
                     List<QueryDocumentSnapshot> currentExpenses = [];
                     if (expensesSnap.hasData) {
-                      currentExpenses = expensesSnap.data!.docs;
+                      currentExpenses = expensesSnap.data!.docs.where((doc) {
+                        final d = doc.data() as Map<String, dynamic>;
+                        return CanteenProvider.matchesSelectedCanteen(d);
+                      }).toList();
                       for (var doc in currentExpenses) {
                         totalSpent +=
-                            ((doc.data() as Map<String, dynamic>)['amount'] ?? 0.0)
-                                as num;
+                            ((doc.data() as Map<String, dynamic>)['amount'] ??
+                                0.0) as num;
                       }
                     }
 
@@ -241,16 +249,19 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                               child: Container(
                                 padding: const EdgeInsets.all(22),
                                 decoration: gradientCard(
-                                    gradient: AppGradients.blueAccent, radius: 24),
+                                    gradient: AppGradients.blueAccent,
+                                    radius: 24),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(children: [
-                                      const Icon(Icons.account_balance_wallet_rounded,
-                                          color: Colors.white, size: 24),
+                                      const Icon(
+                                          Icons.account_balance_wallet_rounded,
+                                          color: Colors.white,
+                                          size: 24),
                                       const SizedBox(width: 8),
                                       Text('Monthly Budget Console',
-                                          style: GoogleFonts.poppins(
+                                          style: AppText.style(
                                               color: Colors.white70,
                                               fontSize: 13,
                                               fontWeight: FontWeight.w600)),
@@ -261,15 +272,17 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                                               horizontal: 10, vertical: 4),
                                           decoration: BoxDecoration(
                                               color: Colors.white24,
-                                              borderRadius: BorderRadius.circular(20)),
+                                              borderRadius:
+                                                  BorderRadius.circular(20)),
                                           child: Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
                                                 const Icon(Icons.edit_rounded,
-                                                    color: Colors.white, size: 12),
+                                                    color: Colors.white,
+                                                    size: 12),
                                                 const SizedBox(width: 4),
                                                 Text('Edit',
-                                                    style: GoogleFonts.poppins(
+                                                    style: AppText.style(
                                                         color: Colors.white,
                                                         fontSize: 11)),
                                               ]),
@@ -277,57 +290,65 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                                     ]),
                                     const SizedBox(height: 12),
                                     Text(_monthLabel,
-                                        style: GoogleFonts.poppins(
-                                            color: Colors.white70, fontSize: 12)),
+                                        style: AppText.style(
+                                            color: Colors.white70,
+                                            fontSize: 12)),
                                     const SizedBox(height: 16),
                                     Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
                                         Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text('Allocated Fund',
-                                                style: GoogleFonts.poppins(
+                                                style: AppText.style(
                                                     color: Colors.white60,
                                                     fontSize: 11)),
                                             const SizedBox(height: 2),
                                             Text(allocatedStr,
-                                                style: GoogleFonts.poppins(
+                                                style: AppText.style(
                                                     color: Colors.white,
                                                     fontSize: 20,
-                                                    fontWeight: FontWeight.w800)),
+                                                    fontWeight:
+                                                        FontWeight.w800)),
                                           ],
                                         ),
                                         Column(
-                                          crossAxisAlignment: CrossAxisAlignment.center,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
                                           children: [
                                             Text('Total Spent',
-                                                style: GoogleFonts.poppins(
+                                                style: AppText.style(
                                                     color: Colors.white60,
                                                     fontSize: 11)),
                                             const SizedBox(height: 2),
                                             Text(spentStr,
-                                                style: GoogleFonts.poppins(
+                                                style: AppText.style(
                                                     color: Colors.white,
                                                     fontSize: 20,
-                                                    fontWeight: FontWeight.w800)),
+                                                    fontWeight:
+                                                        FontWeight.w800)),
                                           ],
                                         ),
                                         Column(
-                                          crossAxisAlignment: CrossAxisAlignment.end,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
                                           children: [
                                             Text('Available Balance',
-                                                style: GoogleFonts.poppins(
+                                                style: AppText.style(
                                                     color: Colors.white60,
                                                     fontSize: 11)),
                                             const SizedBox(height: 2),
                                             Text(availableStr,
-                                                style: GoogleFonts.poppins(
+                                                style: AppText.style(
                                                     color: isNegative
                                                         ? AppColors.accentRed
                                                         : AppColors.accentGreen,
                                                     fontSize: 20,
-                                                    fontWeight: FontWeight.w800)),
+                                                    fontWeight:
+                                                        FontWeight.w800)),
                                           ],
                                         ),
                                       ],
@@ -338,10 +359,12 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                                           horizontal: 10, vertical: 4),
                                       decoration: BoxDecoration(
                                           color: Colors.black26,
-                                          borderRadius: BorderRadius.circular(20)),
+                                          borderRadius:
+                                              BorderRadius.circular(20)),
                                       child: Text(lastUpdated,
-                                          style: GoogleFonts.poppins(
-                                              fontSize: 10, color: Colors.white70)),
+                                          style: AppText.style(
+                                              fontSize: 10,
+                                              color: Colors.white70)),
                                     ),
                                   ],
                                 ),
@@ -369,7 +392,7 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                               alignment: Alignment.center,
                               child: Text(
                                 'No expenses logged for this month',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                     color: AppColors.textHint, fontSize: 12),
                               ),
                             ),
@@ -381,7 +404,8 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                                 final doc = currentExpenses[i];
                                 final d = doc.data() as Map<String, dynamic>;
                                 final amount = (d['amount'] ?? 0.0) as num;
-                                final desc = d['description'] ?? 'No Description';
+                                final desc =
+                                    d['description'] ?? 'No Description';
                                 final ts = d['timestamp'] as Timestamp?;
                                 final dateStr = ts != null
                                     ? DateFormat('dd MMM, hh:mm a')
@@ -389,18 +413,19 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                                     : '-';
 
                                 return Container(
-                                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                                  margin:
+                                      const EdgeInsets.fromLTRB(16, 0, 16, 8),
                                   decoration: glassCard(radius: 14),
                                   child: ListTile(
                                     contentPadding: const EdgeInsets.symmetric(
                                         horizontal: 16, vertical: 4),
                                     title: Text(desc,
-                                        style: GoogleFonts.poppins(
+                                        style: AppText.style(
                                             color: AppColors.textPrimary,
                                             fontWeight: FontWeight.w600,
                                             fontSize: 13)),
                                     subtitle: Text(dateStr,
-                                        style: GoogleFonts.poppins(
+                                        style: AppText.style(
                                             color: AppColors.textSecondary,
                                             fontSize: 11)),
                                     trailing: Row(
@@ -408,20 +433,22 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                                       children: [
                                         Text(
                                           '-₹${amount.toStringAsFixed(0)}',
-                                          style: GoogleFonts.poppins(
+                                          style: AppText.style(
                                               color: AppColors.accentRed,
                                               fontWeight: FontWeight.bold,
                                               fontSize: 14),
                                         ),
                                         const SizedBox(width: 6),
                                         const Icon(Icons.chevron_right,
-                                            size: 14, color: AppColors.textHint),
+                                            size: 14,
+                                            color: AppColors.textHint),
                                       ],
                                     ),
                                     onTap: () => Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (_) => ExpenseDetailPage(expenseDoc: doc),
+                                        builder: (_) =>
+                                            ExpenseDetailPage(expenseDoc: doc),
                                       ),
                                     ),
                                   ),

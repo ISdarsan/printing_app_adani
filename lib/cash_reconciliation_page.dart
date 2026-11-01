@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'canteen_provider.dart';
@@ -44,8 +43,13 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
         .doc(_todayRecordId)
         .snapshots();
 
-    _reconciliationHistoryStream = FirebaseFirestore.instance
-        .collection('cashReconciliations')
+    Query<Map<String, dynamic>> historyQuery =
+        FirebaseFirestore.instance.collection('cashReconciliations');
+    if (!widget.isAdmin) {
+      historyQuery = historyQuery.where('canteenId',
+          isEqualTo: CanteenProvider.selectedCanteenId);
+    }
+    _reconciliationHistoryStream = historyQuery
         .orderBy('timestamp', descending: true)
         .limit(30)
         .snapshots();
@@ -56,8 +60,8 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
     final actual = double.tryParse(_cashController.text);
     if (actual == null || actual < 0) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Please enter a valid cash amount',
-            style: GoogleFonts.poppins()),
+        content:
+            Text('Please enter a valid cash amount', style: AppText.style()),
         backgroundColor: AppColors.accentRed,
       ));
       return;
@@ -93,7 +97,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Reconciliation submitted successfully!',
-              style: GoogleFonts.poppins()),
+              style: AppText.style()),
           backgroundColor: const Color(0xFF1B4332),
         ));
       }
@@ -102,14 +106,14 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
               'A cash reconciliation has already been submitted for this canteen today.',
-              style: GoogleFonts.poppins()),
+              style: AppText.style()),
           backgroundColor: AppColors.accentOrange,
         ));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e', style: GoogleFonts.poppins()),
+          content: Text('Error: $e', style: AppText.style()),
           backgroundColor: AppColors.accentRed,
         ));
       }
@@ -181,12 +185,12 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
                 ),
                 const SizedBox(height: 16),
                 Text('Reconciled for Today',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: Colors.white,
                         fontSize: 18,
                         fontWeight: FontWeight.bold)),
                 Text('Submitted by $user at $timeStr',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: AppColors.textSecondary, fontSize: 11)),
                 const SizedBox(height: 32),
                 Container(
@@ -254,7 +258,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
                                   color: Colors.white, size: 24),
                               const SizedBox(width: 8),
                               Text('Closing Summary',
-                                  style: GoogleFonts.poppins(
+                                  style: AppText.style(
                                       color: Colors.white70,
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600)),
@@ -262,24 +266,24 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
                           ),
                           const SizedBox(height: 12),
                           Text(_todayLabel,
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: Colors.white60, fontSize: 12)),
                           const SizedBox(height: 14),
                           Text('₹${systemCash.toStringAsFixed(2)}',
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: Colors.white,
                                   fontSize: 32,
                                   fontWeight: FontWeight.w800)),
                           const SizedBox(height: 2),
                           Text('Expected Cash in Register (System Total)',
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: Colors.white70, fontSize: 11)),
                         ],
                       ),
                     ),
                     const SizedBox(height: 28),
                     Text('Count & Reconcile Cash',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: Colors.white,
                             fontSize: 15,
                             fontWeight: FontWeight.bold)),
@@ -288,8 +292,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
                       controller: _cashController,
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),
-                      style: GoogleFonts.poppins(
-                          color: Colors.white, fontSize: 14),
+                      style: AppText.style(color: Colors.white, fontSize: 14),
                       decoration: darkInput(
                         label: 'Actual Cash in Drawer (INR)',
                         prefixIcon: Icons.currency_rupee_rounded,
@@ -308,8 +311,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _noteController,
-                      style: GoogleFonts.poppins(
-                          color: Colors.white, fontSize: 14),
+                      style: AppText.style(color: Colors.white, fontSize: 14),
                       maxLines: 2,
                       decoration: darkInput(
                         label: 'Add note (e.g. Reason for discrepancy)',
@@ -336,7 +338,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
                             ? const CircularProgressIndicator(
                                 color: Colors.white)
                             : Text('Submit Closing Reconciliation',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                     color: Colors.white,
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold)),
@@ -386,7 +388,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
                 : isNegative
                     ? 'Status: Shortage'
                     : 'Status: Surplus',
-            style: GoogleFonts.poppins(
+            style: AppText.style(
               color: isMatched
                   ? AppColors.accentGreen
                   : isNegative
@@ -398,7 +400,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
           ),
           Text(
             '₹${discrepancy.toStringAsFixed(2)}',
-            style: GoogleFonts.poppins(
+            style: AppText.style(
               color: isMatched
                   ? AppColors.accentGreen
                   : isNegative
@@ -426,8 +428,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
         if (docs.isEmpty) {
           return Center(
             child: Text('No reconciliation logs found.',
-                style: GoogleFonts.poppins(
-                    color: AppColors.textHint, fontSize: 14)),
+                style: AppText.style(color: AppColors.textHint, fontSize: 14)),
           );
         }
 
@@ -458,7 +459,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(DateFormat('dd MMMM yyyy').format(date),
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
                               fontSize: 14)),
@@ -480,7 +481,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
                               : isShortage
                                   ? 'Shortage: ₹${discrepancy.abs().toStringAsFixed(0)}'
                                   : 'Surplus: ₹${discrepancy.toStringAsFixed(0)}',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                             color: isBalanced
                                 ? AppColors.accentGreen
                                 : isShortage
@@ -515,13 +516,13 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('Submitted by $user',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: AppColors.textHint, fontSize: 10)),
                       if (note.isNotEmpty)
                         Expanded(
                           child: Text(
                             note,
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                                 color: AppColors.textSecondary,
                                 fontSize: 11,
                                 fontStyle: FontStyle.italic),
@@ -545,10 +546,9 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label,
-            style: GoogleFonts.poppins(
-                color: AppColors.textSecondary, fontSize: 13)),
+            style: AppText.style(color: AppColors.textSecondary, fontSize: 13)),
         Text(value,
-            style: GoogleFonts.poppins(
+            style: AppText.style(
                 color: valueColor ?? Colors.white,
                 fontSize: 14,
                 fontWeight: FontWeight.bold)),
@@ -561,11 +561,10 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
-            style:
-                GoogleFonts.poppins(color: AppColors.textHint, fontSize: 10)),
+            style: AppText.style(color: AppColors.textHint, fontSize: 10)),
         const SizedBox(height: 2),
         Text(value,
-            style: GoogleFonts.poppins(
+            style: AppText.style(
                 color: valColor ?? Colors.white,
                 fontSize: 13,
                 fontWeight: FontWeight.bold)),

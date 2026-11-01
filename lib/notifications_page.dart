@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'notification_detail_page.dart';
 import 'theme.dart';
@@ -14,6 +13,7 @@ class NotificationsPage extends StatelessWidget {
 
   static Stream<QuerySnapshot> get noticesStream => FirebaseFirestore.instance
       .collection('notifications')
+      .where('canteenId', isEqualTo: CanteenProvider.selectedCanteenId)
       .orderBy('timestamp', descending: true)
       .snapshots();
 
@@ -71,13 +71,13 @@ class NotificationsPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
                   Text('No Notices Yet',
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           fontSize: 20,
                           fontWeight: FontWeight.w700,
                           color: Colors.white)),
                   const SizedBox(height: 8),
                   Text('Admin messages will appear here.',
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           fontSize: 14, color: AppColors.textSecondary)),
                 ],
               ),
@@ -124,7 +124,7 @@ class NotificationsPage extends StatelessWidget {
                       const SizedBox(width: 12),
                       Text(
                         '$unreadCount unread notice${unreadCount > 1 ? "s" : ""}',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: AppColors.accentRed,
                             fontSize: 14,
                             fontWeight: FontWeight.w700),
@@ -174,12 +174,12 @@ class NotificationsPage extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: isUnread
                               ? const Color(0xFF1A1500)
-                              : const Color(0xFF111827),
+                              : AppColors.bgCard,
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
                             color: isUnread
-                                ? const Color(0xFFFF8C42)
-                                : const Color(0xFF1E2D45),
+                                ? AppColors.accentOrange
+                                : AppColors.bgDivider,
                             width: isUnread ? 1.5 : 1,
                           ),
                         ),
@@ -194,9 +194,9 @@ class NotificationsPage extends StatelessWidget {
                                 height: 44,
                                 decoration: BoxDecoration(
                                   color: isUnread
-                                      ? const Color(0xFFFF8C42)
+                                      ? AppColors.accentOrange
                                           .withValues(alpha: 0.2)
-                                      : const Color(0xFF1E2D45),
+                                      : AppColors.bgDivider,
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
@@ -204,8 +204,8 @@ class NotificationsPage extends StatelessWidget {
                                       ? Icons.campaign_rounded
                                       : Icons.notifications_none_rounded,
                                   color: isUnread
-                                      ? const Color(0xFFFF8C42)
-                                      : const Color(0xFF4A5568),
+                                      ? AppColors.accentOrange
+                                      : AppColors.textHint,
                                   size: 22,
                                 ),
                               ),
@@ -232,8 +232,8 @@ class NotificationsPage extends StatelessWidget {
                                                   : FontWeight.w500,
                                               fontSize: 15,
                                               color: isUnread
-                                                  ? const Color(0xFFF0F4FF)
-                                                  : const Color(0xFF8899AA),
+                                                  ? AppColors.textPrimary
+                                                  : AppColors.textSecondary,
                                             ),
                                           ),
                                         ),
@@ -243,7 +243,7 @@ class NotificationsPage extends StatelessWidget {
                                             padding: const EdgeInsets.symmetric(
                                                 horizontal: 7, vertical: 2),
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFFFF4C6A),
+                                              color: AppColors.accentRed,
                                               borderRadius:
                                                   BorderRadius.circular(20),
                                             ),
@@ -252,7 +252,7 @@ class NotificationsPage extends StatelessWidget {
                                               style: TextStyle(
                                                 fontFamily: 'Poppins',
                                                 color: Color(0xFFFFFFFF),
-                                                fontSize: 9,
+                                                fontSize: 10,
                                                 fontWeight: FontWeight.w800,
                                                 letterSpacing: 0.5,
                                               ),
@@ -273,7 +273,7 @@ class NotificationsPage extends StatelessWidget {
                                         height: 1.4,
                                         color: isUnread
                                             ? const Color(0xFFD0D8E8)
-                                            : const Color(0xFF4A5568),
+                                            : AppColors.textHint,
                                       ),
                                     ),
                                     const SizedBox(height: 8),
@@ -283,7 +283,7 @@ class NotificationsPage extends StatelessWidget {
                                         const Icon(
                                           Icons.access_time_rounded,
                                           size: 12,
-                                          color: Color(0xFF4A5568),
+                                          color: AppColors.textHint,
                                         ),
                                         const SizedBox(width: 4),
                                         Text(
@@ -291,7 +291,7 @@ class NotificationsPage extends StatelessWidget {
                                               .format(date),
                                           style: const TextStyle(
                                             fontFamily: 'Poppins',
-                                            color: Color(0xFF4A5568),
+                                            color: AppColors.textHint,
                                             fontSize: 11,
                                           ),
                                         ),
@@ -302,7 +302,7 @@ class NotificationsPage extends StatelessWidget {
                               ),
                               const SizedBox(width: 8),
                               const Icon(Icons.chevron_right,
-                                  color: Color(0xFF4A5568), size: 18),
+                                  color: AppColors.textHint, size: 18),
                             ],
                           ),
                         ),

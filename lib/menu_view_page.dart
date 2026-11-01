@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'theme.dart';
 import 'canteen_provider.dart';
 
@@ -39,8 +38,7 @@ class _MenuViewPageState extends State<MenuViewPage> {
             padding: const EdgeInsets.all(16),
             child: TextField(
               controller: _searchController,
-              style: GoogleFonts.poppins(
-                  color: AppColors.textPrimary, fontSize: 14),
+              style: AppText.style(color: AppColors.textPrimary, fontSize: 14),
               decoration: darkInput(
                   label: 'Search by name or code...', prefixIcon: Icons.search),
             ),
@@ -63,8 +61,7 @@ class _MenuViewPageState extends State<MenuViewPage> {
                 if (snap.hasError) {
                   return Center(
                       child: Text('Error: ${snap.error}',
-                          style:
-                              GoogleFonts.poppins(color: AppColors.accentRed)));
+                          style: AppText.style(color: AppColors.accentRed)));
                 }
                 if (!snap.hasData || snap.data!.docs.isEmpty) {
                   return Center(
@@ -75,11 +72,11 @@ class _MenuViewPageState extends State<MenuViewPage> {
                               size: 60, color: AppColors.textHint),
                           const SizedBox(height: 12),
                           Text('No items in menu yet.',
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: AppColors.textSecondary,
                                   fontSize: 15)),
                           Text('Add items via "Add/Edit Item"',
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: AppColors.textHint, fontSize: 13)),
                         ]),
                   );
@@ -113,8 +110,8 @@ class _MenuViewPageState extends State<MenuViewPage> {
                 if (filtered.isEmpty) {
                   return Center(
                       child: Text('No items match your search.',
-                          style: GoogleFonts.poppins(
-                              color: AppColors.textSecondary)));
+                          style:
+                              AppText.style(color: AppColors.textSecondary)));
                 }
 
                 return ListView.builder(
@@ -126,50 +123,64 @@ class _MenuViewPageState extends State<MenuViewPage> {
                     final double? half = item['halfPrice'] as double?;
                     return Container(
                       margin: const EdgeInsets.symmetric(vertical: 5),
+                      padding: const EdgeInsets.all(14),
                       decoration: glassCard(radius: 16),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 10),
-                        leading: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 46,
+                            height: 46,
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            decoration: BoxDecoration(
                               gradient: AppGradients.brand,
-                              borderRadius: BorderRadius.circular(12)),
-                          child: Center(
-                            child: Text(
-                              item['code'] as String,
-                              style: GoogleFonts.poppins(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 11),
-                              textAlign: TextAlign.center,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                item['code'] as String,
+                                maxLines: 1,
+                                style: AppText.style(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12),
+                              ),
                             ),
                           ),
-                        ),
-                        title: Text(item['name'] as String,
-                            style: GoogleFonts.poppins(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 15)),
-                        trailing: Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            buildBadge(
-                                'Cost  ₹${(item['costPrice'] as double).toStringAsFixed(0)}',
-                                AppColors.accentBlue),
-                            const SizedBox(height: 4),
-                            buildBadge(
-                                'Full  ₹${(item['fullPrice'] as double).toStringAsFixed(0)}',
-                                AppColors.accentGreen),
-                            if (half != null && half > 0) ...[
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              item['name'] as String,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.style(
+                                  color: AppColors.textPrimary,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              buildBadge(
+                                  'Cost ₹${(item['costPrice'] as double).toStringAsFixed(0)}',
+                                  AppColors.accentBlue),
                               const SizedBox(height: 4),
-                              buildBadge('Half  ₹${half.toStringAsFixed(0)}',
-                                  AppColors.accentOrange),
+                              buildBadge(
+                                  'Full ₹${(item['fullPrice'] as double).toStringAsFixed(0)}',
+                                  AppColors.accentGreen),
+                              if (half != null && half > 0) ...[
+                                const SizedBox(height: 4),
+                                buildBadge('Half ₹${half.toStringAsFixed(0)}',
+                                    AppColors.accentOrange),
+                              ],
                             ],
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     );
                   },

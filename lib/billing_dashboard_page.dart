@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import 'theme.dart';
@@ -29,6 +28,12 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    precacheBrandLogo(context);
+  }
+
+  @override
   void dispose() {
     _noticeSub?.cancel();
     super.dispose();
@@ -37,7 +42,9 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
   void _listenNotices() {
     _noticeSub = FirebaseFirestore.instance
         .collection('notifications')
+        .where('canteenId', isEqualTo: CanteenProvider.selectedCanteenId)
         .orderBy('timestamp', descending: true)
+        .limit(1)
         .snapshots()
         .listen((snap) {
       if (!mounted) return;
@@ -64,16 +71,10 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: const Color(0xFF111827),
+            color: AppColors.bgCard,
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
                 color: AppColors.accentOrange.withValues(alpha: 0.5)),
-            boxShadow: [
-              BoxShadow(
-                  color: AppColors.accentOrange.withValues(alpha: 0.15),
-                  blurRadius: 32,
-                  spreadRadius: 2)
-            ],
           ),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(
@@ -87,21 +88,21 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
             ),
             const SizedBox(height: 14),
             Text('New Admin Notice',
-                style: GoogleFonts.poppins(
+                style: AppText.style(
                     color: AppColors.accentOrange,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1)),
             const SizedBox(height: 6),
             Text(data['title'] ?? 'Notice',
-                style: GoogleFonts.poppins(
+                style: AppText.style(
                     color: Colors.white,
                     fontSize: 17,
                     fontWeight: FontWeight.w700),
                 textAlign: TextAlign.center),
             const SizedBox(height: 8),
-            Text('Check the 🔔 bell icon to read the full notice.',
-                style: GoogleFonts.poppins(
+            Text('Check the bell icon to read the full notice.',
+                style: AppText.style(
                     color: Colors.white54, fontSize: 12, height: 1.5),
                 textAlign: TextAlign.center),
             const SizedBox(height: 22),
@@ -120,7 +121,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                   _showingNoticeId = null;
                 },
                 child: Text('OK, Got it',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
                         fontSize: 14)),
@@ -133,17 +134,27 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
   }
 
   Stream<Map<String, String>> get _statsStream {
-    final todayId = CanteenProvider.dailyStatsDocumentId(DateTime.now());
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day, 0, 0, 0);
+    final end = DateTime(now.year, now.month, now.day, 23, 59, 59);
+
     return FirebaseFirestore.instance
-        .collection('dailyStats')
-        .doc(todayId)
+        .collection('bills')
+        .where('timestamp', isGreaterThanOrEqualTo: start)
+        .where('timestamp', isLessThanOrEqualTo: end)
         .snapshots()
         .map((snap) {
-      if (!snap.exists) return {'sales': '₹0', 'bills': '0'};
-      final d = snap.data() as Map<String, dynamic>;
+      double sales = 0.0;
+      int billsCount = 0;
+      for (final doc in snap.docs) {
+        final d = doc.data();
+        if (!CanteenProvider.matchesSelectedCanteen(d)) continue;
+        sales += ((d['totalAmount'] ?? 0) as num).toDouble();
+        billsCount++;
+      }
       return {
-        'sales': '₹${(d['totalSales'] as num?)?.toStringAsFixed(0) ?? '0'}',
-        'bills': '${d['totalBills'] ?? '0'}',
+        'sales': '₹${sales.toStringAsFixed(0)}',
+        'bills': '$billsCount',
       };
     });
   }
@@ -161,7 +172,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
-        backgroundColor: const Color(0xFF080C17),
+        backgroundColor: AppColors.bgDark,
         drawer: _drawer(),
         body: CustomScrollView(
           physics: const BouncingScrollPhysics(),
@@ -177,7 +188,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
   // ── App Bar ──────────────────────────────────────────────
   Widget _appBar() {
     return SliverAppBar(
-      expandedHeight: 230,
+      expandedHeight: 262,
       pinned: true,
       stretch: true,
       elevation: 0,
@@ -226,7 +237,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                         n > 9 ? '9+' : '$n',
                         style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 7,
+                            fontSize: 9,
                             fontWeight: FontWeight.w900),
                       ),
                     ),
@@ -258,8 +269,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    '$_greeting 👋',
-                    style: GoogleFonts.poppins(
+                    _greeting,
+                    style: AppText.style(
                         color: Colors.white,
                         fontSize: 11,
                         fontWeight: FontWeight.w500),
@@ -268,7 +279,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
               ]),
               const SizedBox(height: 8),
               Text('Cashier Dashboard',
-                  style: GoogleFonts.poppins(
+                  style: AppText.style(
                       color: Colors.white,
                       fontSize: 22,
                       fontWeight: FontWeight.w800,
@@ -292,7 +303,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                     const SizedBox(width: 6),
                     Text(
                       CanteenProvider.selectedCanteenName,
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                         color: AppColors.accentBlue,
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
@@ -304,7 +315,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
               const SizedBox(height: 2),
               Text(
                 DateFormat('EEEE, d MMMM yyyy').format(DateTime.now()),
-                style: GoogleFonts.poppins(color: Colors.white60, fontSize: 11),
+                style: AppText.style(color: Colors.white60, fontSize: 11),
               ),
               const SizedBox(height: 8),
               // Stat pills
@@ -369,14 +380,14 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(value,
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: Colors.white,
                           fontSize: 15,
                           fontWeight: FontWeight.w800),
                       overflow: TextOverflow.ellipsis),
                   Text(label,
-                      style: GoogleFonts.poppins(
-                          color: Colors.white54, fontSize: 9)),
+                      style:
+                          AppText.style(color: Colors.white70, fontSize: 10.5)),
                 ],
               ),
             ),
@@ -421,7 +432,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                       Expanded(
                         child: Text(
                           '$n unread admin notice${n > 1 ? 's' : ''} — tap to view',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: AppColors.accentOrange,
                               fontSize: 12,
                               fontWeight: FontWeight.w600),
@@ -444,14 +455,14 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
               padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [Color(0xFF1565C0), Color(0xFF42A5F5)],
+                  colors: [Color(0xFF1565C0), AppColors.accentBlue],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(22),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF2196F3).withValues(alpha: 0.4),
+                    color: AppColors.gradBlue.withValues(alpha: 0.4),
                     blurRadius: 28,
                     offset: const Offset(0, 10),
                   ),
@@ -473,13 +484,13 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Create New Bill',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: Colors.white,
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
                               letterSpacing: -0.3)),
                       Text('Start a new billing session',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: Colors.white70, fontSize: 12)),
                     ],
                   ),
@@ -507,7 +518,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                 icon: Icons.menu_book_rounded,
                 title: 'View Menu',
                 sub: 'Browse all items',
-                color: const Color(0xFF9C27B0),
+                color: AppColors.accentPurple,
                 route: '/view_menu',
               ),
             ),
@@ -517,7 +528,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                 icon: Icons.restaurant_menu_rounded,
                 title: 'Manage Menu',
                 sub: 'Add · Edit · Delete',
-                color: const Color(0xFF00C980),
+                color: AppColors.accentGreen,
                 route: '/add_item',
               ),
             ),
@@ -533,7 +544,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                 icon: Icons.receipt_long_outlined,
                 title: 'All Bills',
                 sub: 'Full history',
-                color: const Color(0xFF4FC3F7),
+                color: AppColors.accentBlue,
                 route: '/all_bills_page',
               ),
             ),
@@ -543,7 +554,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                 icon: Icons.money_off_rounded,
                 title: 'Log Expense',
                 sub: 'Record a cost',
-                color: const Color(0xFFFF8C42),
+                color: AppColors.accentOrange,
                 route: '/expenses',
               ),
             ),
@@ -578,7 +589,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
   Widget _label(String text) {
     return Text(
       text,
-      style: GoogleFonts.poppins(
+      style: AppText.style(
         color: AppColors.textHint,
         fontSize: 10,
         fontWeight: FontWeight.w700,
@@ -594,37 +605,43 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
     required Color color,
     required String route,
   }) {
-    return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, route),
-      child: Container(
-        padding: const EdgeInsets.all(16),
+    return Material(
+      color: Colors.transparent,
+      child: Ink(
         decoration: BoxDecoration(
-          color: const Color(0xFF111827),
+          color: AppColors.bgCard,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
+          border: Border.all(color: AppColors.glassBorder),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.13),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: color, size: 20),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => Navigator.pushNamed(context, route),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.13),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: color, size: 20),
+                ),
+                const SizedBox(height: 12),
+                Text(title,
+                    style: AppText.style(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(sub,
+                    style: AppText.style(
+                        color: AppColors.textSecondary, fontSize: 11)),
+              ],
             ),
-            const SizedBox(height: 12),
-            Text(title,
-                style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700)),
-            const SizedBox(height: 2),
-            Text(sub,
-                style: GoogleFonts.poppins(
-                    color: AppColors.textHint, fontSize: 10)),
-          ],
+          ),
         ),
       ),
     );
@@ -633,7 +650,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
   // ── Drawer ────────────────────────────────────────────────
   Widget _drawer() {
     return Drawer(
-      backgroundColor: const Color(0xFF0D1120),
+      backgroundColor: AppColors.bgDark,
       child: Column(children: [
         Container(
           width: double.infinity,
@@ -656,14 +673,14 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                     ),
                     const SizedBox(height: 14),
                     Text('Cashier Panel',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: Colors.white,
                             fontSize: 16,
                             fontWeight: FontWeight.w700)),
                     const SizedBox(height: 2),
                     Text(_user?.email ?? '',
-                        style: GoogleFonts.poppins(
-                            color: Colors.white60, fontSize: 11),
+                        style:
+                            AppText.style(color: Colors.white60, fontSize: 11),
                         overflow: TextOverflow.ellipsis),
                   ]),
             ),
@@ -680,12 +697,12 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
               _dItem(
                   Icons.account_balance_rounded,
                   'Cash Reconciliation',
-                  const Color(0xFFCE93D8),
+                  AppColors.accentPurple,
                   () => _nav('/cash_reconciliation_cashier')),
               _dItem(Icons.receipt_long_outlined, 'All Bills History',
                   AppColors.accentBlue, () => _nav('/all_bills_page')),
               _dItem(Icons.notifications_outlined, 'Admin Notices',
-                  const Color(0xFFFFD54F), () => _nav('/notifications')),
+                  AppColors.accentOrange, () => _nav('/notifications')),
               _dItem(Icons.campaign_rounded, 'SMS Broadcast Specials',
                   AppColors.accentOrange, () {
                 Navigator.pop(context);
@@ -726,7 +743,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
         child: Icon(icon, color: color, size: 18),
       ),
       title: Text(title,
-          style: GoogleFonts.poppins(
+          style: AppText.style(
               color: AppColors.textPrimary,
               fontSize: 13,
               fontWeight: FontWeight.w500)),
@@ -777,7 +794,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
             double spent = 0;
             for (var doc in expSnap.data!.docs) {
               final d = doc.data() as Map<String, dynamic>?;
-              if (d != null) {
+              if (d != null && CanteenProvider.matchesSelectedCanteen(d)) {
                 spent += ((d['amount'] ?? 0.0) as num).toDouble();
               }
             }
@@ -814,7 +831,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                             available < 0
                                 ? 'Budget Overspent!'
                                 : 'Low Budget Alert ($pctStr% Left)',
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                                 color: AppColors.accentRed,
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold),
@@ -823,7 +840,7 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                             available < 0
                                 ? 'You have exceeded the allocated budget by ₹${available.abs().toStringAsFixed(0)}.'
                                 : 'Available: ₹${available.toStringAsFixed(0)} left of ₹${allocated.toStringAsFixed(0)} allocated.',
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                                 color: AppColors.textSecondary, fontSize: 10),
                           ),
                         ],

@@ -1,7 +1,7 @@
 name: canteen_adani
 description: "Canteen Billing App for Adani CSR"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.5+6
 
 environment:
   sdk: '>=3.0.0 <4.0.0' # More flexible SDK range
@@ -15,7 +15,6 @@ dependencies:
   cupertino_icons: ^1.0.8
   lottie: ^2.7.0
   animated_text_kit: ^4.2.2
-  google_fonts: ^6.2.1
 
   # --- Firebase packages ---
   firebase_core: ^2.32.0         # connect to Firebase
@@ -32,6 +31,7 @@ dependencies:
   url_launcher: ^6.3.0
   blue_thermal_printer: ^1.2.3
   esc_pos_utils_plus: ^2.0.4
+  shared_preferences: ^2.3.2
 
 
 dev_dependencies:
@@ -44,8 +44,21 @@ flutter:
   uses-material-design: true
   assets:
     - assets/LOGO.png
-    - assets/neon_ring.json
     - assets/appicon.png
+    - assets/appicon_small.png
+
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.otf
+        - asset: assets/fonts/Inter-Medium.otf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.otf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.otf
+          weight: 700
+        - asset: assets/fonts/Inter-ExtraBold.otf
+          weight: 800
 
 flutter_launcher_icons:
   android: true

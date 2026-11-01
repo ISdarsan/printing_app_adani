@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'bill_detail_page.dart';
@@ -32,11 +31,11 @@ class _AdminMasterCreditLedgerPageState
               controller: _searchCtrl,
               onChanged: (val) =>
                   setState(() => _searchQuery = val.toLowerCase()),
-              style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+              style: AppText.style(color: Colors.white, fontSize: 14),
               decoration: InputDecoration(
                 hintText: 'Search by bill no, name, or phone...',
-                hintStyle: GoogleFonts.poppins(
-                    color: AppColors.textHint, fontSize: 14),
+                hintStyle:
+                    AppText.style(color: AppColors.textHint, fontSize: 14),
                 filled: true,
                 fillColor: AppColors.bgCard,
                 prefixIcon: const Icon(Icons.search, color: AppColors.textHint),
@@ -76,7 +75,7 @@ class _AdminMasterCreditLedgerPageState
                             width: isSelected ? 1.5 : 1),
                       ),
                       child: Text(status,
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: isSelected ? color : AppColors.textHint,
                               fontSize: 13,
                               fontWeight: isSelected
@@ -107,11 +106,13 @@ class _AdminMasterCreditLedgerPageState
                 }
 
                 var docs = snapshot.data?.docs ?? [];
-                
+
                 // Sort locally to avoid needing a Firestore composite index
                 docs.sort((a, b) {
-                  final tsA = (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
-                  final tsB = (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+                  final tsA = (a.data() as Map<String, dynamic>)['timestamp']
+                      as Timestamp?;
+                  final tsB = (b.data() as Map<String, dynamic>)['timestamp']
+                      as Timestamp?;
                   if (tsA == null && tsB == null) return 0;
                   if (tsA == null) return -1;
                   if (tsB == null) return 1;
@@ -121,12 +122,15 @@ class _AdminMasterCreditLedgerPageState
                 if (_searchQuery.isNotEmpty) {
                   docs = docs.where((doc) {
                     final data = doc.data() as Map<String, dynamic>;
-                    final billNum = (data['billNumber'] ?? '').toString().toLowerCase();
-                    final phone = (data['customerPhone'] ?? '').toString().toLowerCase();
-                    final name = (data['customerName'] ?? '').toString().toLowerCase();
+                    final billNum =
+                        (data['billNumber'] ?? '').toString().toLowerCase();
+                    final phone =
+                        (data['customerPhone'] ?? '').toString().toLowerCase();
+                    final name =
+                        (data['customerName'] ?? '').toString().toLowerCase();
                     return billNum.contains(_searchQuery) ||
-                           phone.contains(_searchQuery) ||
-                           name.contains(_searchQuery);
+                        phone.contains(_searchQuery) ||
+                        name.contains(_searchQuery);
                   }).toList();
                 }
 
@@ -134,9 +138,12 @@ class _AdminMasterCreditLedgerPageState
                 if (_filterStatus != 'All') {
                   docs = docs.where((doc) {
                     final data = doc.data() as Map<String, dynamic>;
-                    final pending = (data['pendingAmount'] as num?)?.toDouble() ??
-                        (data['totalAmount'] as num?)?.toDouble() ?? 0.0;
-                    final isPaid = (data['creditStatus'] == 'Paid') || pending <= 0;
+                    final pending =
+                        (data['pendingAmount'] as num?)?.toDouble() ??
+                            (data['totalAmount'] as num?)?.toDouble() ??
+                            0.0;
+                    final isPaid =
+                        (data['creditStatus'] == 'Paid') || pending <= 0;
                     return _filterStatus == 'Paid' ? isPaid : !isPaid;
                   }).toList();
                 }
@@ -144,7 +151,7 @@ class _AdminMasterCreditLedgerPageState
                 if (docs.isEmpty) {
                   return Center(
                     child: Text('No credit bills found',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: AppColors.textHint, fontSize: 16)),
                   );
                 }
@@ -159,8 +166,10 @@ class _AdminMasterCreditLedgerPageState
                     final billNum = data['billNumber'] ?? '-';
                     final customerName = data['customerName'] ?? 'Unknown';
                     final customerPhone = data['customerPhone'] ?? '';
-                    final total = (data['totalAmount'] as num?)?.toDouble() ?? 0.0;
-                    final pending = (data['pendingAmount'] as num?)?.toDouble() ?? total;
+                    final total =
+                        (data['totalAmount'] as num?)?.toDouble() ?? 0.0;
+                    final pending =
+                        (data['pendingAmount'] as num?)?.toDouble() ?? total;
                     final ts = data['timestamp'] as Timestamp?;
                     final dateStr = ts != null
                         ? DateFormat('dd MMM yyyy, hh:mm a').format(ts.toDate())
@@ -192,24 +201,44 @@ class _AdminMasterCreditLedgerPageState
                                 Row(
                                   children: [
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
                                       decoration: BoxDecoration(
-                                        color: AppColors.accentBlue.withValues(alpha: 0.15),
+                                        color: AppColors.accentBlue
+                                            .withValues(alpha: 0.15),
                                         borderRadius: BorderRadius.circular(8),
                                       ),
-                                      child: Text('#$billNum', style: GoogleFonts.poppins(color: AppColors.accentBlue, fontWeight: FontWeight.bold, fontSize: 12)),
+                                      child: Text('#$billNum',
+                                          style: AppText.style(
+                                              color: AppColors.accentBlue,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12)),
                                     ),
                                     const SizedBox(width: 8),
-                                    Text(dateStr, style: GoogleFonts.poppins(color: AppColors.textHint, fontSize: 12)),
+                                    Text(dateStr,
+                                        style: AppText.style(
+                                            color: AppColors.textHint,
+                                            fontSize: 12)),
                                   ],
                                 ),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: isPaid ? AppColors.accentGreen.withValues(alpha: 0.15) : AppColors.accentOrange.withValues(alpha: 0.15),
+                                    color: isPaid
+                                        ? AppColors.accentGreen
+                                            .withValues(alpha: 0.15)
+                                        : AppColors.accentOrange
+                                            .withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
-                                  child: Text(isPaid ? 'Paid' : 'Pending', style: GoogleFonts.poppins(color: isPaid ? AppColors.accentGreen : AppColors.accentOrange, fontWeight: FontWeight.bold, fontSize: 12)),
+                                  child: Text(isPaid ? 'Paid' : 'Pending',
+                                      style: AppText.style(
+                                          color: isPaid
+                                              ? AppColors.accentGreen
+                                              : AppColors.accentOrange,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12)),
                                 ),
                               ],
                             ),
@@ -218,18 +247,33 @@ class _AdminMasterCreditLedgerPageState
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Text(customerName, style: GoogleFonts.poppins(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                                      Text(customerPhone, style: GoogleFonts.poppins(color: AppColors.textSecondary, fontSize: 13)),
+                                      Text(customerName,
+                                          style: AppText.style(
+                                              color: Colors.white,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold)),
+                                      Text(customerPhone,
+                                          style: AppText.style(
+                                              color: AppColors.textSecondary,
+                                              fontSize: 13)),
                                     ],
                                   ),
                                 ),
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
-                                    Text('Total: ₹${total.toStringAsFixed(0)}', style: GoogleFonts.poppins(color: AppColors.textSecondary, fontSize: 13)),
-                                    Text('Due: ₹${pending.toStringAsFixed(0)}', style: GoogleFonts.poppins(color: AppColors.accentRed, fontSize: 16, fontWeight: FontWeight.bold)),
+                                    Text('Total: ₹${total.toStringAsFixed(0)}',
+                                        style: AppText.style(
+                                            color: AppColors.textSecondary,
+                                            fontSize: 13)),
+                                    Text('Due: ₹${pending.toStringAsFixed(0)}',
+                                        style: AppText.style(
+                                            color: AppColors.accentRed,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold)),
                                   ],
                                 ),
                               ],

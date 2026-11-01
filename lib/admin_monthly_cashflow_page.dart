@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'expense_detail_page.dart';
@@ -41,7 +40,7 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
       }, SetOptions(merge: true));
 
       _amountController.clear();
-      _showSnackBar('✓ Monthly fund saved', const Color(0xFF1B4332));
+      _showSnackBar('Monthly fund saved', const Color(0xFF1B4332));
     } catch (e) {
       _showSnackBar('Failed to save fund: $e', AppColors.accentRed);
     } finally {
@@ -74,7 +73,7 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-          content: Text(message, style: GoogleFonts.poppins()),
+          content: Text(message, style: AppText.style()),
           backgroundColor: color),
     );
   }
@@ -109,7 +108,7 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
                     controller: _amountController,
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: AppColors.textPrimary, fontSize: 14),
                     decoration: darkInput(
                       label: 'Amount (e.g., 50000)',
@@ -174,13 +173,13 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text('Balance',
-                                  style: GoogleFonts.poppins(
+                                  style: AppText.style(
                                       fontSize: 18,
                                       fontWeight: FontWeight.w600,
                                       color: Colors.white)),
                               Text(
                                 '₹${remainingBalance.toStringAsFixed(2)}',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                   fontSize: 26,
                                   fontWeight: FontWeight.w800,
                                   color: isDeficit
@@ -221,9 +220,9 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: GoogleFonts.poppins(fontSize: 14, color: color)),
+        Text(label, style: AppText.style(fontSize: 14, color: color)),
         Text('₹${amount.toStringAsFixed(2)}',
-            style: GoogleFonts.poppins(
+            style: AppText.style(
                 fontSize: fontSize,
                 fontWeight: FontWeight.w600,
                 color: Colors.white)),
@@ -249,7 +248,7 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
                       size: 40, color: AppColors.textHint),
                   const SizedBox(height: 10),
                   Text('No expenses logged for this month.',
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textSecondary, fontSize: 13)),
                 ],
               ),
@@ -296,18 +295,18 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
                         color: AppColors.accentOrange, size: 20),
                   ),
                   title: Text(description,
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textPrimary,
                           fontWeight: FontWeight.w600,
                           fontSize: 14)),
                   subtitle: Text(dateTime,
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textSecondary, fontSize: 12)),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text('₹${amount.toStringAsFixed(0)}',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: AppColors.accentRed,
                               fontWeight: FontWeight.w700,
                               fontSize: 15)),

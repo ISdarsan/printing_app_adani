@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'role_splash_page.dart';
 import 'theme.dart';
 
@@ -87,7 +86,7 @@ class _LoginPageState extends State<LoginPage>
         SnackBar(
           content: Text(
             'Password reset email sent to $email',
-            style: GoogleFonts.poppins(),
+            style: AppText.style(),
           ),
           backgroundColor: AppColors.accentGreen,
         ),
@@ -130,42 +129,23 @@ class _LoginPageState extends State<LoginPage>
                           children: [
                             const SizedBox(height: 48),
                             // ── Logo ──────────────────────────────────
-                            Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.gradBlue
-                                        .withValues(alpha: 0.5),
-                                    blurRadius: 40,
-                                    spreadRadius: 8,
-                                  ),
-                                ],
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(24),
-                                child: Image.asset(
-                                  'assets/LOGO.png',
-                                  width: 100,
-                                  height: 100,
-                                ),
-                              ),
-                            ),
+                            BrandLogo(size: 100, radius: 26),
                             const SizedBox(height: 24),
 
                             // ── Title ─────────────────────────────────
                             Text(
                               'Welcome Back',
-                              style: GoogleFonts.poppins(
-                                fontSize: 30,
+                              style: AppText.style(
+                                fontSize: 28,
                                 fontWeight: FontWeight.w800,
+                                letterSpacing: -0.5,
                                 color: Colors.white,
                               ),
                             ),
                             const SizedBox(height: 6),
                             Text(
                               'Sign in to FoodPrint',
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                 fontSize: 14,
                                 color: AppColors.textSecondary,
                               ),
@@ -176,8 +156,8 @@ class _LoginPageState extends State<LoginPage>
                             TextField(
                               controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
-                              style: GoogleFonts.poppins(
-                                  color: AppColors.textPrimary),
+                              style:
+                                  AppText.style(color: AppColors.textPrimary),
                               decoration: darkInput(
                                 label: 'Email Address',
                                 prefixIcon: Icons.email_outlined,
@@ -189,8 +169,8 @@ class _LoginPageState extends State<LoginPage>
                             TextField(
                               controller: _passwordController,
                               obscureText: _obscurePassword,
-                              style: GoogleFonts.poppins(
-                                  color: AppColors.textPrimary),
+                              style:
+                                  AppText.style(color: AppColors.textPrimary),
                               decoration: darkInput(
                                 label: 'Password',
                                 prefixIcon: Icons.lock_outline,
@@ -231,7 +211,7 @@ class _LoginPageState extends State<LoginPage>
                                       Expanded(
                                         child: Text(
                                           _errorMessage,
-                                          style: GoogleFonts.poppins(
+                                          style: AppText.style(
                                             color: AppColors.accentRed,
                                             fontSize: 13,
                                           ),
@@ -263,7 +243,7 @@ class _LoginPageState extends State<LoginPage>
                               onPressed: _handleForgotPassword,
                               child: Text(
                                 'Forgot Password?',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                   color: AppColors.accentBlue,
                                   fontSize: 14,
                                   fontWeight: FontWeight.w500,
@@ -279,7 +259,7 @@ class _LoginPageState extends State<LoginPage>
                                   const EdgeInsets.only(top: 24, bottom: 8),
                               child: Text(
                                 'Adani CSR Canteen Management',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                   color: Colors.white60,
                                   fontSize: 12,
                                 ),

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'theme.dart';
@@ -420,7 +419,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                               ),
                               labelColor: Colors.white,
                               unselectedLabelColor: AppColors.textSecondary,
-                              labelStyle: GoogleFonts.poppins(
+                              labelStyle: AppText.style(
                                   fontSize: 11, fontWeight: FontWeight.bold),
                               tabs: const [
                                 Tab(text: 'Weekly'),
@@ -537,9 +536,9 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                             value >= 1000
                                 ? '${(value / 1000).toStringAsFixed(1)}k'
                                 : value.toStringAsFixed(0),
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                               color: AppColors.textHint,
-                              fontSize: 9,
+                              fontSize: 10,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -561,9 +560,9 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                           meta: meta,
                           child: Text(
                             slot,
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                               color: AppColors.textSecondary,
-                              fontSize: 8,
+                              fontSize: 10,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -624,13 +623,13 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                 Row(
                   children: [
                     Text('$label. ${item['name']}',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: Colors.white,
                             fontSize: 12,
                             fontWeight: FontWeight.w600)),
                     const Spacer(),
                     Text(_formatCurrency(revenue),
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: AppColors.accentBlue,
                             fontSize: 12,
                             fontWeight: FontWeight.bold)),
@@ -640,14 +639,14 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                 Row(
                   children: [
                     Text('Qty: ${item['qty']}',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: AppColors.textSecondary, fontSize: 11)),
                     const SizedBox(width: 18),
                     Text(
                         knownCostQty == 0
                             ? 'Profit: Unknown'
                             : 'Known-cost profit: ${_formatCurrency(profit)}',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: AppColors.accentGreen,
                             fontSize: 11,
                             fontWeight: FontWeight.bold)),
@@ -656,7 +655,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                 if (unknownCostQty > 0) ...[
                   const SizedBox(height: 4),
                   Text('$unknownCostQty units have no recorded cost',
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.accentOrange, fontSize: 10)),
                 ],
                 const SizedBox(height: 8),
@@ -693,7 +692,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
               children: staffPerformance.isEmpty
                   ? [
                       Text('No staff sales recorded yet.',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: AppColors.textSecondary, fontSize: 12)),
                     ]
                   : List.generate(
@@ -710,12 +709,12 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                               children: [
                                 Expanded(
                                     child: Text(staff['name'].toString(),
-                                        style: GoogleFonts.poppins(
+                                        style: AppText.style(
                                             color: Colors.white,
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600))),
                                 Text(_formatCurrency(total),
-                                    style: GoogleFonts.poppins(
+                                    style: AppText.style(
                                         color: AppColors.accentBlue,
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold)),
@@ -745,7 +744,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
             title: 'Daily Anomaly Detection',
             child: anomalyList.isEmpty
                 ? Text('No unusual sales variation detected in recent days.',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: AppColors.textSecondary, fontSize: 12))
                 : Column(
                     children: anomalyList.take(4).map((item) {
@@ -777,14 +776,14 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                                 children: [
                                   Text(
                                     '${item['date']} • ${isSpike ? 'sales spike' : 'sales dip'}',
-                                    style: GoogleFonts.poppins(
+                                    style: AppText.style(
                                         color: Colors.white,
                                         fontSize: 11,
                                         fontWeight: FontWeight.w600),
                                   ),
                                   Text(
                                     '${_formatCurrency(item['currentSales'] as double)} vs ${_formatCurrency(item['averageSales'] as double)} (${item['changePct'].toStringAsFixed(1)}%)',
-                                    style: GoogleFonts.poppins(
+                                    style: AppText.style(
                                         color: AppColors.textSecondary,
                                         fontSize: 10),
                                   ),
@@ -802,7 +801,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
             title: 'Forecasted Demand & Prep Suggestion',
             child: forecastList.isEmpty
                 ? Text('No demand forecast available yet.',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: AppColors.textSecondary, fontSize: 12))
                 : Column(
                     children: forecastList.map((item) {
@@ -821,13 +820,13 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(item['name'].toString(),
-                                      style: GoogleFonts.poppins(
+                                      style: AppText.style(
                                           color: Colors.white,
                                           fontSize: 12,
                                           fontWeight: FontWeight.w600)),
                                   Text(
                                       'Avg/day: ${((item['avgDailyQty'] as double)).toStringAsFixed(1)} • Suggested prep: ${item['recommendedStock']}',
-                                      style: GoogleFonts.poppins(
+                                      style: AppText.style(
                                           color: AppColors.textSecondary,
                                           fontSize: 10)),
                                 ],
@@ -842,7 +841,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(item['trend'].toString(),
-                                  style: GoogleFonts.poppins(
+                                  style: AppText.style(
                                       color: AppColors.accentBlue,
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold)),
@@ -867,7 +866,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
         children: [
           Text(
             title,
-            style: GoogleFonts.poppins(
+            style: AppText.style(
               color: Colors.white,
               fontSize: 14,
               fontWeight: FontWeight.w700,
@@ -924,9 +923,9 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                       meta: meta,
                       space: 8,
                       child: Text(DateFormat('dd MMM').format(date),
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: AppColors.textSecondary,
-                              fontSize: 9,
+                              fontSize: 10,
                               fontWeight: FontWeight.w500)));
                 },
               ),
@@ -944,9 +943,9 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                           val >= 1000
                               ? '${(val / 1000).toStringAsFixed(1)}k'
                               : val.toStringAsFixed(0),
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: AppColors.textHint,
-                              fontSize: 9,
+                              fontSize: 10,
                               fontWeight: FontWeight.w500)));
                 },
               ),
@@ -966,7 +965,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
               spots: spots,
               isCurved: true,
               gradient: const LinearGradient(
-                  colors: [Color(0xFF00E5A0), Color(0xFF00C980)]),
+                  colors: [Color(0xFF00E5A0), AppColors.accentGreen]),
               barWidth: 4,
               dotData: const FlDotData(show: true),
               belowBarData: BarAreaData(
@@ -1005,7 +1004,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
           BarChartRodData(
             toY: val,
             gradient: const LinearGradient(
-                colors: [Color(0xFF2196F3), Color(0xFF4FC3F7)]),
+                colors: [AppColors.gradBlue, AppColors.accentBlue]),
             width: 18,
             borderRadius: BorderRadius.circular(4),
           )
@@ -1041,9 +1040,9 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                   return SideTitleWidget(
                       meta: meta,
                       child: Text(DateFormat('MMM yy').format(date),
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: AppColors.textSecondary,
-                              fontSize: 9,
+                              fontSize: 10,
                               fontWeight: FontWeight.w500)));
                 },
               ),
@@ -1061,9 +1060,9 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                           val >= 1000
                               ? '${(val / 1000).toStringAsFixed(1)}k'
                               : val.toStringAsFixed(0),
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: AppColors.textHint,
-                              fontSize: 9,
+                              fontSize: 10,
                               fontWeight: FontWeight.w500)));
                 },
               ),
@@ -1093,13 +1092,13 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title,
-              style: GoogleFonts.poppins(
+              style: AppText.style(
                   color: Colors.white,
                   fontSize: 16,
                   fontWeight: FontWeight.bold)),
           Text(subtitle,
-              style: GoogleFonts.poppins(
-                  color: AppColors.textSecondary, fontSize: 11)),
+              style:
+                  AppText.style(color: AppColors.textSecondary, fontSize: 11)),
           const SizedBox(height: 20),
           Expanded(child: chart),
         ],
@@ -1114,8 +1113,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
         decoration: glassCard(radius: 20),
         alignment: Alignment.center,
         child: Text(title,
-            style: GoogleFonts.poppins(
-                color: AppColors.textSecondary, fontSize: 14)),
+            style: AppText.style(color: AppColors.textSecondary, fontSize: 14)),
       ),
     );
   }
@@ -1129,8 +1127,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
             decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
         const SizedBox(width: 4),
         Text(label,
-            style: GoogleFonts.poppins(
-                color: AppColors.textSecondary, fontSize: 11)),
+            style: AppText.style(color: AppColors.textSecondary, fontSize: 11)),
       ],
     );
   }

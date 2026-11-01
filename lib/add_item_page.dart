@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'theme.dart';
 import 'canteen_provider.dart';
 
@@ -127,7 +126,7 @@ class _AddItemPageState extends State<AddItemPage>
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
               '${_isEditing ? "Updated" : "Added"} "$name" successfully!',
-              style: GoogleFonts.poppins()),
+              style: AppText.style()),
           backgroundColor: const Color(0xFF1B4332),
           behavior: SnackBarBehavior.floating,
           shape:
@@ -139,7 +138,7 @@ class _AddItemPageState extends State<AddItemPage>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e', style: GoogleFonts.poppins()),
+          content: Text('Error: $e', style: AppText.style()),
           backgroundColor: AppColors.accentRed,
           behavior: SnackBarBehavior.floating,
         ));
@@ -156,17 +155,16 @@ class _AddItemPageState extends State<AddItemPage>
         backgroundColor: AppColors.bgCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('Delete "$name"?',
-            style: GoogleFonts.poppins(
+            style: AppText.style(
                 color: Colors.white, fontWeight: FontWeight.bold)),
         content: Text(
             'This item will be permanently removed from the menu. This cannot be undone.',
-            style: GoogleFonts.poppins(
-                color: AppColors.textSecondary, fontSize: 13)),
+            style: AppText.style(color: AppColors.textSecondary, fontSize: 13)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text('Cancel',
-                style: GoogleFonts.poppins(color: AppColors.textSecondary)),
+                style: AppText.style(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -174,8 +172,7 @@ class _AddItemPageState extends State<AddItemPage>
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12))),
             onPressed: () => Navigator.pop(context, true),
-            child:
-                Text('Delete', style: GoogleFonts.poppins(color: Colors.white)),
+            child: Text('Delete', style: AppText.style(color: Colors.white)),
           ),
         ],
       ),
@@ -189,7 +186,7 @@ class _AddItemPageState extends State<AddItemPage>
             .delete();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('"$name" deleted.', style: GoogleFonts.poppins()),
+            content: Text('"$name" deleted.', style: AppText.style()),
             backgroundColor: AppColors.accentRed,
             behavior: SnackBarBehavior.floating,
             shape:
@@ -199,7 +196,7 @@ class _AddItemPageState extends State<AddItemPage>
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error deleting: $e', style: GoogleFonts.poppins()),
+            content: Text('Error deleting: $e', style: AppText.style()),
             backgroundColor: AppColors.accentRed,
             behavior: SnackBarBehavior.floating,
           ));
@@ -219,8 +216,7 @@ class _AddItemPageState extends State<AddItemPage>
             TextButton(
               onPressed: _clearForm,
               child: Text('Cancel Edit',
-                  style:
-                      GoogleFonts.poppins(color: Colors.white70, fontSize: 12)),
+                  style: AppText.style(color: Colors.white70, fontSize: 12)),
             ),
         ],
       ),
@@ -235,8 +231,8 @@ class _AddItemPageState extends State<AddItemPage>
               indicatorWeight: 3,
               labelColor: AppColors.accentGreen,
               unselectedLabelColor: AppColors.textSecondary,
-              labelStyle: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w600, fontSize: 13),
+              labelStyle:
+                  AppText.style(fontWeight: FontWeight.w600, fontSize: 13),
               tabs: const [
                 Tab(
                     icon: Icon(Icons.list_alt_rounded, size: 18),
@@ -275,7 +271,7 @@ class _AddItemPageState extends State<AddItemPage>
                                   size: 64, color: AppColors.textHint),
                               const SizedBox(height: 16),
                               Text('No menu items yet.',
-                                  style: GoogleFonts.poppins(
+                                  style: AppText.style(
                                       color: AppColors.textSecondary,
                                       fontSize: 15)),
                               const SizedBox(height: 12),
@@ -289,8 +285,7 @@ class _AddItemPageState extends State<AddItemPage>
                                 icon:
                                     const Icon(Icons.add, color: Colors.white),
                                 label: Text('Add First Item',
-                                    style: GoogleFonts.poppins(
-                                        color: Colors.white)),
+                                    style: AppText.style(color: Colors.white)),
                               ),
                             ]),
                       );
@@ -321,11 +316,11 @@ class _AddItemPageState extends State<AddItemPage>
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                           child: TextField(
                             controller: _searchController,
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                                 color: AppColors.textPrimary, fontSize: 14),
                             decoration: InputDecoration(
                               hintText: 'Search by name or code...',
-                              hintStyle: GoogleFonts.poppins(
+                              hintStyle: AppText.style(
                                   color: AppColors.textHint, fontSize: 13),
                               prefixIcon: const Icon(Icons.search_rounded,
                                   color: AppColors.textHint, size: 20),
@@ -370,7 +365,7 @@ class _AddItemPageState extends State<AddItemPage>
                                 _searchQuery.isEmpty
                                     ? '${_allItems.length} items total'
                                     : '${filtered.length} of ${_allItems.length} results',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                     color: AppColors.textHint, fontSize: 11),
                               ),
                               const Spacer(),
@@ -382,7 +377,7 @@ class _AddItemPageState extends State<AddItemPage>
                                         color: AppColors.accentGreen, size: 15),
                                     const SizedBox(width: 4),
                                     Text('Add Item',
-                                        style: GoogleFonts.poppins(
+                                        style: AppText.style(
                                             color: AppColors.accentGreen,
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600)),
@@ -403,7 +398,7 @@ class _AddItemPageState extends State<AddItemPage>
                                           size: 48, color: AppColors.textHint),
                                       const SizedBox(height: 12),
                                       Text('No results for "$_searchQuery"',
-                                          style: GoogleFonts.poppins(
+                                          style: AppText.style(
                                               color: AppColors.textSecondary,
                                               fontSize: 14)),
                                     ],
@@ -452,11 +447,11 @@ class _AddItemPageState extends State<AddItemPage>
                                                   code.length > 4
                                                       ? code.substring(0, 4)
                                                       : code,
-                                                  style: GoogleFonts.poppins(
+                                                  style: AppText.style(
                                                       color: Colors.white,
                                                       fontWeight:
                                                           FontWeight.w800,
-                                                      fontSize: 9),
+                                                      fontSize: 10),
                                                   textAlign: TextAlign.center,
                                                 ),
                                               ),
@@ -469,14 +464,12 @@ class _AddItemPageState extends State<AddItemPage>
                                                     CrossAxisAlignment.start,
                                                 children: [
                                                   Text(name,
-                                                      style:
-                                                          GoogleFonts.poppins(
-                                                              color: AppColors
-                                                                  .textPrimary,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w600,
-                                                              fontSize: 14)),
+                                                      style: AppText.style(
+                                                          color: AppColors
+                                                              .textPrimary,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          fontSize: 14)),
                                                   const SizedBox(height: 4),
                                                   Row(children: [
                                                     _priceBadge(
@@ -555,14 +548,14 @@ class _AddItemPageState extends State<AddItemPage>
                               Expanded(
                                   child: Text(
                                       'Editing: $_editingCode — code cannot be changed',
-                                      style: GoogleFonts.poppins(
+                                      style: AppText.style(
                                           color: AppColors.accentBlue,
                                           fontSize: 12,
                                           fontWeight: FontWeight.w500))),
                               TextButton(
                                   onPressed: _clearForm,
                                   child: Text('Cancel',
-                                      style: GoogleFonts.poppins(
+                                      style: AppText.style(
                                           color: AppColors.textSecondary,
                                           fontSize: 11))),
                             ]),
@@ -662,7 +655,7 @@ class _AddItemPageState extends State<AddItemPage>
       keyboardType: keyboardType,
       enabled: enabled,
       textCapitalization: textCapitalization,
-      style: GoogleFonts.poppins(
+      style: AppText.style(
           color: enabled ? AppColors.textPrimary : AppColors.textSecondary,
           fontSize: 14),
       validator: validator,
@@ -678,7 +671,7 @@ class _AddItemPageState extends State<AddItemPage>
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(text,
-          style: GoogleFonts.poppins(
+          style: AppText.style(
               color: color, fontSize: 10, fontWeight: FontWeight.w600)),
     );
   }

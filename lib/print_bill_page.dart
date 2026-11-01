@@ -1,15 +1,17 @@
 import 'dart:async';
 
-import 'package:blue_thermal_printer/blue_thermal_printer.dart';
+import 'package:blue_thermal_printer/blue_thermal_printer.dart'
+    show BluetoothDevice;
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'theme.dart';
 import 'canteen_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'printer_bridge.dart';
 
 // ─────────────────────────────────────────────────────────────
 //  Data Models
@@ -284,7 +286,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
   bool _menuLoading = true;
 
   // ── Printer State ──
-  final BlueThermalPrinter _printer = BlueThermalPrinter.instance;
+  final ThermalPrinter _printer = ThermalPrinter.instance;
   List<BluetoothDevice> _bondedDevices = [];
   BluetoothDevice? _selectedPrinter;
   _PrinterStatus _printerStatus = _PrinterStatus.notInitialized;
@@ -309,7 +311,21 @@ class _PrintBillPageState extends State<PrintBillPage> {
   //  Production-Grade Printer Management
   // ─────────────────────────────────────────────────────────────
 
+  String? _savedPrinterAddress;
+
+  Future<void> _rememberPrinter(BluetoothDevice device) async {
+    _savedPrinterAddress = device.address;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('lastPrinterAddress', device.address ?? '');
+    } catch (_) {}
+  }
+
   Future<void> _initPrinter() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _savedPrinterAddress = prefs.getString('lastPrinterAddress');
+    } catch (_) {}
     try {
       final isConnected = await _printer.isConnected ?? false;
       if (isConnected) {
@@ -371,7 +387,9 @@ class _PrintBillPageState extends State<PrintBillPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _printerStatus = _PrinterStatus.disconnected);
-        _snack('Bluetooth error: $e', error: true);
+        _snack(
+            'Bluetooth error: ${e is PlatformException ? (e.message ?? e.code) : e}',
+            error: true);
       }
       await _showPrinterSheet();
     }
@@ -379,6 +397,12 @@ class _PrintBillPageState extends State<PrintBillPage> {
 
   /// Selects preferred thermal printer model or falls back to first paired device
   BluetoothDevice _pickBestDevice(List<BluetoothDevice> devices) {
+    final saved = _savedPrinterAddress;
+    if (saved != null) {
+      for (final d in devices) {
+        if (d.address == saved) return d;
+      }
+    }
     return devices.firstWhere(
       (d) =>
           (d.name ?? '').toUpperCase().contains('KPC') ||
@@ -402,15 +426,15 @@ class _PrintBillPageState extends State<PrintBillPage> {
         await _printer.disconnect();
       } catch (_) {}
 
-      final result = await _printer.connect(_selectedPrinter!);
-      final connected = result == 'true' || result == true;
+      final connected = await _printer.connect(_selectedPrinter!);
+      if (connected) _rememberPrinter(_selectedPrinter!);
       if (!mounted) return;
 
       setState(() => _printerStatus =
           connected ? _PrinterStatus.connected : _PrinterStatus.disconnected);
 
       if (connected) {
-        _snack('✓ Connected to ${_selectedPrinter!.name ?? "Printer"}');
+        _snack('Connected to ${_selectedPrinter!.name ?? "Printer"}');
       } else {
         _snack(
             'Could not connect to ${_selectedPrinter!.name ?? "Printer"}. Retrying...',
@@ -419,7 +443,9 @@ class _PrintBillPageState extends State<PrintBillPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _printerStatus = _PrinterStatus.disconnected);
-        _snack('Connection failed: $e', error: true);
+        _snack(
+            'Connection failed: ${e is PlatformException ? (e.message ?? e.code) : e}',
+            error: true);
       }
     }
   }
@@ -483,6 +509,21 @@ class _PrintBillPageState extends State<PrintBillPage> {
   //  Receipt Printing
   // ─────────────────────────────────────────────────────────────
 
+  /// Opens the RFCOMM link to the selected printer; throws with a readable
+  /// message on failure.
+  Future<void> _openConnection() async {
+    final printer = _selectedPrinter!;
+    _snack('Connecting to ${printer.name ?? "Printer"}...');
+    try {
+      await _printer.disconnect();
+    } catch (_) {}
+    if (!await _printer.connect(printer)) {
+      throw Exception('Could not connect to ${printer.name ?? "Printer"}');
+    }
+    _rememberPrinter(printer);
+    if (mounted) setState(() => _printerStatus = _PrinterStatus.connected);
+  }
+
   Future<void> _printReceipt({
     required String billId,
     required List<BillItem> items,
@@ -496,6 +537,17 @@ class _PrintBillPageState extends State<PrintBillPage> {
       return;
     }
 
+    // The bill is already saved at this point, so let the cashier retry the
+    // print without re-entering the cart.
+    void retry() => _printReceipt(
+          billId: billId,
+          items: items,
+          totalAmount: totalAmount,
+          paymentMode: paymentMode,
+          customerName: customerName,
+          customerPhone: customerPhone,
+        );
+
     setState(() => _isPrinting = true);
     try {
       // 1. Ensure Bluetooth is ON and bonded devices are available
@@ -503,7 +555,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
       final isOn = await _printer.isOn ?? false;
       if (!isAvailable || !isOn) {
         _snack('Bluetooth is OFF. Please turn on Bluetooth to print.',
-            error: true);
+            error: true, onRetry: retry);
         return;
       }
 
@@ -513,31 +565,16 @@ class _PrintBillPageState extends State<PrintBillPage> {
         if (devices.isEmpty) {
           _snack(
               'No paired thermal printers found. Pair printer in Bluetooth settings.',
-              error: true);
+              error: true,
+              onRetry: retry);
           return;
         }
         _bondedDevices = devices;
         _selectedPrinter = _pickBestDevice(devices);
       }
 
-      // 3. Connect to printer if not already connected
-      final isConnected = await _printer.isConnected ?? false;
-      if (!isConnected) {
-        _snack('Connecting to ${_selectedPrinter!.name ?? "Printer"}...');
-        try {
-          await _printer.disconnect();
-        } catch (_) {}
-        final result = await _printer.connect(_selectedPrinter!);
-        final connected = result == 'true' || result == true;
-        if (!connected) {
-          throw Exception(
-              'Could not connect to ${_selectedPrinter!.name ?? "Printer"}');
-        }
-        if (mounted) setState(() => _printerStatus = _PrinterStatus.connected);
-      }
-
-      // 4. Build ESC/POS receipt bytes
-      final bytes = await buildEscPosReceipt(
+      // 3. Build ESC/POS receipt bytes
+      final bytes = Uint8List.fromList(await buildEscPosReceipt(
         billId: billId,
         items: items,
         totalAmount: totalAmount,
@@ -545,14 +582,26 @@ class _PrintBillPageState extends State<PrintBillPage> {
         canteenName: CanteenProvider.selectedCanteenName,
         customerName: customerName,
         customerPhone: customerPhone,
-      );
+      ));
 
-      // 5. Send raw bytes to thermal printer
-      await _printer.writeBytes(Uint8List.fromList(bytes));
-      _snack('✓ Receipt printed successfully.');
+      // 4. Connect (if needed) and send. A dead link (printer switched off
+      //    or out of range) only shows up as a failed write, so reconnect
+      //    once and resend before reporting an error.
+      if (!(await _printer.isConnected ?? false)) await _openConnection();
+      try {
+        await _printer.writeBytes(bytes);
+      } on PlatformException {
+        if (mounted) {
+          setState(() => _printerStatus = _PrinterStatus.disconnected);
+        }
+        await _openConnection();
+        await _printer.writeBytes(bytes);
+      }
+      _snack('Receipt printed successfully.');
     } catch (e) {
       if (mounted) setState(() => _printerStatus = _PrinterStatus.disconnected);
-      _snack('Print failed: $e', error: true);
+      final reason = e is PlatformException ? (e.message ?? e.code) : '$e';
+      _snack('Print failed: $reason', error: true, onRetry: retry);
     } finally {
       if (mounted) setState(() => _isPrinting = false);
     }
@@ -711,11 +760,25 @@ class _PrintBillPageState extends State<PrintBillPage> {
     String? generatedBillId;
     try {
       await db.runTransaction((tx) async {
-        final counterRef = db.collection('counters').doc('billCounter');
+        // Each canteen has its own bill counter so branches never share or
+        // contend on numbering.
+        final branchId = CanteenProvider.selectedCanteenId;
+        final counterRef =
+            db.collection('counters').doc('billCounter_$branchId');
         final counterSnap = await tx.get(counterRef);
-        final newBillNum = counterSnap.exists
-            ? (counterSnap.data()!['lastNumber'] as int) + 1
-            : 38;
+        int newBillNum;
+        if (counterSnap.exists) {
+          newBillNum = (counterSnap.data()!['lastNumber'] as int) + 1;
+        } else if (branchId == 'main') {
+          // Continue the legacy global sequence for the original canteen.
+          final legacySnap =
+              await tx.get(db.collection('counters').doc('billCounter'));
+          newBillNum = legacySnap.exists
+              ? (legacySnap.data()!['lastNumber'] as int) + 1
+              : 1;
+        } else {
+          newBillNum = 1;
+        }
         final selectedCanteenId = CanteenProvider.selectedCanteenId;
         final today = DateTime.now();
         final todayId = CanteenProvider.dailyStatsDocumentId(
@@ -806,11 +869,11 @@ class _PrintBillPageState extends State<PrintBillPage> {
           },
           SetOptions(merge: true),
         );
-        tx.set(counterRef, {'lastNumber': newBillNum});
+        tx.set(counterRef, {'canteenId': branchId, 'lastNumber': newBillNum});
       });
 
       _snack(
-          '✓ Bill saved! ₹${_totalAmount.toStringAsFixed(2)} · $_paymentMethod');
+          'Bill saved! ₹${_totalAmount.toStringAsFixed(2)} · $_paymentMethod');
       setState(() {
         _billItems.clear();
         _recalcTotal();
@@ -840,8 +903,9 @@ class _PrintBillPageState extends State<PrintBillPage> {
     List<Map<String, dynamic>> existingCustomers = [];
 
     try {
-      final snap =
-          await FirebaseFirestore.instance.collection('creditCustomers').get();
+      final snap = await CanteenProvider.scopeQuery(
+              FirebaseFirestore.instance.collection('creditCustomers'))
+          .get();
       existingCustomers = snap.docs.map((d) => d.data()).toList();
     } catch (_) {}
 
@@ -853,7 +917,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
       builder: (ctx) {
         return StatefulBuilder(builder: (context, setDialogState) {
           return Dialog(
-            backgroundColor: const Color(0xFF111827),
+            backgroundColor: AppColors.bgCard,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             child: Padding(
@@ -869,14 +933,14 @@ class _PrintBillPageState extends State<PrintBillPage> {
                           color: AppColors.accentOrange, size: 28),
                       const SizedBox(width: 12),
                       Text('Credit Customer',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: Colors.white,
                               fontSize: 18,
                               fontWeight: FontWeight.w700)),
                     ]),
                     const SizedBox(height: 24),
                     Text('Phone Number',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: AppColors.textSecondary,
                             fontSize: 13,
                             fontWeight: FontWeight.w500)),
@@ -908,12 +972,12 @@ class _PrintBillPageState extends State<PrintBillPage> {
                         return TextFormField(
                           controller: textCtrl,
                           focusNode: focusNode,
-                          style: GoogleFonts.poppins(
-                              color: Colors.white, fontSize: 14),
+                          style:
+                              AppText.style(color: Colors.white, fontSize: 14),
                           keyboardType: TextInputType.phone,
                           decoration: InputDecoration(
                             hintText: 'Enter phone number…',
-                            hintStyle: GoogleFonts.poppins(
+                            hintStyle: AppText.style(
                                 color: AppColors.textHint, fontSize: 14),
                             filled: true,
                             fillColor: AppColors.bgInput,
@@ -954,10 +1018,10 @@ class _PrintBillPageState extends State<PrintBillPage> {
                                   final o = options.elementAt(i);
                                   return ListTile(
                                     title: Text(o['name'] ?? '',
-                                        style: GoogleFonts.poppins(
+                                        style: AppText.style(
                                             color: Colors.white, fontSize: 14)),
                                     subtitle: Text(o['phone'] ?? '',
-                                        style: GoogleFonts.poppins(
+                                        style: AppText.style(
                                             color: AppColors.textHint,
                                             fontSize: 12)),
                                     onTap: () => onSelected(o),
@@ -971,18 +1035,17 @@ class _PrintBillPageState extends State<PrintBillPage> {
                     ),
                     const SizedBox(height: 16),
                     Text('Customer Name',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: AppColors.textSecondary,
                             fontSize: 13,
                             fontWeight: FontWeight.w500)),
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: nameCtrl,
-                      style: GoogleFonts.poppins(
-                          color: Colors.white, fontSize: 14),
+                      style: AppText.style(color: Colors.white, fontSize: 14),
                       decoration: InputDecoration(
                         hintText: 'Enter name…',
-                        hintStyle: GoogleFonts.poppins(
+                        hintStyle: AppText.style(
                             color: AppColors.textHint, fontSize: 14),
                         filled: true,
                         fillColor: AppColors.bgInput,
@@ -999,7 +1062,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
                         child: TextButton(
                           onPressed: () => Navigator.pop(context, null),
                           child: Text('Cancel',
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: AppColors.textSecondary,
                                   fontWeight: FontWeight.w600)),
                         ),
@@ -1026,12 +1089,12 @@ class _PrintBillPageState extends State<PrintBillPage> {
                                 showDialog(
                                   context: context,
                                   builder: (dCtx) => AlertDialog(
-                                    backgroundColor: const Color(0xFF111827),
+                                    backgroundColor: AppColors.bgCard,
                                     shape: RoundedRectangleBorder(
                                         borderRadius:
                                             BorderRadius.circular(20)),
                                     title: Text('Credit Limit Exceeded',
-                                        style: GoogleFonts.poppins(
+                                        style: AppText.style(
                                             color: AppColors.accentRed,
                                             fontWeight: FontWeight.bold,
                                             fontSize: 16)),
@@ -1039,7 +1102,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
                                       'Customer has a pending credit of ₹${currentPending.toStringAsFixed(2)}.\n'
                                       'Adding this bill (₹${_totalAmount.toStringAsFixed(2)}) would exceed the ₹${maxCreditLimit.toStringAsFixed(0)} limit.\n\n'
                                       'Please collect a repayment first.',
-                                      style: GoogleFonts.poppins(
+                                      style: AppText.style(
                                           color: AppColors.textSecondary,
                                           fontSize: 13),
                                     ),
@@ -1047,7 +1110,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
                                       TextButton(
                                         onPressed: () => Navigator.pop(dCtx),
                                         child: Text('OK',
-                                            style: GoogleFonts.poppins(
+                                            style: AppText.style(
                                                 color: AppColors.accentBlue,
                                                 fontWeight: FontWeight.bold)),
                                       ),
@@ -1063,7 +1126,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
                             }
                           },
                           child: Text('Confirm',
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700)),
                         ),
@@ -1091,16 +1154,15 @@ class _PrintBillPageState extends State<PrintBillPage> {
         backgroundColor: AppColors.bgCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('Clear Bill?',
-            style: GoogleFonts.poppins(
+            style: AppText.style(
                 color: Colors.white, fontWeight: FontWeight.bold)),
         content: Text('Remove all ${_billItems.length} item(s)?',
-            style: GoogleFonts.poppins(
-                color: AppColors.textSecondary, fontSize: 14)),
+            style: AppText.style(color: AppColors.textSecondary, fontSize: 14)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text('Cancel',
-                style: GoogleFonts.poppins(color: AppColors.textSecondary)),
+                style: AppText.style(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -1109,8 +1171,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
                   borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Clear All',
-                style: GoogleFonts.poppins(color: Colors.white)),
+            child: Text('Clear All', style: AppText.style(color: Colors.white)),
           ),
         ],
       ),
@@ -1127,10 +1188,20 @@ class _PrintBillPageState extends State<PrintBillPage> {
     }
   }
 
-  void _snack(String msg, {bool error = false}) {
+  void _snack(String msg, {bool error = false, VoidCallback? onRetry}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, style: GoogleFonts.poppins(fontSize: 13)),
+      action: onRetry == null
+          ? null
+          : SnackBarAction(
+              label: 'RETRY PRINT',
+              textColor: Colors.white,
+              onPressed: onRetry,
+            ),
+      duration: onRetry == null
+          ? const Duration(seconds: 4)
+          : const Duration(seconds: 15),
+      content: Text(msg, style: AppText.style(fontSize: 13)),
       backgroundColor: error ? AppColors.accentRed : const Color(0xFF1B4332),
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1182,7 +1253,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
                   const SizedBox(width: 5),
                   Text(
                     _printerStatusLabel,
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: _printerStatusColor,
                         fontSize: 10,
                         fontWeight: FontWeight.w700),
@@ -1366,7 +1437,7 @@ class _PrinterStatusBar extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(
           child: Text(message,
-              style: GoogleFonts.poppins(
+              style: AppText.style(
                   color: color, fontSize: 11, fontWeight: FontWeight.w600)),
         ),
         if (status == _PrinterStatus.disconnected && deviceName != null)
@@ -1380,7 +1451,7 @@ class _PrinterStatusBar extends StatelessWidget {
                 border: Border.all(color: color.withValues(alpha: 0.5)),
               ),
               child: Text('Reconnect',
-                  style: GoogleFonts.poppins(
+                  style: AppText.style(
                       color: color, fontSize: 10, fontWeight: FontWeight.w700)),
             ),
           ),
@@ -1398,7 +1469,7 @@ class _PrinterStatusBar extends StatelessWidget {
                     color: AppColors.accentBlue.withValues(alpha: 0.5)),
               ),
               child: Text('Choose',
-                  style: GoogleFonts.poppins(
+                  style: AppText.style(
                       color: AppColors.accentBlue,
                       fontSize: 10,
                       fontWeight: FontWeight.w700)),
@@ -1453,7 +1524,7 @@ class _PrinterSheet extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Bluetooth Printers',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: Colors.white,
                         fontSize: 17,
                         fontWeight: FontWeight.w700)),
@@ -1473,7 +1544,7 @@ class _PrinterSheet extends StatelessWidget {
                           color: AppColors.accentBlue, size: 14),
                       const SizedBox(width: 4),
                       Text('Refresh',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: AppColors.accentBlue,
                               fontSize: 11,
                               fontWeight: FontWeight.w600)),
@@ -1484,8 +1555,7 @@ class _PrinterSheet extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text('Showing paired Bluetooth devices on your phone.',
-                style: GoogleFonts.poppins(
-                    color: AppColors.textHint, fontSize: 11)),
+                style: AppText.style(color: AppColors.textHint, fontSize: 11)),
             const SizedBox(height: 14),
             if (devices.isEmpty)
               Center(
@@ -1497,7 +1567,7 @@ class _PrinterSheet extends StatelessWidget {
                     const SizedBox(height: 10),
                     Text(
                       'No paired devices found.\nPair your thermal printer in Android Bluetooth settings first.',
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textSecondary,
                           fontSize: 12,
                           height: 1.5),
@@ -1546,14 +1616,14 @@ class _PrinterSheet extends StatelessWidget {
                     ),
                     title: Text(
                       device.name ?? device.address ?? 'Printer',
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: Colors.white,
                           fontSize: 13,
                           fontWeight: FontWeight.w600),
                     ),
                     subtitle: Text(
                       device.address ?? '',
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textHint, fontSize: 10),
                     ),
                     trailing: Container(
@@ -1575,7 +1645,7 @@ class _PrinterSheet extends StatelessWidget {
                       ),
                       child: Text(
                         isConnected ? 'Active' : 'Connect',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: Colors.white,
                             fontSize: 11,
                             fontWeight: FontWeight.w700),
@@ -1601,7 +1671,7 @@ class _PrinterSheet extends StatelessWidget {
                   child: Text(
                     'Tip: If your printer (KPC307-UEWB) is not listed, '
                     'pair it via Android Settings → Bluetooth first.',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: AppColors.textSecondary,
                         fontSize: 10,
                         height: 1.5),
@@ -1719,15 +1789,14 @@ class _SearchField extends StatelessWidget {
         TextField(
           controller: controller,
           focusNode: focusNode,
-          style: GoogleFonts.poppins(
+          style: AppText.style(
               color: AppColors.textPrimary,
               fontSize: 14,
               fontWeight: FontWeight.w500),
           decoration: InputDecoration(
             hintText:
                 menuLoading ? 'Loading menu…' : 'Search by item code or name…',
-            hintStyle:
-                GoogleFonts.poppins(color: AppColors.textHint, fontSize: 14),
+            hintStyle: AppText.style(color: AppColors.textHint, fontSize: 14),
             filled: true,
             fillColor: AppColors.bgInput,
             prefixIcon: const Icon(Icons.search_rounded,
@@ -1767,7 +1836,7 @@ class _SearchField extends StatelessWidget {
             margin: const EdgeInsets.only(top: 4),
             constraints: const BoxConstraints(maxHeight: 220),
             decoration: BoxDecoration(
-              color: const Color(0xFF1A2235),
+              color: AppColors.bgInput,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: AppColors.glassBorder),
               boxShadow: [
@@ -1799,7 +1868,7 @@ class _SearchField extends StatelessWidget {
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(item.code,
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: AppColors.accentBlue,
                                   fontWeight: FontWeight.w700,
                                   fontSize: 11)),
@@ -1807,7 +1876,7 @@ class _SearchField extends StatelessWidget {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(item.name,
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: AppColors.textPrimary,
                                   fontSize: 13,
                                   fontWeight: FontWeight.w500),
@@ -1816,7 +1885,7 @@ class _SearchField extends StatelessWidget {
                         const SizedBox(width: 8),
                         Text(
                           '₹${item.fullPrice.toStringAsFixed(0)}',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: AppColors.accentGreen,
                               fontWeight: FontWeight.w700,
                               fontSize: 13),
@@ -1861,7 +1930,7 @@ class _QtyStepper extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Text('$value',
-                style: GoogleFonts.poppins(
+                style: AppText.style(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
                     fontSize: 16)),
@@ -1961,7 +2030,7 @@ class _ToggleChip extends StatelessWidget {
         ),
         child: Text(
           label,
-          style: GoogleFonts.poppins(
+          style: AppText.style(
             color: selected ? AppColors.accentBlue : AppColors.textHint,
             fontSize: 12,
             fontWeight: FontWeight.w700,
@@ -2013,7 +2082,7 @@ class _AddButton extends StatelessWidget {
                   const Icon(Icons.add_rounded, color: Colors.white, size: 18),
                   const SizedBox(width: 6),
                   Text('Add to Bill',
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
                           fontSize: 13)),
@@ -2050,7 +2119,7 @@ class _CartHeader extends StatelessWidget {
         const SizedBox(width: 10),
         Text(
           count == 0 ? 'Bill Items' : 'Bill Items ($count)',
-          style: GoogleFonts.poppins(
+          style: AppText.style(
               color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
         ),
       ]),
@@ -2073,11 +2142,10 @@ class _EmptyCart extends StatelessWidget {
               size: 56, color: AppColors.textHint.withValues(alpha: 0.4)),
           const SizedBox(height: 12),
           Text('No items added yet',
-              style:
-                  GoogleFonts.poppins(color: AppColors.textHint, fontSize: 14)),
+              style: AppText.style(color: AppColors.textHint, fontSize: 14)),
           const SizedBox(height: 4),
           Text('Search and add items above',
-              style: GoogleFonts.poppins(
+              style: AppText.style(
                   color: AppColors.textHint.withValues(alpha: 0.6),
                   fontSize: 12)),
         ],
@@ -2119,7 +2187,7 @@ class _CartList extends StatelessWidget {
                 children: [
                   Row(children: [
                     Text(item.name,
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: Colors.white,
                             fontSize: 13,
                             fontWeight: FontWeight.w600)),
@@ -2133,7 +2201,7 @@ class _CartList extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text('½',
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                                 color: AppColors.accentOrange,
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700)),
@@ -2143,7 +2211,7 @@ class _CartList extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     '${item.quantity} × ₹${item.price.toStringAsFixed(1)}',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: AppColors.textSecondary, fontSize: 11),
                   ),
                 ],
@@ -2152,7 +2220,7 @@ class _CartList extends StatelessWidget {
             // Subtotal
             Text(
               '₹${item.subtotal.toStringAsFixed(1)}',
-              style: GoogleFonts.poppins(
+              style: AppText.style(
                   color: AppColors.accentGreen,
                   fontSize: 14,
                   fontWeight: FontWeight.w800),
@@ -2225,13 +2293,13 @@ class _BottomPanel extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Total Amount',
-                  style: GoogleFonts.poppins(
+                  style: AppText.style(
                       color: AppColors.textSecondary,
                       fontSize: 13,
                       fontWeight: FontWeight.w500)),
               Text(
                 '₹ ${total.toStringAsFixed(2)}',
-                style: GoogleFonts.poppins(
+                style: AppText.style(
                     color: AppColors.accentGreen,
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
@@ -2271,7 +2339,7 @@ class _BottomPanel extends StatelessWidget {
               decoration: BoxDecoration(
                 gradient: hasItems && !isSaving
                     ? const LinearGradient(
-                        colors: [Color(0xFF0066B3), Color(0xFF4FC3F7)],
+                        colors: [AppColors.gradBlue, AppColors.accentBlue],
                         begin: Alignment.centerLeft,
                         end: Alignment.centerRight,
                       )
@@ -2281,7 +2349,7 @@ class _BottomPanel extends StatelessWidget {
                 boxShadow: hasItems && !isSaving
                     ? [
                         BoxShadow(
-                          color: const Color(0xFF0066B3).withValues(alpha: 0.4),
+                          color: AppColors.gradBlue.withValues(alpha: 0.4),
                           blurRadius: 16,
                           offset: const Offset(0, 6),
                         ),
@@ -2302,7 +2370,7 @@ class _BottomPanel extends StatelessWidget {
                         const SizedBox(width: 8),
                         Text(
                           'Save & Print Bill',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color:
                                   hasItems ? Colors.white : AppColors.textHint,
                               fontWeight: FontWeight.w800,
@@ -2359,7 +2427,7 @@ class _PayBtn extends StatelessWidget {
                 size: 18),
             const SizedBox(height: 3),
             Text(label,
-                style: GoogleFonts.poppins(
+                style: AppText.style(
                     color: selected ? AppColors.accentBlue : AppColors.textHint,
                     fontSize: 10,
                     fontWeight: FontWeight.w700)),

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'theme.dart';
+import 'canteen_provider.dart';
 
 void showSMSBroadcastDialog(BuildContext context) {
   final controller = TextEditingController();
@@ -22,7 +22,7 @@ void showSMSBroadcastDialog(BuildContext context) {
             const SizedBox(width: 10),
             Text(
               'SMS Broadcast Specials',
-              style: GoogleFonts.poppins(
+              style: AppText.style(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
                 fontSize: 16,
@@ -36,17 +36,19 @@ void showSMSBroadcastDialog(BuildContext context) {
           children: [
             Text(
               'This will retrieve all credit customer phone numbers and pre-fill them in your default SMS app to broadcast today\'s menu.',
-              style: GoogleFonts.poppins(color: AppColors.textSecondary, fontSize: 11),
+              style:
+                  AppText.style(color: AppColors.textSecondary, fontSize: 11),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
               maxLines: 4,
               maxLength: 140,
-              style: GoogleFonts.poppins(color: Colors.white, fontSize: 13),
+              style: AppText.style(color: Colors.white, fontSize: 13),
               decoration: InputDecoration(
                 hintText: "Enter menu specials (e.g. Biryani ₹120, Tea ₹10...)",
-                hintStyle: GoogleFonts.poppins(color: AppColors.textHint, fontSize: 12),
+                hintStyle:
+                    AppText.style(color: AppColors.textHint, fontSize: 12),
                 filled: true,
                 fillColor: AppColors.bgDark,
                 border: OutlineInputBorder(
@@ -62,12 +64,14 @@ void showSMSBroadcastDialog(BuildContext context) {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx),
-            child: Text('Cancel', style: GoogleFonts.poppins(color: AppColors.textHint)),
+            child:
+                Text('Cancel', style: AppText.style(color: AppColors.textHint)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.accentOrange,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             ),
             onPressed: () async {
@@ -89,13 +93,17 @@ void showSMSBroadcastDialog(BuildContext context) {
                 context: context,
                 barrierDismissible: false,
                 builder: (_) => const Center(
-                  child: CircularProgressIndicator(color: AppColors.accentOrange),
+                  child:
+                      CircularProgressIndicator(color: AppColors.accentOrange),
                 ),
               );
 
               try {
                 // Fetch credit customers
-                final snap = await FirebaseFirestore.instance.collection('creditCustomers').get();
+                final snap = await CanteenProvider.scopeQuery(FirebaseFirestore
+                        .instance
+                        .collection('creditCustomers'))
+                    .get();
                 if (context.mounted) {
                   Navigator.pop(context); // Pop loading
                 }
@@ -109,7 +117,8 @@ void showSMSBroadcastDialog(BuildContext context) {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('No credit customers found with phone numbers'),
+                        content: Text(
+                            'No credit customers found with phone numbers'),
                         backgroundColor: Colors.red,
                       ),
                     );
@@ -143,7 +152,8 @@ void showSMSBroadcastDialog(BuildContext context) {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Could not open default SMS application'),
+                          content:
+                              Text('Could not open default SMS application'),
                           backgroundColor: Colors.red,
                         ),
                       );
@@ -164,7 +174,7 @@ void showSMSBroadcastDialog(BuildContext context) {
             },
             child: Text(
               'Launch SMS',
-              style: GoogleFonts.poppins(
+              style: AppText.style(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
               ),

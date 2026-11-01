@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'daily_sales_report_page.dart';
+import 'canteen_provider.dart';
 
 class DailySaleSummary {
   final DateTime date;
@@ -60,10 +60,14 @@ class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
       final Map<String, double> dailyTotals = {};
       for (final doc in snap.docs) {
         final data = doc.data();
-        final date = (data['timestamp'] as Timestamp).toDate();
+        if (!CanteenProvider.matchesSelectedCanteen(data)) continue;
+        DateTime date = DateTime.now();
+        if (data['timestamp'] is Timestamp) {
+          date = (data['timestamp'] as Timestamp).toDate();
+        }
         final dayKey = DateFormat('yyyy-MM-dd').format(date);
         dailyTotals[dayKey] = (dailyTotals[dayKey] ?? 0) +
-            (data['totalAmount'] as num).toDouble();
+            ((data['totalAmount'] ?? 0) as num).toDouble();
       }
       return dailyTotals.entries.map((e) {
         return DailySaleSummary(date: DateTime.parse(e.key), total: e.value);
@@ -93,7 +97,7 @@ class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
                       color: AppColors.accentBlue, size: 22),
                   const SizedBox(width: 12),
                   Text(DateFormat('MMMM yyyy').format(_selectedMonth),
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textPrimary,
                           fontSize: 16,
                           fontWeight: FontWeight.w600)),
@@ -105,7 +109,7 @@ class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
                         gradient: AppGradients.blueAccent,
                         borderRadius: BorderRadius.circular(20)),
                     child: Text('Change',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: Colors.white,
                             fontSize: 11,
                             fontWeight: FontWeight.w600)),
@@ -134,7 +138,7 @@ class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
                               size: 56, color: AppColors.textHint),
                           const SizedBox(height: 12),
                           Text('No sales data for this month',
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: AppColors.textSecondary,
                                   fontSize: 15)),
                         ]),
@@ -163,17 +167,17 @@ class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text('Month Total',
-                                    style: GoogleFonts.poppins(
+                                    style: AppText.style(
                                         color: Colors.white70, fontSize: 12)),
                                 Text('₹${monthTotal.toStringAsFixed(0)}',
-                                    style: GoogleFonts.poppins(
+                                    style: AppText.style(
                                         color: Colors.white,
                                         fontSize: 22,
                                         fontWeight: FontWeight.w800)),
                               ]),
                           const Spacer(),
                           Text('${days.length} days',
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: Colors.white70, fontSize: 12)),
                         ]),
                       ),
@@ -205,13 +209,13 @@ class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
                                     Text(
                                         DateFormat('EEE, MMM dd')
                                             .format(day.date),
-                                        style: GoogleFonts.poppins(
+                                        style: AppText.style(
                                             color: AppColors.textPrimary,
                                             fontWeight: FontWeight.w600,
                                             fontSize: 13)),
                                     const Spacer(),
                                     Text('₹${day.total.toStringAsFixed(0)}',
-                                        style: GoogleFonts.poppins(
+                                        style: AppText.style(
                                             color: AppColors.accentGreen,
                                             fontWeight: FontWeight.w700,
                                             fontSize: 15)),

@@ -3,9 +3,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class CanteenProvider {
   static String _selectedCanteenId = 'main';
   static String _selectedCanteenName = 'Main Canteen';
+  static bool _isAdmin = false;
 
   static String get selectedCanteenId => _selectedCanteenId;
   static String get selectedCanteenName => _selectedCanteenName;
+  static bool get isAdmin => _isAdmin;
+
+  static Query<Map<String, dynamic>> scopeQuery(
+      Query<Map<String, dynamic>> query) {
+    if (_isAdmin) return query;
+    return query.where('canteenId', isEqualTo: selectedCanteenId);
+  }
 
   static String dailyStatsDocumentId(DateTime date, {String? canteenId}) =>
       '${_normalizedCanteenId(canteenId)}_${_dateKey(date)}';
@@ -48,6 +56,7 @@ class CanteenProvider {
           .get();
 
       final data = doc.data();
+      _isAdmin = data?['role'] == 'admin';
       final canteenId = (data?['canteenId'] ?? '').toString();
       final canteenName = (data?['canteenName'] ?? 'Main Canteen').toString();
 
@@ -57,6 +66,7 @@ class CanteenProvider {
         setSelectedCanteen(id: 'main', name: 'Main Canteen');
       }
     } catch (_) {
+      _isAdmin = false;
       setSelectedCanteen(id: 'main', name: 'Main Canteen');
     }
   }

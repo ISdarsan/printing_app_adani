@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:excel/excel.dart' hide Border;
@@ -26,6 +25,13 @@ class AdminDashboardPage extends StatefulWidget {
 class _AdminDashboardPageState extends State<AdminDashboardPage> {
   final User? _currentUser = FirebaseAuth.instance.currentUser;
   String _selectedCanteenFilter = 'all'; // 'all' or canteenId e.g. 'canteen_1'
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Warm the logo so the logout splash shows it instantly.
+    precacheBrandLogo(context);
+  }
 
   Stream<Map<String, dynamic>> _getDailyStatsStream() {
     final now = DateTime.now();
@@ -274,11 +280,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         final amt = ((d['totalAmount'] ?? 0.0) as num).toDouble();
         totalSales += amt;
         final mode = d['paymentMode'] ?? '';
-        if (mode == 'Cash')
+        if (mode == 'Cash') {
           cashSales += amt;
-        else if (mode == 'UPI')
+        } else if (mode == 'UPI') {
           upiSales += amt;
-        else if (mode == 'Credit') creditSales += amt;
+        } else if (mode == 'Credit') {
+          creditSales += amt;
+        }
       }
       double totalExpenses = expensesSnap.docs.fold(
           0.0, (s, d) => s + ((d.data()['amount'] ?? 0.0) as num).toDouble());
@@ -352,8 +360,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         for (final doc in expensesSnap.docs) {
           final d = doc.data();
           final cId = ((d['canteenId'] ?? 'main') as String);
-          if ((cId.isEmpty ? 'main' : cId) == bId)
+          if ((cId.isEmpty ? 'main' : cId) == bId) {
             bExp += ((d['amount'] ?? 0.0) as num).toDouble();
+          }
         }
         dashboardSheet
             .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: bRow))
@@ -663,8 +672,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to export Excel: $e',
-                style: GoogleFonts.poppins()),
+            content: Text('Failed to export Excel: $e', style: AppText.style()),
             backgroundColor: AppColors.accentRed,
           ),
         );
@@ -699,13 +707,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     ),
                     const SizedBox(height: 10),
                     Text('Admin Command Center',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: Colors.white,
                             fontSize: 16,
                             fontWeight: FontWeight.w700)),
                     Text(_currentUser?.email ?? '',
-                        style: GoogleFonts.poppins(
-                            color: Colors.white70, fontSize: 12)),
+                        style:
+                            AppText.style(color: Colors.white70, fontSize: 12)),
                   ],
                 ),
               ),
@@ -746,7 +754,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             Navigator.pushNamed(context, '/admin_expense_report');
           }),
           _drawerTile(Icons.account_balance_rounded, 'Cash Reconciliation Logs',
-              const Color(0xFFCE93D8), () {
+              AppColors.accentPurple, () {
             Navigator.pop(context);
             Navigator.pushNamed(context, '/cash_reconciliation_admin');
           }),
@@ -786,7 +794,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         child: Icon(icon, color: color, size: 20),
       ),
       title: Text(title,
-          style: GoogleFonts.poppins(
+          style: AppText.style(
               color: AppColors.textPrimary,
               fontSize: 14,
               fontWeight: FontWeight.w500)),
@@ -832,7 +840,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             const SizedBox(height: 12),
             Text(
               label,
-              style: GoogleFonts.poppins(
+              style: AppText.style(
                 fontSize: 11,
                 color: AppColors.textSecondary,
                 fontWeight: FontWeight.w500,
@@ -841,7 +849,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             const SizedBox(height: 4),
             Text(
               value,
-              style: GoogleFonts.poppins(
+              style: AppText.style(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
                 color: AppColors.textPrimary,
@@ -872,8 +880,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             decoration: glassCard(radius: 18),
             child: Text(
               'No trends data available yet',
-              style: GoogleFonts.poppins(
-                  color: AppColors.textSecondary, fontSize: 13),
+              style:
+                  AppText.style(color: AppColors.textSecondary, fontSize: 13),
             ),
           );
         }
@@ -915,7 +923,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       children: [
                         Text(
                           'Weekly Revenue vs Credit',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                             color: Colors.white,
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -923,7 +931,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         ),
                         Text(
                           'Comparison of sales & outstanding credit',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                             color: AppColors.textSecondary,
                             fontSize: 11,
                           ),
@@ -953,7 +961,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             final isSales = spot.barIndex == 0;
                             return LineTooltipItem(
                               '${isSales ? "Sales" : "Credit"}: ₹${spot.y.toStringAsFixed(0)}',
-                              GoogleFonts.poppins(
+                              AppText.style(
                                 color: isSales
                                     ? AppColors.accentBlue
                                     : AppColors.accentOrange,
@@ -990,9 +998,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                               space: 4,
                               child: Text(
                                 DateFormat('dd MMM').format(date),
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                   color: AppColors.textSecondary,
-                                  fontSize: 9,
+                                  fontSize: 10,
                                 ),
                               ),
                             );
@@ -1012,9 +1020,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                                 value >= 1000
                                     ? '${(value / 1000).toStringAsFixed(1)}k'
                                     : value.toStringAsFixed(0),
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                   color: AppColors.textHint,
-                                  fontSize: 9,
+                                  fontSize: 10,
                                 ),
                               ),
                             );
@@ -1036,7 +1044,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         spots: salesSpots,
                         isCurved: true,
                         gradient: const LinearGradient(
-                            colors: [Color(0xFF2196F3), Color(0xFF4FC3F7)]),
+                            colors: [AppColors.gradBlue, AppColors.accentBlue]),
                         barWidth: 3,
                         isStrokeCapRound: true,
                         dotData: const FlDotData(show: false),
@@ -1044,8 +1052,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                           show: true,
                           gradient: LinearGradient(
                             colors: [
-                              Color(0xFF2196F3).withValues(alpha: 0.2),
-                              Color(0xFF2196F3).withValues(alpha: 0.0),
+                              AppColors.gradBlue.withValues(alpha: 0.2),
+                              AppColors.gradBlue.withValues(alpha: 0.0),
                             ],
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
@@ -1055,8 +1063,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       LineChartBarData(
                         spots: creditSpots,
                         isCurved: true,
-                        gradient: const LinearGradient(
-                            colors: [Color(0xFFFF6B35), Color(0xFFFF8C42)]),
+                        gradient: const LinearGradient(colors: [
+                          AppColors.accentOrange,
+                          AppColors.accentOrange
+                        ]),
                         barWidth: 3,
                         isStrokeCapRound: true,
                         dotData: const FlDotData(show: false),
@@ -1064,8 +1074,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                           show: true,
                           gradient: LinearGradient(
                             colors: [
-                              Color(0xFFFF6B35).withValues(alpha: 0.15),
-                              Color(0xFFFF6B35).withValues(alpha: 0.0),
+                              AppColors.accentOrange.withValues(alpha: 0.15),
+                              AppColors.accentOrange.withValues(alpha: 0.0),
                             ],
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
@@ -1094,7 +1104,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         const SizedBox(width: 4),
         Text(
           label,
-          style: GoogleFonts.poppins(
+          style: AppText.style(
               color: AppColors.textSecondary,
               fontSize: 11,
               fontWeight: FontWeight.w500),
@@ -1148,7 +1158,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             children: [
                               Text(
                                 'Console Panel',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                   color: Colors.white,
                                   fontSize: 24,
                                   fontWeight: FontWeight.w800,
@@ -1167,7 +1177,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                                   const SizedBox(width: 6),
                                   Text(
                                     'Operational Mode',
-                                    style: GoogleFonts.poppins(
+                                    style: AppText.style(
                                       color: AppColors.accentGreen,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
@@ -1187,7 +1197,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             ),
                             child: Text(
                               DateFormat('dd MMM yyyy').format(DateTime.now()),
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                 color: AppColors.textSecondary,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w500,
@@ -1261,7 +1271,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                               children: [
                                 Text(
                                   'ACTIVE CANTEEN VIEW',
-                                  style: GoogleFonts.poppins(
+                                  style: AppText.style(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w700,
                                     color: AppColors.textSecondary,
@@ -1284,7 +1294,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                                         value: c['id'],
                                         child: Text(
                                           c['name']!,
-                                          style: GoogleFonts.poppins(
+                                          style: AppText.style(
                                             color: Colors.white,
                                             fontSize: 14,
                                             fontWeight: FontWeight.w600,
@@ -1415,7 +1425,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                           Navigator.pushNamed(context, '/all_bills_page'),
                       child: Text(
                         'See All Feed',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                           color: AppColors.accentBlue,
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -1446,7 +1456,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         alignment: Alignment.center,
                         child: Text(
                           'No recent bills recorded.',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                             color: AppColors.textSecondary,
                             fontSize: 13,
                           ),
@@ -1498,7 +1508,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                                   ),
                                   child: Text(
                                     '#$billNum',
-                                    style: GoogleFonts.poppins(
+                                    style: AppText.style(
                                       color: Colors.white,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 11,
@@ -1513,7 +1523,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                                     children: [
                                       Text(
                                         customerName,
-                                        style: GoogleFonts.poppins(
+                                        style: AppText.style(
                                           color: Colors.white,
                                           fontSize: 14,
                                           fontWeight: FontWeight.w600,
@@ -1522,7 +1532,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                                       ),
                                       Text(
                                         timeStr,
-                                        style: GoogleFonts.poppins(
+                                        style: AppText.style(
                                           color: AppColors.textSecondary,
                                           fontSize: 11,
                                         ),
@@ -1535,7 +1545,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                                   children: [
                                     Text(
                                       '₹${total.toStringAsFixed(0)}',
-                                      style: GoogleFonts.poppins(
+                                      style: AppText.style(
                                         color: isCredit
                                             ? AppColors.accentOrange
                                             : AppColors.accentGreen,
@@ -1649,7 +1659,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             available < 0
                                 ? 'Budget Overspent!'
                                 : 'Low Budget Alert ($pctStr% Left)',
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                                 color: AppColors.accentRed,
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold),
@@ -1658,7 +1668,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             available < 0
                                 ? 'You have exceeded the allocated budget by ₹${available.abs().toStringAsFixed(0)}.'
                                 : 'Available: ₹${available.toStringAsFixed(0)} left of ₹${allocated.toStringAsFixed(0)} allocated.',
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                                 color: AppColors.textSecondary, fontSize: 10),
                           ),
                         ],
@@ -1723,7 +1733,7 @@ class _ManageCanteensSheetState extends State<_ManageCanteensSheet>
       minChildSize: 0.5,
       builder: (_, scrollController) => Container(
         decoration: const BoxDecoration(
-          color: Color(0xFF0D1120),
+          color: AppColors.bgDark,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
@@ -1754,7 +1764,7 @@ class _ManageCanteensSheetState extends State<_ManageCanteensSheet>
                   const SizedBox(width: 12),
                   Text(
                     'Manage Canteens & Staff',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                       color: Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -1773,8 +1783,8 @@ class _ManageCanteensSheetState extends State<_ManageCanteensSheet>
               indicatorColor: AppColors.accentGreen,
               labelColor: AppColors.accentGreen,
               unselectedLabelColor: Colors.white54,
-              labelStyle: GoogleFonts.poppins(
-                  fontSize: 13, fontWeight: FontWeight.w600),
+              labelStyle:
+                  AppText.style(fontSize: 13, fontWeight: FontWeight.w600),
               tabs: const [
                 Tab(
                     icon: Icon(Icons.store_rounded, size: 18),
@@ -1820,7 +1830,7 @@ class _CanteensTabState extends State<_CanteensTab> {
         backgroundColor: AppColors.accentGreen,
         icon: const Icon(Icons.add, color: Colors.white),
         label: Text('Add Branch',
-            style: GoogleFonts.poppins(
+            style: AppText.style(
                 color: Colors.white, fontWeight: FontWeight.w600)),
         onPressed: () => _showAddCanteenDialog(context),
       ),
@@ -1841,12 +1851,12 @@ class _CanteensTabState extends State<_CanteensTab> {
                       size: 56, color: Colors.white24),
                   const SizedBox(height: 12),
                   Text('No canteen branches yet',
-                      style: GoogleFonts.poppins(
-                          color: Colors.white54, fontSize: 14)),
+                      style:
+                          AppText.style(color: Colors.white54, fontSize: 14)),
                   const SizedBox(height: 6),
                   Text('Tap + Add Branch to create one',
-                      style: GoogleFonts.poppins(
-                          color: Colors.white38, fontSize: 12)),
+                      style:
+                          AppText.style(color: Colors.white38, fontSize: 12)),
                 ],
               ),
             );
@@ -1871,7 +1881,7 @@ class _CanteensTabState extends State<_CanteensTab> {
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF111827),
+                        color: AppColors.bgCard,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
                           color: isMain
@@ -1899,7 +1909,7 @@ class _CanteensTabState extends State<_CanteensTab> {
                                 Row(
                                   children: [
                                     Text(name,
-                                        style: GoogleFonts.poppins(
+                                        style: AppText.style(
                                             color: Colors.white,
                                             fontSize: 14,
                                             fontWeight: FontWeight.w600)),
@@ -1915,7 +1925,7 @@ class _CanteensTabState extends State<_CanteensTab> {
                                               BorderRadius.circular(20),
                                         ),
                                         child: Text('Default',
-                                            style: GoogleFonts.poppins(
+                                            style: AppText.style(
                                                 color: AppColors.accentGreen,
                                                 fontSize: 10,
                                                 fontWeight: FontWeight.w600)),
@@ -1924,7 +1934,7 @@ class _CanteensTabState extends State<_CanteensTab> {
                                   ],
                                 ),
                                 Text('ID: ${doc.id}',
-                                    style: GoogleFonts.poppins(
+                                    style: AppText.style(
                                         color: Colors.white38, fontSize: 10)),
                               ],
                             ),
@@ -2037,20 +2047,20 @@ class _CanteensTabState extends State<_CanteensTab> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF111827),
+        backgroundColor: AppColors.bgCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('Delete "$name"?',
-            style: GoogleFonts.poppins(
+            style: AppText.style(
                 color: Colors.white, fontWeight: FontWeight.w700)),
         content: Text(
           'This removes the branch record. Staff assigned here will fall back to Main Canteen. Existing bills are not deleted.',
-          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
+          style: AppText.style(color: Colors.white70, fontSize: 13),
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('Cancel',
-                  style: GoogleFonts.poppins(color: Colors.white54))),
+              child:
+                  Text('Cancel', style: AppText.style(color: Colors.white54))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.accentRed,
@@ -2077,7 +2087,7 @@ class _CanteensTabState extends State<_CanteensTab> {
               await batch.commit();
             },
             child: Text('Delete',
-                style: GoogleFonts.poppins(
+                style: AppText.style(
                     color: Colors.white, fontWeight: FontWeight.w600)),
           ),
         ],
@@ -2108,8 +2118,7 @@ class _AssignedCanteenStaff extends StatelessWidget {
           return Padding(
             padding: const EdgeInsets.all(16),
             child: Text('Unable to load assigned staff.',
-                style: GoogleFonts.poppins(
-                    color: AppColors.accentRed, fontSize: 12)),
+                style: AppText.style(color: AppColors.accentRed, fontSize: 12)),
           );
         }
 
@@ -2130,7 +2139,7 @@ class _AssignedCanteenStaff extends StatelessWidget {
           margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: const Color(0xFF0A0E1A),
+            color: AppColors.bgDark,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: AppColors.glassBorder),
           ),
@@ -2144,7 +2153,7 @@ class _AssignedCanteenStaff extends StatelessWidget {
                   const SizedBox(width: 8),
                   Text(
                     'Assigned Staff (${staff.length})',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: Colors.white,
                         fontSize: 12,
                         fontWeight: FontWeight.w600),
@@ -2156,7 +2165,7 @@ class _AssignedCanteenStaff extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 12),
                   child: Text(
                     'No staff assigned to this canteen.',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: AppColors.textSecondary, fontSize: 12),
                   ),
                 )
@@ -2177,7 +2186,7 @@ class _AssignedCanteenStaff extends StatelessWidget {
                             ((doc.data() as Map<String, dynamic>)['email'] ??
                                     'No email')
                                 .toString(),
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                                 color: AppColors.textPrimary, fontSize: 12),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -2187,9 +2196,9 @@ class _AssignedCanteenStaff extends StatelessWidget {
                           (((doc.data() as Map<String, dynamic>)['role'] ??
                                   'cashier') as String)
                               .toUpperCase(),
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: AppColors.accentBlue,
-                              fontSize: 9,
+                              fontSize: 10,
                               fontWeight: FontWeight.w700),
                         ),
                       ],
@@ -2220,7 +2229,7 @@ class _StaffTab extends StatelessWidget {
         backgroundColor: AppColors.accentBlue,
         icon: const Icon(Icons.person_add_rounded, color: Colors.white),
         label: Text('Add Staff',
-            style: GoogleFonts.poppins(
+            style: AppText.style(
                 color: Colors.white, fontWeight: FontWeight.w600)),
         onPressed: () => _showAddStaffDialog(context),
       ),
@@ -2244,12 +2253,12 @@ class _StaffTab extends StatelessWidget {
                       size: 56, color: Colors.white24),
                   const SizedBox(height: 12),
                   Text('No staff accounts yet',
-                      style: GoogleFonts.poppins(
-                          color: Colors.white54, fontSize: 14)),
+                      style:
+                          AppText.style(color: Colors.white54, fontSize: 14)),
                   const SizedBox(height: 6),
                   Text('Tap + Add Staff to create one',
-                      style: GoogleFonts.poppins(
-                          color: Colors.white38, fontSize: 12)),
+                      style:
+                          AppText.style(color: Colors.white38, fontSize: 12)),
                 ],
               ),
             );
@@ -2271,7 +2280,7 @@ class _StaffTab extends StatelessWidget {
               return Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF111827),
+                  color: AppColors.bgCard,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: AppColors.glassBorder),
                 ),
@@ -2282,7 +2291,7 @@ class _StaffTab extends StatelessWidget {
                       backgroundColor: roleColor.withValues(alpha: 0.15),
                       child: Text(
                         (email.isNotEmpty ? email[0] : '?').toUpperCase(),
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                           color: roleColor,
                           fontWeight: FontWeight.w700,
                           fontSize: 16,
@@ -2295,7 +2304,7 @@ class _StaffTab extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(email,
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: Colors.white,
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600),
@@ -2312,17 +2321,17 @@ class _StaffTab extends StatelessWidget {
                                 ),
                                 child: Text(
                                   role.toUpperCase(),
-                                  style: GoogleFonts.poppins(
+                                  style: AppText.style(
                                       color: roleColor,
-                                      fontSize: 9,
+                                      fontSize: 10,
                                       fontWeight: FontWeight.w700),
                                 ),
                               ),
                               const SizedBox(width: 6),
                               Flexible(
                                 child: Text(
-                                  '🏪 $canteenName',
-                                  style: GoogleFonts.poppins(
+                                  canteenName,
+                                  style: AppText.style(
                                       color: Colors.white54, fontSize: 10),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -2333,7 +2342,7 @@ class _StaffTab extends StatelessWidget {
                       ),
                     ),
                     PopupMenuButton<String>(
-                      color: const Color(0xFF1A2035),
+                      color: AppColors.bgInput,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14)),
                       icon: const Icon(Icons.more_vert,
@@ -2355,7 +2364,7 @@ class _StaffTab extends StatelessWidget {
                                 size: 16, color: AppColors.accentBlue),
                             const SizedBox(width: 8),
                             Text('Reassign Canteen',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                     color: Colors.white, fontSize: 13)),
                           ]),
                         ),
@@ -2366,7 +2375,7 @@ class _StaffTab extends StatelessWidget {
                                 size: 16, color: AppColors.accentOrange),
                             const SizedBox(width: 8),
                             Text('Send Password Reset',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                     color: Colors.white, fontSize: 13)),
                           ]),
                         ),
@@ -2377,7 +2386,7 @@ class _StaffTab extends StatelessWidget {
                                 size: 16, color: AppColors.accentRed),
                             const SizedBox(width: 8),
                             Text('Remove Staff',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                     color: AppColors.accentRed, fontSize: 13)),
                           ]),
                         ),
@@ -2409,7 +2418,7 @@ class _StaffTab extends StatelessWidget {
       builder: (dialogCtx) {
         return StatefulBuilder(builder: (dialogCtx, setDialogState) {
           return AlertDialog(
-            backgroundColor: const Color(0xFF111827),
+            backgroundColor: AppColors.bgCard,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: Row(children: [
@@ -2424,7 +2433,7 @@ class _StaffTab extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Text('Add Staff Account',
-                  style: GoogleFonts.poppins(
+                  style: AppText.style(
                       color: Colors.white,
                       fontSize: 15,
                       fontWeight: FontWeight.w700)),
@@ -2448,14 +2457,13 @@ class _StaffTab extends StatelessWidget {
                                   AppColors.accentRed.withValues(alpha: 0.4)),
                         ),
                         child: Text(errorMsg,
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                                 color: AppColors.accentRed, fontSize: 12)),
                       ),
                     TextField(
                       controller: emailCtrl,
                       keyboardType: TextInputType.emailAddress,
-                      style: GoogleFonts.poppins(
-                          color: Colors.white, fontSize: 13),
+                      style: AppText.style(color: Colors.white, fontSize: 13),
                       decoration:
                           _inputDeco('Email Address', Icons.email_outlined),
                     ),
@@ -2463,16 +2471,15 @@ class _StaffTab extends StatelessWidget {
                     TextField(
                       controller: passCtrl,
                       obscureText: true,
-                      style: GoogleFonts.poppins(
-                          color: Colors.white, fontSize: 13),
+                      style: AppText.style(color: Colors.white, fontSize: 13),
                       decoration: _inputDeco(
                           'Password (min 6 chars)', Icons.lock_outline),
                     ),
                     const SizedBox(height: 12),
                     // Role picker
                     Text('Role',
-                        style: GoogleFonts.poppins(
-                            color: Colors.white54, fontSize: 11)),
+                        style:
+                            AppText.style(color: Colors.white54, fontSize: 11)),
                     const SizedBox(height: 6),
                     Row(children: [
                       _roleChip('cashier', selectedRole,
@@ -2484,8 +2491,8 @@ class _StaffTab extends StatelessWidget {
                     const SizedBox(height: 12),
                     // Canteen picker
                     Text('Assign to Canteen',
-                        style: GoogleFonts.poppins(
-                            color: Colors.white54, fontSize: 11)),
+                        style:
+                            AppText.style(color: Colors.white54, fontSize: 11)),
                     const SizedBox(height: 6),
                     StreamBuilder<QuerySnapshot>(
                       stream: FirebaseFirestore.instance
@@ -2500,7 +2507,7 @@ class _StaffTab extends StatelessWidget {
                               value: doc.id,
                               child: Text(
                                 d['name'] ?? doc.id,
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                     color: Colors.white, fontSize: 13),
                               ),
                             ));
@@ -2510,13 +2517,13 @@ class _StaffTab extends StatelessWidget {
                           items.add(DropdownMenuItem(
                             value: 'main',
                             child: Text('Main Canteen',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                     color: Colors.white, fontSize: 13)),
                           ));
                         }
                         return DropdownButtonFormField<String>(
-                          value: selectedCanteenId,
-                          dropdownColor: const Color(0xFF1A2035),
+                          initialValue: selectedCanteenId,
+                          dropdownColor: AppColors.bgInput,
                           decoration: _inputDeco(
                               'Select Branch', Icons.storefront_rounded),
                           items: items,
@@ -2542,8 +2549,8 @@ class _StaffTab extends StatelessWidget {
             actions: [
               TextButton(
                 onPressed: isLoading ? null : () => Navigator.pop(dialogCtx),
-                child: Text('Cancel',
-                    style: GoogleFonts.poppins(color: Colors.white54)),
+                child:
+                    Text('Cancel', style: AppText.style(color: Colors.white54)),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
@@ -2620,7 +2627,7 @@ class _StaffTab extends StatelessWidget {
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white))
                     : Text('Create',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: Colors.white, fontWeight: FontWeight.w600)),
               ),
             ],
@@ -2640,11 +2647,11 @@ class _StaffTab extends StatelessWidget {
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (dialogCtx, setSt) => AlertDialog(
-          backgroundColor: const Color(0xFF111827),
+          backgroundColor: AppColors.bgCard,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Text('Reassign Canteen',
-              style: GoogleFonts.poppins(
+              style: AppText.style(
                   color: Colors.white, fontWeight: FontWeight.w700)),
           content: StreamBuilder<QuerySnapshot>(
             stream:
@@ -2657,8 +2664,8 @@ class _StaffTab extends StatelessWidget {
                   items.add(DropdownMenuItem(
                     value: doc.id,
                     child: Text(d['name'] ?? doc.id,
-                        style: GoogleFonts.poppins(
-                            color: Colors.white, fontSize: 13)),
+                        style:
+                            AppText.style(color: Colors.white, fontSize: 13)),
                   ));
                 }
               }
@@ -2666,13 +2673,12 @@ class _StaffTab extends StatelessWidget {
                 items.add(DropdownMenuItem(
                   value: 'main',
                   child: Text('Main Canteen',
-                      style: GoogleFonts.poppins(
-                          color: Colors.white, fontSize: 13)),
+                      style: AppText.style(color: Colors.white, fontSize: 13)),
                 ));
               }
               return DropdownButtonFormField<String>(
-                value: selectedId,
-                dropdownColor: const Color(0xFF1A2035),
+                initialValue: selectedId,
+                dropdownColor: AppColors.bgInput,
                 decoration:
                     _inputDeco('Select Branch', Icons.storefront_rounded),
                 items: items,
@@ -2694,7 +2700,7 @@ class _StaffTab extends StatelessWidget {
             TextButton(
                 onPressed: () => Navigator.pop(dialogCtx),
                 child: Text('Cancel',
-                    style: GoogleFonts.poppins(color: Colors.white54))),
+                    style: AppText.style(color: Colors.white54))),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.accentBlue,
@@ -2711,7 +2717,7 @@ class _StaffTab extends StatelessWidget {
                 if (dialogCtx.mounted) Navigator.pop(dialogCtx);
               },
               child: Text('Save',
-                  style: GoogleFonts.poppins(
+                  style: AppText.style(
                       color: Colors.white, fontWeight: FontWeight.w600)),
             ),
           ],
@@ -2727,14 +2733,14 @@ class _StaffTab extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Password reset email sent to $email',
-              style: GoogleFonts.poppins()),
+              style: AppText.style()),
           backgroundColor: AppColors.accentGreen,
         ));
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed: $e', style: GoogleFonts.poppins()),
+          content: Text('Failed: $e', style: AppText.style()),
           backgroundColor: AppColors.accentRed,
         ));
       }
@@ -2746,20 +2752,20 @@ class _StaffTab extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF111827),
+        backgroundColor: AppColors.bgCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('Remove "$email"?',
-            style: GoogleFonts.poppins(
+            style: AppText.style(
                 color: Colors.white, fontWeight: FontWeight.w700)),
         content: Text(
-          'This removes their staff access record. Their Firebase Auth account is disabled. They will no longer be able to log in.',
-          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
+          'This removes their staff access record, so they can no longer use the app or read any data. Their login credentials still exist in Firebase Authentication and can be deleted from the Firebase console.',
+          style: AppText.style(color: Colors.white70, fontSize: 13),
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('Cancel',
-                  style: GoogleFonts.poppins(color: Colors.white54))),
+              child:
+                  Text('Cancel', style: AppText.style(color: Colors.white54))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.accentRed,
@@ -2773,14 +2779,14 @@ class _StaffTab extends StatelessWidget {
                   .delete();
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text('Staff "$email" removed.',
-                      style: GoogleFonts.poppins()),
+                  content:
+                      Text('Staff "$email" removed.', style: AppText.style()),
                   backgroundColor: AppColors.accentGreen,
                 ));
               }
             },
             child: Text('Remove',
-                style: GoogleFonts.poppins(
+                style: AppText.style(
                     color: Colors.white, fontWeight: FontWeight.w600)),
           ),
         ],
@@ -2795,17 +2801,17 @@ class _StaffTab extends StatelessWidget {
 
 InputDecoration _inputDeco(String label, IconData icon) => InputDecoration(
       labelText: label,
-      labelStyle: GoogleFonts.poppins(color: Colors.white54, fontSize: 12),
+      labelStyle: AppText.style(color: Colors.white54, fontSize: 12),
       prefixIcon: Icon(icon, color: Colors.white38, size: 18),
       filled: true,
-      fillColor: const Color(0xFF1A2035),
+      fillColor: AppColors.bgInput,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFF2A3550)),
+        borderSide: const BorderSide(color: AppColors.bgDivider),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFF2A3550)),
+        borderSide: const BorderSide(color: AppColors.bgDivider),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -2823,17 +2829,16 @@ Widget _roleChip(String role, String selectedRole, ValueChanged<String> onTap) {
       duration: const Duration(milliseconds: 150),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color:
-            selected ? color.withValues(alpha: 0.2) : const Color(0xFF1A2035),
+        color: selected ? color.withValues(alpha: 0.2) : AppColors.bgInput,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: selected ? color : const Color(0xFF2A3550),
+          color: selected ? color : AppColors.bgDivider,
           width: selected ? 1.5 : 1,
         ),
       ),
       child: Text(
         role[0].toUpperCase() + role.substring(1),
-        style: GoogleFonts.poppins(
+        style: AppText.style(
           color: selected ? color : Colors.white54,
           fontSize: 12,
           fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
@@ -2870,7 +2875,7 @@ class _InputDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFF111827),
+      backgroundColor: AppColors.bgCard,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: Row(children: [
         Container(
@@ -2884,7 +2889,7 @@ class _InputDialog extends StatelessWidget {
         const SizedBox(width: 10),
         Flexible(
           child: Text(title,
-              style: GoogleFonts.poppins(
+              style: AppText.style(
                   color: Colors.white,
                   fontSize: 15,
                   fontWeight: FontWeight.w700)),
@@ -2896,24 +2901,25 @@ class _InputDialog extends StatelessWidget {
             .expand((f) => [
                   TextField(
                     controller: f.ctrl,
-                    style:
-                        GoogleFonts.poppins(color: Colors.white, fontSize: 13),
+                    style: AppText.style(color: Colors.white, fontSize: 13),
                     decoration: InputDecoration(
                       labelText: f.label,
                       hintText: f.hint,
-                      labelStyle: GoogleFonts.poppins(
-                          color: Colors.white54, fontSize: 12),
-                      hintStyle: GoogleFonts.poppins(
-                          color: Colors.white24, fontSize: 12),
+                      labelStyle:
+                          AppText.style(color: Colors.white54, fontSize: 12),
+                      hintStyle:
+                          AppText.style(color: Colors.white24, fontSize: 12),
                       filled: true,
-                      fillColor: const Color(0xFF1A2035),
+                      fillColor: AppColors.bgInput,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFF2A3550)),
+                        borderSide:
+                            const BorderSide(color: AppColors.bgDivider),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFF2A3550)),
+                        borderSide:
+                            const BorderSide(color: AppColors.bgDivider),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -2930,8 +2936,7 @@ class _InputDialog extends StatelessWidget {
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel',
-                style: GoogleFonts.poppins(color: Colors.white54))),
+            child: Text('Cancel', style: AppText.style(color: Colors.white54))),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
               backgroundColor: iconColor,
@@ -2942,7 +2947,7 @@ class _InputDialog extends StatelessWidget {
             if (context.mounted) Navigator.pop(context);
           },
           child: Text('Save',
-              style: GoogleFonts.poppins(
+              style: AppText.style(
                   color: Colors.white, fontWeight: FontWeight.w600)),
         ),
       ],

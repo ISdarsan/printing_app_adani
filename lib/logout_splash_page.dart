@@ -1,5 +1,6 @@
+import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'theme.dart';
 
 class LogoutSplashPage extends StatefulWidget {
@@ -13,6 +14,7 @@ class _LogoutSplashPageState extends State<LogoutSplashPage>
     with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
   late Animation<double> _fadeAnim;
+  Timer? _navTimer;
 
   @override
   void initState() {
@@ -23,14 +25,26 @@ class _LogoutSplashPageState extends State<LogoutSplashPage>
     )..forward();
     _fadeAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
 
-    Future.delayed(const Duration(seconds: 2), () {
+    // End the Firebase session only once the dashboard (and its live
+    // Firestore listeners) is gone, otherwise those listeners briefly error.
+    _navTimer = Timer(const Duration(seconds: 2), () async {
+      try {
+        await FirebaseAuth.instance.signOut();
+      } catch (_) {}
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/login');
     });
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    precacheBrandLogo(context);
+  }
+
+  @override
   void dispose() {
+    _navTimer?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
@@ -47,30 +61,11 @@ class _LogoutSplashPageState extends State<LogoutSplashPage>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Logo with glow
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.gradPink.withValues(alpha: 0.4),
-                        blurRadius: 40,
-                        spreadRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
-                    child:
-                        Image.asset('assets/LOGO.png', width: 120, height: 120),
-                  ),
-                ),
+                const BrandLogo(size: 120, radius: 24),
                 const SizedBox(height: 32),
-
-                // Gradient "Logging Out" text
                 Text(
                   'Logging Out...',
-                  style: GoogleFonts.poppins(
+                  style: AppText.style(
                     fontSize: 26,
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
@@ -80,20 +75,19 @@ class _LogoutSplashPageState extends State<LogoutSplashPage>
                 const SizedBox(height: 8),
                 Text(
                   'See you next time!',
-                  style: GoogleFonts.poppins(
+                  style: AppText.style(
                     fontSize: 14,
                     color: AppColors.textSecondary,
                   ),
                 ),
                 const SizedBox(height: 32),
-
                 const SizedBox(
                   width: 36,
                   height: 36,
                   child: CircularProgressIndicator(
                     strokeWidth: 2.5,
                     valueColor:
-                        AlwaysStoppedAnimation<Color>(AppColors.gradPink),
+                        AlwaysStoppedAnimation<Color>(AppColors.gradBlue),
                   ),
                 ),
               ],

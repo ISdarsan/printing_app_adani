@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'theme.dart';
 import 'canteen_provider.dart';
 
@@ -62,10 +61,10 @@ class _RoleSplashPageState extends State<RoleSplashPage>
         if (mounted) {
           setState(() {
             if (actualRole == 'admin') {
-              _welcomeMessage = 'Welcome, Admin! 👑';
+              _welcomeMessage = 'Welcome, Admin';
               _subMessage = 'Loading your dashboard...';
             } else {
-              _welcomeMessage = 'Welcome, Cashier! 💳';
+              _welcomeMessage = 'Welcome, Cashier';
               _subMessage = 'Loading your dashboard...';
             }
             _showDots = false;
@@ -113,6 +112,12 @@ class _RoleSplashPageState extends State<RoleSplashPage>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    precacheBrandLogo(context);
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
@@ -131,48 +136,21 @@ class _RoleSplashPageState extends State<RoleSplashPage>
               // ── Glowing Logo ──────────────────────────────
               ScaleTransition(
                 scale: _logoScale,
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.gradBlue.withValues(alpha: 0.6),
-                        blurRadius: 50,
-                        spreadRadius: 10,
-                      ),
-                      BoxShadow(
-                        color: AppColors.gradPurple.withValues(alpha: 0.3),
-                        blurRadius: 80,
-                        spreadRadius: 5,
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(30),
-                    child: Image.asset(
-                      'assets/LOGO.png',
-                      width: 140,
-                      height: 140,
-                    ),
-                  ),
-                ),
+                child: BrandLogo(size: 120, radius: 28),
               ),
               const SizedBox(height: 36),
 
               // ── Welcome Message ───────────────────────────
               FadeTransition(
                 opacity: _textOpacity,
-                child: ShaderMask(
-                  shaderCallback: (b) => AppGradients.brand
-                      .createShader(Rect.fromLTWH(0, 0, b.width, b.height)),
-                  child: Text(
-                    _welcomeMessage,
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.poppins(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
+                child: Text(
+                  _welcomeMessage,
+                  textAlign: TextAlign.center,
+                  style: AppText.style(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                    letterSpacing: -0.3,
                   ),
                 ),
               ),
@@ -182,7 +160,7 @@ class _RoleSplashPageState extends State<RoleSplashPage>
                 opacity: _textOpacity,
                 child: Text(
                   _subMessage,
-                  style: GoogleFonts.poppins(
+                  style: AppText.style(
                     fontSize: 14,
                     color: AppColors.textSecondary,
                   ),
@@ -220,7 +198,7 @@ class _RoleSplashPageState extends State<RoleSplashPage>
                         Expanded(
                           child: Text(
                             _error,
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                                 fontSize: 12, color: AppColors.accentRed),
                           ),
                         ),

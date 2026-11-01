@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'theme.dart';
 import 'canteen_provider.dart';
 
@@ -48,8 +47,7 @@ class _SendNotificationPageState extends State<SendNotificationPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content:
-                  Text('✓ Notification sent', style: GoogleFonts.poppins()),
+              content: Text('Notification sent', style: AppText.style()),
               backgroundColor: const Color(0xFF1B4332)),
         );
       }
@@ -57,7 +55,7 @@ class _SendNotificationPageState extends State<SendNotificationPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Failed: $e', style: GoogleFonts.poppins()),
+              content: Text('Failed: $e', style: AppText.style()),
               backgroundColor: AppColors.accentRed),
         );
       }
@@ -94,7 +92,7 @@ class _SendNotificationPageState extends State<SendNotificationPage> {
                     const SizedBox(height: 20),
                     TextFormField(
                       controller: _titleController,
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textPrimary, fontSize: 14),
                       decoration:
                           darkInput(label: 'Title', prefixIcon: Icons.title),
@@ -105,7 +103,7 @@ class _SendNotificationPageState extends State<SendNotificationPage> {
                     TextFormField(
                       controller: _messageController,
                       maxLines: 5,
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textPrimary, fontSize: 14),
                       decoration: darkInput(
                           label: 'Message', prefixIcon: Icons.message_outlined),

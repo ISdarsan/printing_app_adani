@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
 
@@ -34,7 +33,7 @@ class ExpenseDetailPage extends StatelessWidget {
                 color: AppColors.textHint, size: 44),
             const SizedBox(height: 8),
             Text('No Image Uploaded',
-                style: GoogleFonts.poppins(
+                style: AppText.style(
                     color: AppColors.textSecondary, fontSize: 13)),
           ]),
         );
@@ -56,7 +55,7 @@ class ExpenseDetailPage extends StatelessWidget {
           ),
           child: Center(
               child: Text('Error loading image',
-                  style: GoogleFonts.poppins(color: AppColors.accentRed))),
+                  style: AppText.style(color: AppColors.accentRed))),
         );
       }
     }
@@ -84,12 +83,12 @@ class ExpenseDetailPage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(category,
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                                 color: Colors.white70,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500)),
                         Text('₹ ${amount.toStringAsFixed(2)}',
-                            style: GoogleFonts.poppins(
+                            style: AppText.style(
                                 color: Colors.white,
                                 fontSize: 28,
                                 fontWeight: FontWeight.w800)),
@@ -146,10 +145,10 @@ class ExpenseDetailPage extends StatelessWidget {
         const SizedBox(width: 12),
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(label,
-              style: GoogleFonts.poppins(
-                  color: AppColors.textSecondary, fontSize: 11)),
+              style:
+                  AppText.style(color: AppColors.textSecondary, fontSize: 11)),
           Text(value,
-              style: GoogleFonts.poppins(
+              style: AppText.style(
                   color: AppColors.textPrimary,
                   fontSize: 14,
                   fontWeight: FontWeight.w500)),

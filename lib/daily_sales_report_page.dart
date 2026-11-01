@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'bill_detail_page.dart';
+import 'canteen_provider.dart';
 
 class DailySalesReportPage extends StatefulWidget {
   final DateTime? selectedDate;
@@ -85,7 +85,7 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
                     const SizedBox(width: 12),
                     Text(
                       DateFormat('EEEE, MMMM dd yyyy').format(_selectedDate),
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textPrimary,
                           fontSize: 14,
                           fontWeight: FontWeight.w500),
@@ -99,7 +99,7 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text('Change',
-                          style: GoogleFonts.poppins(
+                          style: AppText.style(
                               color: Colors.white,
                               fontSize: 11,
                               fontWeight: FontWeight.w600)),
@@ -120,7 +120,28 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
                       child:
                           CircularProgressIndicator(color: AppColors.gradBlue));
                 }
-                if (!snap.hasData || snap.data!.docs.isEmpty) {
+                if (snap.hasError) {
+                  debugPrint('[DailySalesReport] Error: ${snap.error}');
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'Error loading report:\n${snap.error}',
+                        style: AppText.style(
+                            color: AppColors.accentRed, fontSize: 13),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
+
+                final allDocs = snap.data?.docs ?? [];
+                final bills = allDocs.where((b) {
+                  final d = b.data() as Map<String, dynamic>;
+                  return CanteenProvider.matchesSelectedCanteen(d);
+                }).toList();
+
+                if (bills.isEmpty) {
                   return Center(
                     child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -129,24 +150,30 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
                               size: 56, color: AppColors.textHint),
                           const SizedBox(height: 12),
                           Text('No bills for this date',
-                              style: GoogleFonts.poppins(
+                              style: AppText.style(
                                   color: AppColors.textSecondary,
                                   fontSize: 15)),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Canteen: ${CanteenProvider.selectedCanteenName}',
+                            style: AppText.style(
+                                color: AppColors.textHint, fontSize: 12),
+                          ),
                         ]),
                   );
                 }
 
-                final bills = snap.data!.docs;
                 double total = 0, cash = 0, upi = 0, credit = 0;
                 for (final b in bills) {
                   final d = b.data() as Map<String, dynamic>;
-                  final amt = (d['totalAmount'] as num).toDouble();
+                  final amt = ((d['totalAmount'] ?? 0) as num).toDouble();
                   total += amt;
-                  if (d['paymentMode'] == 'Cash') {
+                  final mode = d['paymentMode']?.toString() ?? 'N/A';
+                  if (mode == 'Cash') {
                     cash += amt;
-                  } else if (d['paymentMode'] == 'UPI') {
+                  } else if (mode == 'UPI') {
                     upi += amt;
-                  } else if (d['paymentMode'] == 'Credit') {
+                  } else if (mode == 'Credit') {
                     credit += amt;
                   }
                 }
@@ -163,12 +190,12 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
                         child: Column(
                           children: [
                             Text('₹${total.toStringAsFixed(2)}',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                     color: Colors.white,
                                     fontSize: 30,
                                     fontWeight: FontWeight.w800)),
                             Text('Total Sales',
-                                style: GoogleFonts.poppins(
+                                style: AppText.style(
                                     color: Colors.white70, fontSize: 13)),
                             const SizedBox(height: 14),
                             Row(
@@ -176,12 +203,12 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
                                     MainAxisAlignment.spaceAround,
                                 children: [
                                   _statPill(
-                                      '💵 Cash', '₹${cash.toStringAsFixed(0)}'),
+                                      'Cash', '₹${cash.toStringAsFixed(0)}'),
                                   _statPill(
-                                      '📱 UPI', '₹${upi.toStringAsFixed(0)}'),
-                                  _statPill(
-                                      '💳 Credit', '₹${credit.toStringAsFixed(0)}'),
-                                  _statPill('🧾 Bills', '${bills.length}'),
+                                      'UPI', '₹${upi.toStringAsFixed(0)}'),
+                                  _statPill('Credit',
+                                      '₹${credit.toStringAsFixed(0)}'),
+                                  _statPill('Bills', '${bills.length}'),
                                 ]),
                           ],
                         ),
@@ -196,9 +223,13 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
                           final doc = bills[i];
                           final d = doc.data() as Map<String, dynamic>;
                           final billNum = d['billNumber'] ?? 0;
-                          final amt = (d['totalAmount'] as num).toDouble();
-                          final mode = d['paymentMode'] ?? 'N/A';
-                          final ts = (d['timestamp'] as Timestamp).toDate();
+                          final amt =
+                              ((d['totalAmount'] ?? 0) as num).toDouble();
+                          final mode = d['paymentMode']?.toString() ?? 'N/A';
+                          DateTime ts = DateTime.now();
+                          if (d['timestamp'] is Timestamp) {
+                            ts = (d['timestamp'] as Timestamp).toDate();
+                          }
 
                           return GestureDetector(
                             onTap: () => Navigator.push(
@@ -220,18 +251,18 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
                                       borderRadius: BorderRadius.circular(10)),
                                   child: Center(
                                       child: Text('#$billNum',
-                                          style: GoogleFonts.poppins(
+                                          style: AppText.style(
                                               color: Colors.white,
                                               fontWeight: FontWeight.w700,
                                               fontSize: 11))),
                                 ),
                                 title: Text('Bill #$billNum',
-                                    style: GoogleFonts.poppins(
+                                    style: AppText.style(
                                         color: AppColors.textPrimary,
                                         fontWeight: FontWeight.w600,
                                         fontSize: 13)),
                                 subtitle: Text(DateFormat.jm().format(ts),
-                                    style: GoogleFonts.poppins(
+                                    style: AppText.style(
                                         color: AppColors.textSecondary,
                                         fontSize: 12)),
                                 trailing: Column(
@@ -239,7 +270,7 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Text('₹${amt.toStringAsFixed(0)}',
-                                          style: GoogleFonts.poppins(
+                                          style: AppText.style(
                                               color: AppColors.accentGreen,
                                               fontWeight: FontWeight.w700,
                                               fontSize: 15)),
@@ -268,10 +299,9 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
   Widget _statPill(String label, String value) {
     return Column(children: [
       Text(value,
-          style: GoogleFonts.poppins(
+          style: AppText.style(
               color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
-      Text(label,
-          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11)),
+      Text(label, style: AppText.style(color: Colors.white70, fontSize: 11)),
     ]);
   }
 }

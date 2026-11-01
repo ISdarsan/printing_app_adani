@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'theme.dart';
@@ -47,22 +46,6 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-
-  // Seed default canteen if not present
-  try {
-    final doc = await FirebaseFirestore.instance
-        .collection('canteens')
-        .doc('main')
-        .get();
-    if (!doc.exists) {
-      await FirebaseFirestore.instance.collection('canteens').doc('main').set({
-        'name': 'Main Canteen',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    }
-  } catch (e) {
-    debugPrint('Canteen seed error: $e');
-  }
 
   runApp(const MyApp());
 }

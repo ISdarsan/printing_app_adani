@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'today_sales_page.dart';
 import 'funds_received_page.dart';
 import 'admin_expense_report_page.dart';
@@ -34,8 +33,10 @@ class AnalyticsPage extends StatelessWidget {
               title: "Monthly Breakdown",
               subtitle: "Day-by-day sales breakdown for the month",
               gradient: AppGradients.blueAccent,
-              onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const MonthlySalesBreakdownPage())),
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const MonthlySalesBreakdownPage())),
             ),
             const SizedBox(height: 16),
             _buildAnalyticsTile(
@@ -44,8 +45,10 @@ class AnalyticsPage extends StatelessWidget {
               title: "Monthly Fund Report",
               subtitle: "View and update the monthly fund allocation",
               gradient: AppGradients.brand,
-              onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const FundsReceivedPage(isAdmin: true))),
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const FundsReceivedPage(isAdmin: true))),
             ),
             const SizedBox(height: 16),
             _buildAnalyticsTile(
@@ -54,8 +57,10 @@ class AnalyticsPage extends StatelessWidget {
               title: "Expense Overview",
               subtitle: "View all logged expenses grouped by month",
               gradient: AppGradients.redAccent,
-              onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const AdminExpenseReportPage())),
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const AdminExpenseReportPage())),
             ),
           ],
         ),
@@ -63,7 +68,8 @@ class AnalyticsPage extends StatelessWidget {
     );
   }
 
-  Widget _buildAnalyticsTile(BuildContext context, {
+  Widget _buildAnalyticsTile(
+    BuildContext context, {
     required IconData icon,
     required String title,
     required String subtitle,
@@ -80,7 +86,8 @@ class AnalyticsPage extends StatelessWidget {
             Container(
               width: 54,
               height: 54,
-              decoration: BoxDecoration(gradient: gradient, borderRadius: BorderRadius.circular(14)),
+              decoration: BoxDecoration(
+                  gradient: gradient, borderRadius: BorderRadius.circular(14)),
               child: Icon(icon, color: Colors.white, size: 28),
             ),
             const SizedBox(width: 16),
@@ -88,13 +95,20 @@ class AnalyticsPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: GoogleFonts.poppins(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w600)),
+                  Text(title,
+                      style: AppText.style(
+                          color: AppColors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
-                  Text(subtitle, style: GoogleFonts.poppins(color: AppColors.textSecondary, fontSize: 12)),
+                  Text(subtitle,
+                      style: AppText.style(
+                          color: AppColors.textSecondary, fontSize: 12)),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: AppColors.textHint, size: 24),
+            const Icon(Icons.chevron_right,
+                color: AppColors.textHint, size: 24),
           ],
         ),
       ),

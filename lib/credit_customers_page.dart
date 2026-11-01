@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'theme.dart';
 import 'credit_detail_page.dart';
 import 'canteen_provider.dart';
@@ -29,11 +28,11 @@ class _CreditCustomersPageState extends State<CreditCustomersPage> {
               controller: _searchCtrl,
               onChanged: (val) =>
                   setState(() => _searchQuery = val.toLowerCase()),
-              style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+              style: AppText.style(color: Colors.white, fontSize: 14),
               decoration: InputDecoration(
                 hintText: 'Search by name or phone...',
-                hintStyle: GoogleFonts.poppins(
-                    color: AppColors.textHint, fontSize: 14),
+                hintStyle:
+                    AppText.style(color: AppColors.textHint, fontSize: 14),
                 filled: true,
                 fillColor: AppColors.bgCard,
                 prefixIcon: const Icon(Icons.search, color: AppColors.textHint),
@@ -50,8 +49,6 @@ class _CreditCustomersPageState extends State<CreditCustomersPage> {
                   .collection('creditCustomers')
                   .where('canteenId',
                       isEqualTo: CanteenProvider.selectedCanteenId)
-                  .where('totalPending', isGreaterThan: 0)
-                  .orderBy('totalPending', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -60,12 +57,42 @@ class _CreditCustomersPageState extends State<CreditCustomersPage> {
                           color: AppColors.accentBlue));
                 }
                 if (snapshot.hasError) {
+                  debugPrint(
+                      '[CreditCustomers] Firestore error: ${snapshot.error}');
                   return Center(
-                      child: Text('Error: ${snapshot.error}',
-                          style: const TextStyle(color: Colors.white)));
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'Error loading data:\n${snapshot.error}',
+                        style: AppText.style(
+                            color: AppColors.accentRed, fontSize: 13),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
                 }
 
-                var docs = snapshot.data?.docs ?? [];
+                debugPrint(
+                    '[CreditCustomers] canteenId=${CanteenProvider.selectedCanteenId}, '
+                    'total docs=${snapshot.data?.docs.length ?? 0}');
+
+                // Filter and sort client-side to avoid composite index requirement
+                var docs = (snapshot.data?.docs ?? []).where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final pending =
+                      ((data['totalPending'] ?? 0) as num).toDouble();
+                  return pending > 0;
+                }).toList()
+                  ..sort((a, b) {
+                    final pa =
+                        ((a.data() as Map<String, dynamic>)['totalPending'] ??
+                            0) as num;
+                    final pb =
+                        ((b.data() as Map<String, dynamic>)['totalPending'] ??
+                            0) as num;
+                    return pb.compareTo(pa); // descending
+                  });
+
                 if (_searchQuery.isNotEmpty) {
                   docs = docs.where((doc) {
                     final data = doc.data() as Map<String, dynamic>;
@@ -79,9 +106,23 @@ class _CreditCustomersPageState extends State<CreditCustomersPage> {
 
                 if (docs.isEmpty) {
                   return Center(
-                    child: Text('No credit customers found',
-                        style: GoogleFonts.poppins(
-                            color: AppColors.textHint, fontSize: 16)),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.credit_score_rounded,
+                            color: AppColors.textHint, size: 48),
+                        const SizedBox(height: 12),
+                        Text('No credit customers found',
+                            style: AppText.style(
+                                color: AppColors.textHint, fontSize: 16)),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Canteen: ${CanteenProvider.selectedCanteenName}',
+                          style: AppText.style(
+                              color: AppColors.textHint, fontSize: 12),
+                        ),
+                      ],
+                    ),
                   );
                 }
 
@@ -164,12 +205,12 @@ class _CustomerTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(name,
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: Colors.white,
                           fontSize: 16,
                           fontWeight: FontWeight.w600)),
                   Text(phone,
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textHint, fontSize: 13)),
                 ],
               ),
@@ -178,10 +219,10 @@ class _CustomerTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text('Pending',
-                    style: GoogleFonts.poppins(
-                        color: AppColors.textHint, fontSize: 11)),
+                    style:
+                        AppText.style(color: AppColors.textHint, fontSize: 11)),
                 Text('₹${pending.toStringAsFixed(2)}',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: AppColors.accentRed,
                         fontSize: 16,
                         fontWeight: FontWeight.w800)),

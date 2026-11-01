@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'theme.dart';
 import 'credit_detail_page.dart';
 
@@ -29,11 +28,11 @@ class _AdminCreditCustomersPageState extends State<AdminCreditCustomersPage> {
               controller: _searchCtrl,
               onChanged: (val) =>
                   setState(() => _searchQuery = val.toLowerCase()),
-              style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+              style: AppText.style(color: Colors.white, fontSize: 14),
               decoration: InputDecoration(
                 hintText: 'Search by name or phone...',
-                hintStyle: GoogleFonts.poppins(
-                    color: AppColors.textHint, fontSize: 14),
+                hintStyle:
+                    AppText.style(color: AppColors.textHint, fontSize: 14),
                 filled: true,
                 fillColor: AppColors.bgCard,
                 prefixIcon: const Icon(Icons.search, color: AppColors.textHint),
@@ -77,7 +76,7 @@ class _AdminCreditCustomersPageState extends State<AdminCreditCustomersPage> {
                 if (docs.isEmpty) {
                   return Center(
                     child: Text('No credit accounts found',
-                        style: GoogleFonts.poppins(
+                        style: AppText.style(
                             color: AppColors.textHint, fontSize: 16)),
                   );
                 }
@@ -157,12 +156,12 @@ class _CustomerTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(name,
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: Colors.white,
                           fontSize: 16,
                           fontWeight: FontWeight.w600)),
                   Text(phone,
-                      style: GoogleFonts.poppins(
+                      style: AppText.style(
                           color: AppColors.textHint, fontSize: 13)),
                 ],
               ),
@@ -171,13 +170,13 @@ class _CustomerTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(pending <= 0 ? 'Settled' : 'Pending',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: pending <= 0
                             ? AppColors.accentGreen
                             : AppColors.textHint,
                         fontSize: 11)),
                 Text('₹${pending.toStringAsFixed(2)}',
-                    style: GoogleFonts.poppins(
+                    style: AppText.style(
                         color: pending <= 0
                             ? AppColors.accentGreen
                             : AppColors.accentRed,
