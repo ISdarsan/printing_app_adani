@@ -151,3 +151,10 @@ Mark each line Pass / Fail / Not tried and write what you saw. Test as the **cas
 
 ### Report back
 For each Fail: phone model and Android version, screen, exact steps, what you expected, what happened, and a screenshot. Do not paste passwords.
+
+## Added by the full analysis sweep (branch `fix/full-analysis-sweep`)
+
+- [ ] **Wrong phone date:** on a test phone set the date to tomorrow (turn off automatic date & time), then try to save a bill. Expected: a dialog "This phone's date is wrong ... Nothing was saved" and no bill is created. Turn automatic time back on: billing works again. Repeat for a credit repayment and the cash closing.
+- [ ] **Correct phone date:** billing is not slower than before (the check runs in the background).
+- [ ] **Back with items in the cart:** add an item, press Back / swipe back: "Leave without saving?" appears; "Keep editing" stays, "Discard bill" leaves. With an empty cart Back leaves at once. While a bill is saving, Back shows "Saving the bill. Please wait a moment."
+- [ ] **Budget bar:** the cashier's Monthly Budget card shows the usage bar and "% of the budget used"; it turns orange under 15% left and red with "Over budget by ₹..." when exceeded; no bar when no budget is set.

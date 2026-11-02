@@ -707,7 +707,8 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                   if (idx < 0 || idx >= weeklyDocs.length) {
                     return const SizedBox();
                   }
-                  final date = DateTime.parse(weeklyDocs[idx].key);
+                  final date = DateTime.tryParse(weeklyDocs[idx].key);
+                  if (date == null) return const SizedBox();
                   return SideTitleWidget(
                       meta: meta,
                       space: 8,

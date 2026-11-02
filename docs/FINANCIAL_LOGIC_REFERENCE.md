@@ -45,3 +45,7 @@ Per-branch counter `billCounter_<canteenId>`; `lastNumber` is a positive integer
 
 ## Where it is tested
 `flutter test` (money, business time, repayment plan, dailyStats, sync) and `security-tests/transactions.test.mjs` (26 integration tests of the same logic against the emulator). The emulator tests use a JavaScript port of the Dart logic, which is a stated limit.
+
+## Which clock files a record under a day
+- Bill, repayment and cash-closing records are filed under a day key taken from the **phone's** clock in IST (`dailyStats` id `<canteenId>_<yyyy-MM-dd>`, closing id the same). Bill timestamps are **server** time.
+- Since the sweep, those three actions are refused when the phone's IST day differs from the server's by more than 2 minutes (`lib/clock_guard.dart`), so a wrong phone date can no longer file money under the wrong day. When the server time cannot be reached the action is allowed.

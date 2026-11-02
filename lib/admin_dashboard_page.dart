@@ -190,6 +190,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 CanteenProvider.dateFromDailyStatsDocumentId(doc.id))
             .toString();
         if (date.compareTo(startDateStr) < 0) continue;
+        if (DateTime.tryParse(date) == null) continue; // malformed date: skip, never crash
 
         final totals = totalsByDate.putIfAbsent(
             date,
@@ -645,7 +646,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             if (index < 0 || index >= docs.length) {
                               return const SizedBox();
                             }
-                            final date = DateTime.parse(docs[index].key);
+                            final date = DateTime.tryParse(docs[index].key);
+                            if (date == null) return const SizedBox();
                             return SideTitleWidget(
                               meta: meta,
                               space: 4,

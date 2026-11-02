@@ -1,3 +1,4 @@
+import 'package:canteen_adani/fund_budget.dart';
 import 'package:canteen_adani/funds_received_page.dart';
 import 'package:canteen_adani/theme.dart';
 import 'package:flutter/material.dart';
@@ -23,7 +24,7 @@ Widget host(Widget child, {Size size = const Size(360, 800), double scale = 1}) 
       ),
     );
 
-FundSummaryCard card({bool admin = false, String amount = '₹0', bool negative = false}) =>
+FundSummaryCard card({bool admin = false, String amount = '₹0', bool negative = false, CanteenBudget? budget, bool noBudget = false}) =>
     FundSummaryCard(
       isAdmin: admin,
       title: admin ? 'Monthly Budget Console' : 'Monthly Budget - Main Canteen',
@@ -33,6 +34,8 @@ FundSummaryCard card({bool admin = false, String amount = '₹0', bool negative 
       availableStr: amount,
       isNegative: negative,
       lastUpdated: 'Not set yet',
+      // by default every layout test also renders the usage bar
+      budget: noBudget ? null : (budget ?? CanteenBudget.of(canteenId: 'c', allocated: 10000, spent: 6200)),
     );
 
 void main() {
@@ -89,5 +92,44 @@ void main() {
   testWidgets('cashiers do not see the Edit chip', (t) async {
     await t.pumpWidget(host(card()));
     expect(find.text('Edit'), findsNothing);
+  });
+
+  group('budget usage bar', () {
+    testWidgets('shows the percent used for a normal budget', (t) async {
+      await t.pumpWidget(host(card()));
+      expect(find.text('62% of the budget used'), findsOneWidget);
+      final bar = t.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator));
+      expect(bar.value, closeTo(0.62, 0.0001));
+      expect((bar.valueColor as AlwaysStoppedAnimation<Color>).value, Colors.white);
+    });
+
+    testWidgets('turns orange when less than 15% is left', (t) async {
+      await t.pumpWidget(host(card(budget: CanteenBudget.of(canteenId: 'c', allocated: 1000, spent: 900))));
+      expect(find.text('90% of the budget used'), findsOneWidget);
+      final bar = t.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator));
+      expect((bar.valueColor as AlwaysStoppedAnimation<Color>).value, const Color(0xFFFFA94D));
+    });
+
+    testWidgets('turns red and says how far over when the budget is exceeded; the bar stops at 100%', (t) async {
+      await t.pumpWidget(host(card(budget: CanteenBudget.of(canteenId: 'c', allocated: 1000, spent: 1250.5))));
+      expect(find.text('Over budget by ₹251'), findsOneWidget);
+      final bar = t.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator));
+      expect(bar.value, 1.0);
+      expect((bar.valueColor as AlwaysStoppedAnimation<Color>).value, const Color(0xFFFF5C7A));
+    });
+
+    testWidgets('no budget set: no bar, nothing to compare', (t) async {
+      await t.pumpWidget(host(card(noBudget: true)));
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+      await t.pumpWidget(host(card(budget: CanteenBudget.of(canteenId: 'c', allocated: 0, spent: 500))));
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+    });
+
+    testWidgets('has a screen-reader label', (t) async {
+      final h = t.ensureSemantics();
+      await t.pumpWidget(host(card()));
+      expect(find.bySemanticsLabel('62% of the budget used'), findsOneWidget);
+      h.dispose();
+    });
   });
 }

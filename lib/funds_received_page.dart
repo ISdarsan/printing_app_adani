@@ -286,6 +286,10 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                                 availableStr: availableStr,
                                 isNegative: isNegative,
                                 lastUpdated: lastUpdated,
+                                budget: CanteenBudget.of(
+                                    canteenId: CanteenProvider.selectedCanteenId,
+                                    allocated: allocatedFund,
+                                    spent: totalSpent),
                               ),
                             ),
                           ),
@@ -402,6 +406,9 @@ class FundSummaryCard extends StatelessWidget {
   final bool isNegative;
   final String lastUpdated;
 
+  /// When set (and a budget exists) a usage bar is shown.
+  final CanteenBudget? budget;
+
   const FundSummaryCard({
     super.key,
     required this.isAdmin,
@@ -412,6 +419,7 @@ class FundSummaryCard extends StatelessWidget {
     required this.availableStr,
     required this.isNegative,
     required this.lastUpdated,
+    this.budget,
   });
 
   @override
@@ -547,6 +555,10 @@ class FundSummaryCard extends StatelessWidget {
               ),
             ],
           ),
+          if (budget != null && budget!.hasBudget) ...[
+            const SizedBox(height: 14),
+            _BudgetUsageBar(budget: budget!),
+          ],
           const SizedBox(height: 14),
           Container(
             padding: const EdgeInsets.symmetric(
@@ -560,6 +572,53 @@ class FundSummaryCard extends StatelessWidget {
                     fontSize: 10,
                     color: Colors.white70)),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "62% of the budget used" with a bar. Orange below 15% left, red when exceeded.
+class _BudgetUsageBar extends StatelessWidget {
+  final CanteenBudget budget;
+  const _BudgetUsageBar({required this.budget});
+
+  @override
+  Widget build(BuildContext context) {
+    final fraction =
+        (budget.spentPaise / budget.allocatedPaise).clamp(0.0, 1.0).toDouble();
+    final color = budget.exceeded
+        ? AppColors.accentRed
+        : budget.needsAlert
+            ? AppColors.accentOrange
+            : Colors.white;
+    final text = budget.exceeded
+        ? 'Over budget by ₹${budget.available.abs().toStringAsFixed(0)}'
+        : '${budget.percentUsed}% of the budget used';
+    return Semantics(
+      label: text,
+      excludeSemantics: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: fraction,
+              minHeight: 6,
+              backgroundColor: Colors.white24,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.style(
+                  color: budget.needsAlert ? color : Colors.white70,
+                  fontSize: 11,
+                  fontWeight:
+                      budget.needsAlert ? FontWeight.w700 : FontWeight.w500)),
         ],
       ),
     );

@@ -5,11 +5,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import 'theme.dart';
+import 'state_views.dart';
 import 'fund_budget.dart';
 import 'stream_cache.dart';
 import 'logout_splash_page.dart';
 import 'notifications_page.dart';
-import 'sms_broadcast_helper.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
 import 'today_summary.dart';
@@ -721,7 +721,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
               _dItem(Icons.campaign_rounded, 'SMS Broadcast Specials',
                   AppColors.accentOrange, () {
                 Navigator.pop(context);
-                showSMSBroadcastDialog(context);
+                // Not finished yet: tell the cashier instead of opening it.
+                showComingSoonDialog(context, feature: 'SMS Broadcast Specials');
               }),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
