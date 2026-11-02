@@ -116,22 +116,59 @@ async function readAll(db, name, pageSize = 500) {
  */
 export function staffReadiness(staffDocs, canteenIds) {
   const r = { total: staffDocs.length, admins: 0, activeAdmins: 0, cashiers: 0, activeCashiers: 0,
-    invalidRole: [], inactive: [], cashierWithoutCanteen: [], unknownCanteen: [], lockoutRisk: false };
+    invalidRole: [], inactive: [], cashierWithoutCanteen: [], adminWithoutCanteen: [], missingCanteenId: [],
+    unknownCanteen: [], nonBooleanActive: [], lockoutRisk: false };
   for (const d of staffDocs) {
     const x = d.data();
-    const active = x.active !== false;
+    const active = x.active !== false; // the app's own rule: only an explicit false deactivates
     const role = x.role;
+    // The stopgap and candidate rules test `active == true`; anything else that is
+    // not a real boolean would be locked out by them although the app lets it in.
+    if ('active' in x && typeof x.active !== 'boolean') r.nonBooleanActive.push(d.id);
     if (role !== 'admin' && role !== 'cashier') { r.invalidRole.push(d.id); continue; }
     if (!active) r.inactive.push(d.id);
     if (role === 'admin') { r.admins++; if (active) r.activeAdmins++; }
     else { r.cashiers++; if (active) r.activeCashiers++; }
-    if (role === 'cashier') {
-      if (!isNonEmptyString(x.canteenId)) r.cashierWithoutCanteen.push(d.id); // acts as branch 'main'
-      else if (!canteenIds.has(x.canteenId)) r.unknownCanteen.push(d.id);
+    if (!isNonEmptyString(x.canteenId)) {
+      r.missingCanteenId.push(d.id);
+      if (role === 'cashier') r.cashierWithoutCanteen.push(d.id); // acts as branch 'main'
+      else r.adminWithoutCanteen.push(d.id);
+    } else if (role === 'cashier' && !canteenIds.has(x.canteenId)) {
+      r.unknownCanteen.push(d.id);
     }
   }
   r.lockoutRisk = r.activeAdmins === 0;
   return r;
+}
+
+/** Minimal read: only `canteens` and `canteenStaff`. Output: counts and document ids. */
+export async function runStaffAudit(db) {
+  const [canteenDocs, staffDocs] = await Promise.all([readAll(db, 'canteens'), readAll(db, 'canteenStaff')]);
+  const ids = new Set(['main', ...canteenDocs.map((d) => d.id)]);
+  const staff = staffReadiness(staffDocs, ids);
+  return {
+    generatedAt: new Date().toISOString(), readOnly: true, collectionsRead: ['canteens', 'canteenStaff'],
+    knownCanteens: [...ids].sort(),
+    // Document ids (= Authentication UIDs) only, so you can compare them with
+    // Authentication > Users: a UID there that is NOT listed here has no staff
+    // record and will lose access once the stopgap is deployed.
+    staffIdsByRole: {
+      admin: staffDocs.filter((d) => d.data().role === 'admin').map((d) => d.id).sort(),
+      cashier: staffDocs.filter((d) => d.data().role === 'cashier').map((d) => d.id).sort(),
+      other: staffDocs.filter((d) => d.data().role !== 'admin' && d.data().role !== 'cashier').map((d) => d.id).sort(),
+    },
+    staff,
+    answers: {
+      totalStaffAccounts: staff.total,
+      activeAdmins: staff.activeAdmins,
+      activeCashiers: staff.activeCashiers,
+      inactiveStaff: staff.inactive.length,
+      invalidOrUnexpectedRoles: staff.invalidRole.length,
+      missingCanteenId: staff.missingCanteenId.length,
+      atLeastOneActiveAdmin: staff.activeAdmins > 0,
+      staffThatWouldBeLockedOutByStopgap: [...new Set([...staff.inactive, ...staff.nonBooleanActive])].sort(),
+    },
+  };
 }
 
 export async function runAudit(db, { sampleSize = 10 } = {}) {
@@ -239,11 +276,13 @@ async function main() {
     }
     await signInWithEmailAndPassword(getAuth(app), email, pw);
   }
-  const report = await runAudit(db);
+  const staffOnly = args.includes('--staff-only');
+  const report = staffOnly ? await runStaffAudit(db) : await runAudit(db);
   const out = arg('--out');
   if (out) fs.writeFileSync(out, JSON.stringify(report, null, 2));
-  console.log(JSON.stringify(report.totals, null, 2));
-  process.exit(0);
+  console.log(JSON.stringify(staffOnly ? report.answers : report.totals, null, 2));
+  if (staffOnly) console.log('\nIn the saved file: staff.invalidRole / inactive / missingCanteenId / nonBooleanActive / unknownCanteen list the staff document ids to look up in Authentication > Users.');
+  process.exit(staffOnly && !report.answers.atLeastOneActiveAdmin ? 3 : 0);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
 void connectAuthEmulator;

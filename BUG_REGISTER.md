@@ -46,6 +46,7 @@ Status key: FIXED (code changed + analyze/tests green), OPEN (confirmed in sourc
 | B-40 | P2 | Tooling | `tool/rules_diff.mjs` could parse a rules file with a long comment header as empty | FIXED + regression tests |
 | B-41 | P2 | Financial integrity | Cashiers could back-date bills/repayments/closings, create credit bills born `Paid`, raise a bill's pending amount or set arbitrary status | FIXED in the candidate (server time, credit starts pending, pending only decreases, Paid means 0) |
 | B-42 | P2 | Residual (rules cannot close) | Cashiers can still set their branch's customer balances to any value >= 0, raise daily totals and supply closing amounts; staff logins are created client-side so open sign-up is likely | DOCUMENTED (tests, group K); phase-3 hardening listed in PRODUCTION_SECURITY_MIGRATION.md |
+| B-43 | P3 | Process incident | While gathering a read-only listing, `firebase ext:list` attempted to ENABLE the Firebase Extensions API on the production project (CLI output: "Enabling now..."). No data, rules or users changed; effect unverified | DISCLOSED (PRE_DEPLOYMENT_SECURITY_AUDIT.md); owner may disable the API in Google Cloud Console |
 
 ## Verified correct (no change needed)
 - Bill + dailyStats + credit customer + counter are written in one Firestore transaction.

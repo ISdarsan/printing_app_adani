@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { after, before, test } from 'node:test';
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import { doc, getDocs, collection, setDoc } from 'firebase/firestore';
-import { classifyCanteen, classifyDate, istDateKey, runAudit, staffReadiness } from './legacy-audit.mjs';
+import { classifyCanteen, classifyDate, istDateKey, runAudit, runStaffAudit, staffReadiness } from './legacy-audit.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let env;
@@ -30,6 +30,7 @@ before(async () => {
       put('canteenStaff/weird', { role: 'Admin', canteenId: 'north', email: 'w@x.com' }),   // wrong-case role: locked out by the new rules
       put('canteenStaff/off', { role: 'cashier', canteenId: 'north', active: false }),       // deactivated
       put('canteenStaff/ghost', { role: 'cashier', canteenId: 'nowhere' }),                  // branch that does not exist
+      put('canteenStaff/strtrue', { role: 'cashier', canteenId: 'north', active: 'true' }),  // active stored as a string
       // bills: 7 docs
       put('bills/b1', { canteenId: 'main', createdBy: 'cn', totalAmount: 1 }),                      // fine
       put('bills/b2', { createdBy: 'cn', totalAmount: 2 }),                                          // missing -> staff-uid north (medium)
@@ -127,7 +128,7 @@ test('audit of the synthetic legacy dataset: counts, evidence and samples', asyn
   assert.equal(c.expenses.recoverable.medium, 1);
   assert.equal(c.notifications.recoverable.low, 1);
   assert.equal(c.menuItems.unrecoverableDefaultMain, 1);
-  assert.equal(c.canteenStaff.total, 6);
+  assert.equal(c.canteenStaff.total, 7);
 
   // bills 6 + customers 2 + repayments 2 + dailyStats 1 + closings 1 + expenses 1 + notices 1 + menu 1 + staff 1
   assert.equal(r.totals.missingCanteenId, 16);
@@ -155,15 +156,18 @@ test('it also works for a non-admin only in the sense that it fails loudly (cash
 test('staff readiness (lock-out check for the stricter rules)', async () => {
   const admin = env.authenticatedContext('admin-1').firestore();
   const r = (await runAudit(admin)).staff;
-  assert.equal(r.total, 6);
+  assert.equal(r.total, 7);
   assert.equal(r.admins, 1);
   assert.equal(r.activeAdmins, 1);
-  assert.equal(r.cashiers, 4);
-  assert.equal(r.activeCashiers, 3);
+  assert.equal(r.cashiers, 5);
+  assert.equal(r.activeCashiers, 4);                       // old, cn, ghost, strtrue (off is inactive)
   assert.deepEqual(r.invalidRole, ['weird']);
   assert.deepEqual(r.inactive, ['off']);
   assert.deepEqual(r.cashierWithoutCanteen, ['old']);
+  assert.deepEqual(r.adminWithoutCanteen, []);
+  assert.deepEqual(r.missingCanteenId, ['old']);
   assert.deepEqual(r.unknownCanteen, ['ghost']);
+  assert.deepEqual(r.nonBooleanActive, ['strtrue']);
   assert.equal(r.lockoutRisk, false);
 });
 
@@ -173,4 +177,30 @@ test('staff readiness flags the catastrophic case: no active admin', () => {
   assert.equal(r.activeAdmins, 0);
   assert.equal(r.lockoutRisk, true);
   assert.deepEqual(r.invalidRole, ['b']);
+});
+
+test('--staff-only reads only canteens and canteenStaff and answers the pre-deployment questions', async () => {
+  const admin = env.authenticatedContext('admin-1').firestore();
+  const r = await runStaffAudit(admin);
+  assert.deepEqual(r.collectionsRead, ['canteens', 'canteenStaff']);
+  assert.equal(r.readOnly, true);
+  assert.deepEqual(r.answers, {
+    totalStaffAccounts: 7,
+    activeAdmins: 1,
+    activeCashiers: 4,
+    inactiveStaff: 1,
+    invalidOrUnexpectedRoles: 1,
+    missingCanteenId: 1,
+    atLeastOneActiveAdmin: true,
+    staffThatWouldBeLockedOutByStopgap: ['off', 'strtrue'],
+  });
+  assert.deepEqual(r.staffIdsByRole.admin, ['admin-1']);
+  assert.deepEqual(r.staffIdsByRole.other, ['weird']);
+  assert.equal(r.staffIdsByRole.cashier.length, 5);
+  // the report contains ids and counts only: no e-mail address anywhere
+  assert.ok(!JSON.stringify(r).includes('@'));
+});
+
+test('--staff-only fails loudly for a non-admin login (cashiers cannot list staff)', async () => {
+  await assert.rejects(runStaffAudit(env.authenticatedContext('cn').firestore()));
 });

@@ -98,3 +98,71 @@ test('the stopgap does not close the in-staff holes (documented): a cashier can 
   await assertSucceeds(getDoc(doc(as(stop, 'cashier-north'), 'bills/b2')));
   await assertSucceeds(updateDoc(doc(as(stop, 'cashier-north'), 'canteenStaff/cashier-north'), { role: 'admin' }));
 });
+
+// ===========================================================================
+// Pre-deployment audit, item 9: which existing staff identities keep working?
+// Every shape a production staff record could plausibly have, tested under the
+// DEPLOYED rules (works today) and the STOPGAP (must keep working).
+const shapes = [
+  ['admin with canteenId (as created by the admin dashboard, no `active` field)', { role: 'admin', canteenId: 'main', canteenName: 'Main', email: 'a@x.com' }, true],
+  ['cashier with canteenId, no `active` field (as created by the admin dashboard)', { role: 'cashier', canteenId: 'north', canteenName: 'North', email: 'c@x.com' }, true],
+  ['cashier without canteenId (acts as branch main)', { role: 'cashier', email: 'c@x.com' }, true],
+  ['admin without canteenId', { role: 'admin', email: 'a@x.com' }, true],
+  ['`active: true`', { role: 'cashier', canteenId: 'north', active: true }, true],
+  ['unknown branch id', { role: 'cashier', canteenId: 'nowhere' }, true],
+  ['role with the wrong case (the app itself refuses these at login)', { role: 'Admin', canteenId: 'north' }, true],
+  ['role missing (the app refuses these at login)', { canteenId: 'north' }, true],
+  ['`active: false` (deliberately deactivated)', { role: 'cashier', canteenId: 'north', active: false }, false],
+  ['`active` stored as the TEXT "true" (the app lets this user in; the stopgap would not)', { role: 'cashier', canteenId: 'north', active: 'true' }, false],
+  ['`active: null`', { role: 'cashier', canteenId: 'north', active: null }, false],
+  ['`active: 1`', { role: 'cashier', canteenId: 'north', active: 1 }, false],
+];
+for (const [name, data, expectAccess] of shapes) {
+  test(`staff identity coverage: ${name} -> stopgap ${expectAccess ? 'KEEPS' : 'removes'} access`, async () => {
+    for (const env of [open, stop]) {
+      await env.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), 'canteenStaff/shape-user'), data); });
+    }
+    const probe = (env) => getDocs(query(collection(as(env, 'shape-user'), 'bills'), where('canteenId', '==', 'north'))).then(() => true, () => false);
+    assert.equal(await probe(open), true, 'works today under the deployed rules');
+    assert.equal(await probe(stop), expectAccess);
+    // the user can always read their own record to be told why
+    await assertSucceeds(getDoc(doc(as(stop, 'shape-user'), 'canteenStaff/shape-user')));
+  });
+}
+
+// ===========================================================================
+// Pre-deployment audit, item 10: can the admin still create staff accounts?
+// lib/admin_dashboard_page.dart (~2219): the login is created on a SECOND
+// FirebaseApp's Auth (Firebase Authentication; Firestore rules do not apply),
+// then the staff document is written with the default Firestore instance, i.e.
+// signed in as the ADMIN. Replayed here step by step.
+test('admin creates a staff member under the stopgap: exact sequence and payload', async () => {
+  const admin = as(stop, 'admin-1');
+  const newUid = 'new-staff-uid';
+
+  // 1. the new login exists in Auth only: no staff record yet -> no access
+  await assertFails(getDocs(collection(as(stop, newUid), 'bills')));
+  const own = await assertSucceeds(getDoc(doc(as(stop, newUid), `canteenStaff/${newUid}`)));
+  assert.equal(own.exists(), false);                       // the app would show "role not found"
+
+  // 2. the admin (primary session) writes the staff record, payload as in the app
+  await assertSucceeds(setDoc(doc(admin, `canteenStaff/${newUid}`), {
+    email: 'new@x.com', role: 'cashier', canteenId: 'north', canteenName: 'North', createdAt: serverTimestamp(),
+  }));
+
+  // 3. the new staff member now has access, with no further step
+  await assertSucceeds(getDocs(query(collection(as(stop, newUid), 'bills'), where('canteenId', '==', 'north'))));
+  await assertSucceeds(getDoc(doc(as(stop, newUid), `canteenStaff/${newUid}`)));
+
+  // 4. the other admin dashboard staff actions
+  await assertSucceeds(getDocs(query(collection(admin, 'canteenStaff'), orderBy('email'))));
+  await assertSucceeds(updateDoc(doc(admin, `canteenStaff/${newUid}`), { canteenId: 'south', canteenName: 'South' }));
+  await assertSucceeds(deleteDoc(doc(admin, `canteenStaff/${newUid}`)));
+  await assertFails(getDocs(collection(as(stop, newUid), 'bills')));   // removed staff lose access at once
+});
+
+test('a deactivated ADMIN cannot create staff under the stopgap (and a stranger cannot)', async () => {
+  await stop.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), 'canteenStaff/admin-off'), { role: 'admin', active: false }); });
+  await assertFails(setDoc(doc(as(stop, 'admin-off'), 'canteenStaff/x1'), { role: 'cashier', canteenId: 'north' }));
+  await assertFails(setDoc(doc(as(stop, 'stranger'), 'canteenStaff/x2'), { role: 'admin', canteenId: 'main' }));
+});
