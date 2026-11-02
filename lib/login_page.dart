@@ -56,6 +56,11 @@ class _LoginPageState extends State<LoginPage>
 
   Future<void> _handleLogin() async {
     if (_isLoading) return; // a second tap while signing in is ignored
+    if (_emailController.text.trim().isEmpty ||
+        _passwordController.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Please enter your email and password.');
+      return;
+    }
     setState(() {
       _isLoading = true;
       _errorMessage = '';
@@ -112,8 +117,9 @@ class _LoginPageState extends State<LoginPage>
       );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
-      setState(
-          () => _errorMessage = e.message ?? 'Unable to send reset email.');
+      setState(() => _errorMessage = e.code == 'invalid-email'
+          ? 'That email address does not look right. Please check it.'
+          : 'Unable to send the reset email. Please try again.');
     } catch (_) {
       if (!mounted) return;
       setState(() =>
@@ -175,6 +181,10 @@ class _LoginPageState extends State<LoginPage>
                             TextField(
                               controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
+                              textInputAction: TextInputAction.next,
+                              autofillHints: const [AutofillHints.username],
+                              autocorrect: false,
+                              enableSuggestions: false,
                               style:
                                   AppText.style(color: AppColors.textPrimary),
                               decoration: darkInput(
@@ -188,12 +198,18 @@ class _LoginPageState extends State<LoginPage>
                             TextField(
                               controller: _passwordController,
                               obscureText: _obscurePassword,
+                              textInputAction: TextInputAction.done,
+                              autofillHints: const [AutofillHints.password],
+                              onSubmitted: (_) => _handleLogin(),
                               style:
                                   AppText.style(color: AppColors.textPrimary),
                               decoration: darkInput(
                                 label: 'Password',
                                 prefixIcon: Icons.lock_outline,
                                 suffixIconWidget: IconButton(
+                                  tooltip: _obscurePassword
+                                      ? 'Show password'
+                                      : 'Hide password',
                                   icon: Icon(
                                     _obscurePassword
                                         ? Icons.visibility_off_outlined
