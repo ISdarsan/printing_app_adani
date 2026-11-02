@@ -264,3 +264,43 @@ class _RetryScopeState extends State<RetryScope> {
         () => setState(() => _attempt++),
       );
 }
+
+/// "Coming soon" notice for a feature that is not finished yet. Used instead of
+/// opening a half-built feature.
+Future<void> showComingSoonDialog(
+  BuildContext context, {
+  required String feature,
+}) {
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppColors.bgCard,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(children: [
+        const Icon(Icons.hourglass_top_rounded, color: AppColors.accentBlue),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text('Coming soon',
+              style: AppText.style(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16)),
+        ),
+      ]),
+      content: Text(
+        '$feature is not available yet. We are still building it and it will '
+        'arrive in a future update.',
+        style: AppText.style(
+            color: AppColors.textSecondary, fontSize: 13, height: 1.45),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: Text('OK',
+              style: AppText.style(
+                  color: AppColors.accentBlue, fontWeight: FontWeight.w700)),
+        ),
+      ],
+    ),
+  );
+}
