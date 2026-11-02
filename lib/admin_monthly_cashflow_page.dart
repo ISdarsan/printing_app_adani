@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'business_time.dart';
 import 'expense_detail_page.dart';
 
 class AdminMonthlyCashflowPage extends StatefulWidget {
@@ -28,7 +29,7 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
     }
     setState(() => _isLoading = true);
 
-    final String monthId = DateFormat('yyyy-MM').format(DateTime.now());
+    final String monthId = BusinessTime.monthKey(DateTime.now());
     try {
       await FirebaseFirestore.instance
           .collection('monthlyFunds')
@@ -49,7 +50,7 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
   }
 
   Stream<DocumentSnapshot> _getMonthlyFundStream() {
-    final String monthId = DateFormat('yyyy-MM').format(DateTime.now());
+    final String monthId = BusinessTime.monthKey(DateTime.now());
     return FirebaseFirestore.instance
         .collection('monthlyFunds')
         .doc(monthId)
@@ -57,14 +58,12 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
   }
 
   Stream<QuerySnapshot> _getExpensesStream() {
-    DateTime now = DateTime.now();
-    DateTime startOfMonth = DateTime(now.year, now.month, 1);
-    DateTime endOfMonth = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+    final month = BusinessTime.monthRange(DateTime.now());
 
     return FirebaseFirestore.instance
         .collection('expenses')
-        .where('timestamp', isGreaterThanOrEqualTo: startOfMonth)
-        .where('timestamp', isLessThanOrEqualTo: endOfMonth)
+        .where('timestamp', isGreaterThanOrEqualTo: month.start)
+        .where('timestamp', isLessThan: month.end)
         .orderBy('timestamp', descending: true)
         .snapshots();
   }

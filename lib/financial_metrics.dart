@@ -50,6 +50,10 @@ class FinancialSummary {
   final double upiSales;
   final double cashRepayments;
   final double upiRepayments;
+
+  /// Repayments whose mode is neither Cash nor UPI. They count in
+  /// `creditReceived` but not in cash/UPI movement (same as the writer).
+  final double otherRepayments;
   final int billCount;
 
   const FinancialSummary({
@@ -59,6 +63,7 @@ class FinancialSummary {
     required this.upiSales,
     required this.cashRepayments,
     required this.upiRepayments,
+    this.otherRepayments = 0,
     required this.billCount,
   });
 
@@ -66,7 +71,7 @@ class FinancialSummary {
     Iterable<SaleRecord> sales,
     Iterable<RepaymentRecord> repayments,
   ) {
-    double revenue = 0, credit = 0, cash = 0, upi = 0, rc = 0, ru = 0;
+    double revenue = 0, credit = 0, cash = 0, upi = 0, rc = 0, ru = 0, ro = 0;
     int bills = 0;
     for (final s in sales) {
       revenue += s.amount;
@@ -78,6 +83,7 @@ class FinancialSummary {
     for (final r in repayments) {
       if (r.mode == 'Cash') rc += r.amount;
       if (r.mode == 'UPI') ru += r.amount;
+      if (r.mode != 'Cash' && r.mode != 'UPI') ro += r.amount;
     }
     return FinancialSummary(
       salesRevenue: revenue,
@@ -86,11 +92,12 @@ class FinancialSummary {
       upiSales: upi,
       cashRepayments: rc,
       upiRepayments: ru,
+      otherRepayments: ro,
       billCount: bills,
     );
   }
 
-  double get totalRepayments => cashRepayments + upiRepayments;
+  double get totalRepayments => cashRepayments + upiRepayments + otherRepayments;
 
   /// Matches dailyStats.totalCash.
   double get cashMovement => cashSales + cashRepayments;
@@ -118,20 +125,78 @@ class FinancialSummary {
       };
 }
 
-/// Cash-basis net position: money actually received minus expenses.
-double netPositionCashBasis(FinancialSummary s, double expenses) =>
-    s.collections - expenses;
-
-/// Accrual-basis result: revenue earned (incl. credit) minus expenses.
-/// Repayments are NOT added: they settle revenue already counted at sale time.
-double netPositionAccrual(FinancialSummary s, double expenses) =>
+/// Accrual operating position: sales revenue (credit sales included)
+/// minus expenses. Repayments are NOT added: they settle revenue that was
+/// already counted when the credit sale was made. Not a profit figure
+/// (no cost of goods, wages, etc.).
+double accrualOperatingPosition(FinancialSummary s, double expenses) =>
     s.salesRevenue - expenses;
 
-/// The formula the Excel export currently uses ("Sales + Repayments -
-/// Expenses"). Kept only so tests can demonstrate that it double counts every
-/// repaid credit sale. Not used by the app.
+/// Cash-basis movement: cash sales + UPI sales + cash repayments + UPI
+/// repayments - expenses. Unpaid credit sales are excluded until repaid.
+/// Not a profit figure and not a bank balance.
+double cashBasisMovement(FinancialSummary s, double expenses) =>
+    s.collections - expenses;
+
+/// The formula the Excel export used before decision Q3 ("Sales +
+/// Repayments - Expenses"). Kept only so tests can demonstrate that it
+/// double counted every repaid credit sale. Not used by the app.
 double legacyExcelNetPosition(FinancialSummary s, double expenses) =>
     s.salesRevenue + s.totalRepayments - expenses;
+
+/// One line of the Excel "Dashboard Summary" sheet.
+class SummaryRow {
+  final String label;
+  final double value;
+
+  /// Plain-language basis shown in the third column of the sheet.
+  final String formula;
+  const SummaryRow(this.label, this.value, this.formula);
+}
+
+/// Rows of the Excel executive summary (decisions Q3 and Q4). Pure, so the
+/// numbers the report shows are unit-tested.
+List<SummaryRow> buildExecutiveSummaryRows(
+  FinancialSummary s, {
+  required double expenses,
+  required double creditStillDue,
+  required double cumulativeDiscrepancy,
+}) =>
+    [
+      SummaryRow('Overall Revenue (All Branches)', s.salesRevenue,
+          'Cash Sales + UPI Sales + Credit Issued. Repayments are never included.'),
+      SummaryRow('Cash Sales', s.cashSales, 'Bills paid in Cash.'),
+      SummaryRow('UPI Sales', s.upiSales, 'Bills paid by UPI.'),
+      SummaryRow('Credit Issued', s.creditSales,
+          'Bills put on credit (not yet money received).'),
+      SummaryRow('Cash Repayments', s.cashRepayments,
+          'Credit repayments received in Cash.'),
+      SummaryRow('UPI Repayments', s.upiRepayments,
+          'Credit repayments received by UPI.'),
+      if (s.otherRepayments != 0)
+        SummaryRow('Repayments (other / unrecorded mode)', s.otherRepayments,
+            'Repayments whose mode is neither Cash nor UPI. Not in Total Cash/UPI Received.'),
+      SummaryRow('Total Credit Repayments Received', s.totalRepayments,
+          'Cash + UPI (+ other) repayments.'),
+      SummaryRow('Total Cash Received', s.cashMovement,
+          'Cash Sales + Cash Repayments (matches dailyStats totalCash).'),
+      SummaryRow('Total UPI Received', s.upiMovement,
+          'UPI Sales + UPI Repayments (matches dailyStats totalUpi).'),
+      SummaryRow('Total Credits Still Due', creditStillDue,
+          'Sum of all credit customers pending balances.'),
+      SummaryRow('Overall Expenses', expenses, 'Sum of logged expenses.'),
+      SummaryRow('Cumulative Cash Discrepancy', cumulativeDiscrepancy,
+          'Sum of daily cash-closing differences (actual - system).'),
+      SummaryRow('Accrual Operating Position (Sales - Expenses)',
+          accrualOperatingPosition(s, expenses),
+          'Overall Revenue - Overall Expenses. Includes credit sales; repayments are not added again. Not a profit figure.'),
+      SummaryRow('Cash-Basis Movement (Received - Expenses)',
+          cashBasisMovement(s, expenses),
+          'Cash Sales + UPI Sales + Cash Repayments + UPI Repayments - Expenses. Excludes unpaid credit. Not a profit figure.'),
+      SummaryRow('Credit Check (Issued - Repaid - Still Due)',
+          s.creditSales - s.totalRepayments - creditStillDue,
+          'Should be 0. A non-zero value points to credit records created before repayments were tracked, or edited by hand.'),
+    ];
 
 /// Differences between a stored dailyStats doc and the figures derived from
 /// source records. Read-only diagnostic for the reconciliation strategy;

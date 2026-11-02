@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'bill_detail_page.dart';
 import 'canteen_provider.dart';
+import 'business_time.dart';
 
 class AllBillsPage extends StatefulWidget {
   const AllBillsPage({super.key});
@@ -12,29 +13,31 @@ class AllBillsPage extends StatefulWidget {
 }
 
 class _AllBillsPageState extends State<AllBillsPage> {
-  DateTime _selectedMonth = DateTime.now();
+  // Only year/month are used; initialised from the business calendar (IST).
+  DateTime _selectedMonth = BusinessTime.wallClock(DateTime.now());
 
-  DateTime get _start => DateTime(_selectedMonth.year, _selectedMonth.month, 1);
-  DateTime get _end =>
-      DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0, 23, 59, 59);
+  DateRange get _range => BusinessTime.monthRangeForMonth(
+      _selectedMonth.year, _selectedMonth.month);
 
-  Stream<QuerySnapshot> get _stream => FirebaseFirestore.instance
-      .collection('bills')
-      .where('timestamp', isGreaterThanOrEqualTo: _start)
-      .where('timestamp', isLessThanOrEqualTo: _end)
-      .orderBy('timestamp', descending: true)
-      .snapshots();
+  // Branch-scoped + half-open month range. Index: bills(canteenId, timestamp).
+  Stream<QuerySnapshot> get _stream =>
+      CanteenProvider.scopeQuery(FirebaseFirestore.instance.collection('bills'))
+          .where('timestamp', isGreaterThanOrEqualTo: _range.start)
+          .where('timestamp', isLessThan: _range.end)
+          .orderBy('timestamp', descending: true)
+          .snapshots();
 
   bool get _canGoForward {
-    final now = DateTime.now();
+    final now = BusinessTime.wallClock(DateTime.now());
     return _selectedMonth.year < now.year ||
         (_selectedMonth.year == now.year && _selectedMonth.month < now.month);
   }
 
   @override
   Widget build(BuildContext context) {
-    final isCurrent = _selectedMonth.month == DateTime.now().month &&
-        _selectedMonth.year == DateTime.now().year;
+    final nowBiz = BusinessTime.wallClock(DateTime.now());
+    final isCurrent = _selectedMonth.month == nowBiz.month &&
+        _selectedMonth.year == nowBiz.year;
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: buildGradientAppBar(title: 'Bills History'),

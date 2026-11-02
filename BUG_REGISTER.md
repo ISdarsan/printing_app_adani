@@ -11,17 +11,18 @@ Status key: FIXED (code changed + analyze/tests green), OPEN (confirmed in sourc
 | B-04 | P2 | Billing | `setState`/snackbar after the transaction without `mounted` check. | FIXED |
 | B-05 | P2 | Admin dashboard | Recent-bills stream read the entire `bills` collection to show 4 rows (cost grows forever). | FIXED - `limit(4)`; `limit(100)` when a branch filter is active (client-side filter, avoids new index) |
 | B-06 | P2 | Admin dashboard | Weekly stats query used a `documentId >=` range on IDs shaped `<canteenId>_<date>`, so every historical `main_*` doc matched. | FIXED - filters on the `date` field |
-| B-07 | P1 | Data model | Two sources of truth: dashboards sum from `bills`; cashier/reconciliation use `dailyStats` aggregates. `dailyStats.totalCash/Upi` also include credit repayments, bill-derived "cash" does not. The two screens can show different numbers for the same day. | INVESTIGATED - see FINANCIAL_DATA_AUDIT.md. Semantics are consistent (dailyStats sales fields = sales only; totalCash/Upi = sales + repayments); no code change made; decisions Q1-Q4 pending |
+| B-07 | P1 | Data model | Two sources of truth: dashboards sum from `bills`; cashier/reconciliation use `dailyStats` aggregates. `dailyStats.totalCash/Upi` also include credit repayments, bill-derived "cash" does not. The two screens can show different numbers for the same day. | RESOLVED by decisions Q2-Q4: semantics documented, reconciliation preserved, Excel now separates sales/repayments |
 | B-08 | P2 | Analytics | `admin_analytics_page` streams whole `bills`, `dailyStats`, `expenses` collections (3 nested StreamBuilders, no date window). `admin_master_credit_ledger_page` streams all Credit bills. | OPEN |
 | B-09 | P2 | Export | `_exportExcelReport` downloads full bills/expenses/repayments/reconciliations collections in one go. | OPEN |
 | B-10 | P3 | Startup | Role splash always waits a fixed 3 s timer before navigating. | OPEN |
 | B-11 | P3 | Repayment | `_processRepayment` runs a non-transactional bills query inside the transaction; docs are re-read with `tx.get` so values are safe, but a bill created mid-flight is missed. Money is `double` (rounding drift possible). | OPEN (low risk) |
 | B-12 | P2 | Offline | No sync-state UI (pending / failed / retry). `runTransaction` fails when offline, so nothing is falsely shown as saved, but the cashier gets a raw exception string. | OPEN |
-| B-14 | P1 | Cashier reads | Cashier screens query bills/expenses by timestamp with no canteenId filter; denied by firestore.rules (emulator-proved). Likely cause of reported sync problem. | NEEDS-DECISION (Q1: composite index deploy) |
-| B-15 | P1 | Excel export | Net Position = Sales + Repayments - Expenses double counts repaid credit | NEEDS-DECISION (Q3) |
-| B-16 | P2 | Excel export | 'Cash/UPI Collected' excludes repayments, disagrees with dailyStats | NEEDS-DECISION (Q4) |
-| B-17 | P3 | Funds | monthlyFunds is global; expenses are per branch | NEEDS-DECISION |
-| B-18 | P3 | Date windows | Day range ends 23:59:59 and uses device clock | OPEN |
+| B-14 | P1 | Cashier reads | Cashier screens query bills/expenses by timestamp with no canteenId filter; denied by firestore.rules (emulator-proved). Likely cause of reported sync problem. | FIXED in code (6 screens scoped + `firestore.indexes.json`); **NOT DEPLOYED**: indexes must be deployed before releasing the app (see FIRESTORE_INDEX_AUDIT.md) |
+| B-15 | P1 | Excel export | Net Position = Sales + Repayments - Expenses double counts repaid credit | FIXED - Excel shows Accrual Operating Position and Cash-Basis Movement; double-counting formula removed (workbook generation itself untested) |
+| B-16 | P2 | Excel export | 'Cash/UPI Collected' excludes repayments, disagrees with dailyStats | FIXED - Cash Sales / UPI Sales renamed; Cash/UPI Repayments and Total Cash/UPI Received added |
+| B-17 | P3 | Funds | monthlyFunds is global; expenses are per branch | INVESTIGATED - global fund vs per-branch cashier view documented (FINANCIAL_DATA_AUDIT.md s.11); no model change; decision pending |
+| B-18 | P3 | Date windows | Day range ends 23:59:59 and uses device clock | FIXED - half-open IST day/month ranges (see FINANCIAL_DATA_AUDIT.md s.12) |
+| B-19 | P1 | Indexes | Production has **no composite indexes**, yet existing queries on `cashReconciliations`, `notifications` and `menuItems` use equality + orderBy and need them. Unknown whether those screens currently fail. | OPEN - indexes included in `firestore.indexes.json`, not deployed; verify those three screens on a cashier device |
 
 ## Verified correct (no change needed)
 - Bill + dailyStats + credit customer + counter are written in one Firestore transaction.

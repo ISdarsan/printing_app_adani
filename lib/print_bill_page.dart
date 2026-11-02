@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'theme.dart';
 import 'canteen_provider.dart';
 import 'financial_metrics.dart';
+import 'business_time.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'printer_bridge.dart';
 
@@ -795,7 +796,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
           today,
           canteenId: selectedCanteenId,
         );
-        final dateId = DateFormat('yyyy-MM-dd').format(today);
+        final dateId = BusinessTime.dateKey(today);
         final billRef = db.collection('bills').doc();
 
         // Generate a bill ID like "BILL-20260915170112"

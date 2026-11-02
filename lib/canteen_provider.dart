@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'business_time.dart';
 
 class CanteenProvider {
   static String _selectedCanteenId = 'main';
@@ -35,10 +36,8 @@ class CanteenProvider {
     return normalized.isEmpty ? 'main' : normalized;
   }
 
-  static String _dateKey(DateTime date) =>
-      '${date.year.toString().padLeft(4, '0')}-'
-      '${date.month.toString().padLeft(2, '0')}-'
-      '${date.day.toString().padLeft(2, '0')}';
+  /// Business-day key (IST), independent of the device timezone.
+  static String _dateKey(DateTime date) => BusinessTime.dateKey(date);
 
   static void setSelectedCanteen({
     required String id,

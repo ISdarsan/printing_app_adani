@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'canteen_provider.dart';
 import 'financial_metrics.dart';
+import 'business_time.dart';
 
 class CreditDetailPage extends StatefulWidget {
   final String customerId;
@@ -454,7 +455,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
         final customerSnap = await tx.get(customerRef);
 
         final today = DateTime.now();
-        final todayId = DateFormat('yyyy-MM-dd').format(today);
+        final todayId = BusinessTime.dateKey(today);
         final statRef = db.collection('dailyStats').doc(
               CanteenProvider.dailyStatsDocumentId(
                 today,

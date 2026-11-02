@@ -14,6 +14,8 @@ import 'admin_master_credit_ledger_page.dart';
 import 'bill_detail_page.dart';
 import 'sms_broadcast_helper.dart';
 import 'canteen_provider.dart';
+import 'business_time.dart';
+import 'financial_metrics.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -34,14 +36,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Stream<Map<String, dynamic>> _getDailyStatsStream() {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day);
-    final end = start.add(const Duration(days: 1));
+    final day = BusinessTime.dayRange(DateTime.now());
 
     return FirebaseFirestore.instance
         .collection('bills')
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThan: end)
+        .where('timestamp', isGreaterThanOrEqualTo: day.start)
+        .where('timestamp', isLessThan: day.end)
         .snapshots()
         .map((s) {
       double sales = 0.0;
@@ -81,13 +81,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Stream<double> _getMonthlySalesStream() {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, 1);
-    final end = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+    final month = BusinessTime.monthRange(DateTime.now());
     return FirebaseFirestore.instance
         .collection('bills')
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThanOrEqualTo: end)
+        .where('timestamp', isGreaterThanOrEqualTo: month.start)
+        .where('timestamp', isLessThan: month.end)
         .snapshots()
         .map((s) => s.docs.fold(0.0, (acc, d) {
               final data = d.data();
@@ -120,13 +118,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Stream<double> _getMonthlyExpensesStream() {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, 1);
-    final end = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+    final month = BusinessTime.monthRange(DateTime.now());
     return FirebaseFirestore.instance
         .collection('expenses')
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThanOrEqualTo: end)
+        .where('timestamp', isGreaterThanOrEqualTo: month.start)
+        .where('timestamp', isLessThan: month.end)
         .snapshots()
         .map((s) => s.docs.fold(0.0, (acc, d) {
               final data = d.data();
@@ -166,8 +162,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Stream<List<MapEntry<String, Map<String, dynamic>>>> _getWeeklyStatsStream() {
-    final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
-    final startDateStr = DateFormat('yyyy-MM-dd').format(sevenDaysAgo);
+    final startDateStr = BusinessTime.dateKeyDaysAgo(DateTime.now(), 7);
     return FirebaseFirestore.instance
         .collection('dailyStats')
         // Filter on the 'date' field (set on every dailyStats doc). Doc IDs are
@@ -278,110 +273,122 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1))
               .value =
           TextCellValue(
-              'Report Generated: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}');
+              'Report Generated: ${DateFormat('yyyy-MM-dd HH:mm').format(BusinessTime.wallClock(DateTime.now()))} IST');
 
-      double totalSales = 0, cashSales = 0, upiSales = 0, creditSales = 0;
-      for (var doc in billsSnap.docs) {
-        final d = doc.data();
-        final amt = ((d['totalAmount'] ?? 0.0) as num).toDouble();
-        totalSales += amt;
-        final mode = d['paymentMode'] ?? '';
-        if (mode == 'Cash') {
-          cashSales += amt;
-        } else if (mode == 'UPI') {
-          upiSales += amt;
-        } else if (mode == 'Credit') {
-          creditSales += amt;
-        }
+      // Source records -> pure FinancialSummary (see financial_metrics.dart).
+      // Sales and repayments are kept separate: repayments are never revenue.
+      String branchOf(Map<String, dynamic> d) {
+        final c = (d['canteenId'] ?? 'main').toString();
+        return c.isEmpty ? 'main' : c;
       }
-      double totalExpenses = expensesSnap.docs.fold(
+
+      SaleRecord saleOf(Map<String, dynamic> d) => SaleRecord(
+          ((d['totalAmount'] ?? 0.0) as num).toDouble(),
+          (d['paymentMode'] ?? '').toString());
+      RepaymentRecord repaymentOf(Map<String, dynamic> d) => RepaymentRecord(
+          ((d['amount'] ?? 0.0) as num).toDouble(),
+          (d['paymentMode'] ?? '').toString());
+
+      final allSummary = FinancialSummary.fromRecords(
+        billsSnap.docs.map((d) => saleOf(d.data())),
+        repaymentsSnap.docs.map((d) => repaymentOf(d.data())),
+      );
+      final double totalExpenses = expensesSnap.docs.fold(
           0.0, (s, d) => s + ((d.data()['amount'] ?? 0.0) as num).toDouble());
-      double totalOutstandingCredit = creditSnap.docs.fold(0.0,
+      final double totalOutstandingCredit = creditSnap.docs.fold(0.0,
           (s, d) => s + ((d.data()['totalPending'] ?? 0.0) as num).toDouble());
-      double totalRepayments = repaymentsSnap.docs.fold(
-          0.0, (s, d) => s + ((d.data()['amount'] ?? 0.0) as num).toDouble());
-      double totalDiscrepancy = reconSnap.docs.fold(0.0,
+      final double totalDiscrepancy = reconSnap.docs.fold(0.0,
           (s, d) => s + ((d.data()['discrepancy'] ?? 0.0) as num).toDouble());
 
-      final List<List<dynamic>> summaryData = [
-        ['Overall Revenue (All Branches)', totalSales],
-        ['Cash Collected', cashSales],
-        ['UPI Collected', upiSales],
-        ['Credit Issued', creditSales],
-        ['Total Credits Still Due', totalOutstandingCredit],
-        ['Total Credit Repayments Received', totalRepayments],
-        ['Overall Expenses', totalExpenses],
-        ['Cumulative Cash Discrepancy', totalDiscrepancy],
-        [
-          'Net Position (Sales + Repayments - Expenses)',
-          totalSales + totalRepayments - totalExpenses
-        ],
-      ];
+      final summaryRows = buildExecutiveSummaryRows(
+        allSummary,
+        expenses: totalExpenses,
+        creditStillDue: totalOutstandingCredit,
+        cumulativeDiscrepancy: totalDiscrepancy,
+      );
 
+      dashboardSheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 2))
+          .value = TextCellValue(
+          'All dates and times are Indian Standard Time (IST, UTC+05:30).');
       dashboardSheet
           .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 3))
           .value = TextCellValue('Metric');
       dashboardSheet
           .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 3))
           .value = TextCellValue('Total Value (INR)');
-      for (int i = 0; i < summaryData.length; i++) {
+      dashboardSheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: 3))
+          .value = TextCellValue('Basis / Formula');
+      for (int i = 0; i < summaryRows.length; i++) {
         dashboardSheet
             .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 4 + i))
-            .value = TextCellValue(summaryData[i][0] as String);
+            .value = TextCellValue(summaryRows[i].label);
         dashboardSheet
             .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 4 + i))
-            .value = DoubleCellValue(summaryData[i][1] as double);
+            .value = DoubleCellValue(summaryRows[i].value);
+        dashboardSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: 4 + i))
+            .value = TextCellValue(summaryRows[i].formula);
       }
 
       // Per-branch summary in the dashboard sheet
-      int bRow = 4 + summaryData.length + 2;
+      int bRow = 4 + summaryRows.length + 2;
       dashboardSheet
           .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: bRow++))
           .value = TextCellValue('BRANCH-WISE BREAKDOWN');
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: bRow))
-          .value = TextCellValue('Branch');
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: bRow))
-          .value = TextCellValue('Sales (INR)');
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: bRow))
-          .value = TextCellValue('Bills Count');
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: bRow))
-          .value = TextCellValue('Expenses (INR)');
+      const branchHeaders = [
+        'Branch',
+        'Sales (INR)',
+        'Bills Count',
+        'Expenses (INR)',
+        'Cash Sales (INR)',
+        'UPI Sales (INR)',
+        'Credit Issued (INR)',
+        'Cash Repayments (INR)',
+        'UPI Repayments (INR)',
+        'Accrual Operating Position (INR)',
+        'Cash-Basis Movement (INR)',
+      ];
+      for (int c = 0; c < branchHeaders.length; c++) {
+        dashboardSheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: bRow))
+            .value = TextCellValue(branchHeaders[c]);
+      }
       bRow++;
       for (final bId in branchIds) {
-        double bSales = 0;
-        int bCount = 0;
-        double bExp = 0;
-        for (final doc in billsSnap.docs) {
-          final d = doc.data();
-          final cId = ((d['canteenId'] ?? 'main') as String);
-          if ((cId.isEmpty ? 'main' : cId) == bId) {
-            bSales += ((d['totalAmount'] ?? 0.0) as num).toDouble();
-            bCount++;
-          }
+        final bSummary = FinancialSummary.fromRecords(
+          billsSnap.docs
+              .where((d) => branchOf(d.data()) == bId)
+              .map((d) => saleOf(d.data())),
+          repaymentsSnap.docs
+              .where((d) => branchOf(d.data()) == bId)
+              .map((d) => repaymentOf(d.data())),
+        );
+        final bExp = expensesSnap.docs
+            .where((d) => branchOf(d.data()) == bId)
+            .fold<double>(
+                0.0,
+                (total, d) =>
+                    total + ((d.data()['amount'] ?? 0.0) as num).toDouble());
+        final cells = <CellValue>[
+          TextCellValue(resolveCanteenName(bId)),
+          DoubleCellValue(bSummary.salesRevenue),
+          IntCellValue(bSummary.billCount),
+          DoubleCellValue(bExp),
+          DoubleCellValue(bSummary.cashSales),
+          DoubleCellValue(bSummary.upiSales),
+          DoubleCellValue(bSummary.creditSales),
+          DoubleCellValue(bSummary.cashRepayments),
+          DoubleCellValue(bSummary.upiRepayments),
+          DoubleCellValue(accrualOperatingPosition(bSummary, bExp)),
+          DoubleCellValue(cashBasisMovement(bSummary, bExp)),
+        ];
+        for (int c = 0; c < cells.length; c++) {
+          dashboardSheet
+              .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: bRow))
+              .value = cells[c];
         }
-        for (final doc in expensesSnap.docs) {
-          final d = doc.data();
-          final cId = ((d['canteenId'] ?? 'main') as String);
-          if ((cId.isEmpty ? 'main' : cId) == bId) {
-            bExp += ((d['amount'] ?? 0.0) as num).toDouble();
-          }
-        }
-        dashboardSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: bRow))
-            .value = TextCellValue(resolveCanteenName(bId));
-        dashboardSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: bRow))
-            .value = DoubleCellValue(bSales);
-        dashboardSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: bRow))
-            .value = IntCellValue(bCount);
-        dashboardSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: bRow))
-            .value = DoubleCellValue(bExp);
         bRow++;
       }
 
@@ -400,7 +407,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         final d = billsSnap.docs[i].data();
         final ts = d['timestamp'] as Timestamp?;
         final dateStr = ts != null
-            ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
+            ? DateFormat('yyyy-MM-dd HH:mm')
+                .format(BusinessTime.wallClock(ts.toDate()))
             : 'N/A';
         final cId = (d['canteenId'] ?? 'main').toString();
         billsSheet
@@ -449,7 +457,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           if ((cId.isEmpty ? 'main' : cId) != bId) continue;
           final ts = d['timestamp'] as Timestamp?;
           final dateStr = ts != null
-              ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
+              ? DateFormat('yyyy-MM-dd HH:mm')
+                .format(BusinessTime.wallClock(ts.toDate()))
               : 'N/A';
           branchSheet
               .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row))
@@ -485,7 +494,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         final d = expensesSnap.docs[i].data();
         final ts = d['timestamp'] as Timestamp?;
         final dateStr = ts != null
-            ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
+            ? DateFormat('yyyy-MM-dd HH:mm')
+                .format(BusinessTime.wallClock(ts.toDate()))
             : 'N/A';
         final cId = (d['canteenId'] ?? 'main').toString();
         expSheet
@@ -516,7 +526,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           if ((cId.isEmpty ? 'main' : cId) != bId) continue;
           final ts = d['timestamp'] as Timestamp?;
           final dateStr = ts != null
-              ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
+              ? DateFormat('yyyy-MM-dd HH:mm')
+                .format(BusinessTime.wallClock(ts.toDate()))
               : 'N/A';
           branchExp
               .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row))
@@ -566,7 +577,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         final d = repaymentsSnap.docs[i].data();
         final ts = d['timestamp'] as Timestamp?;
         final dateStr = ts != null
-            ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
+            ? DateFormat('yyyy-MM-dd HH:mm')
+                .format(BusinessTime.wallClock(ts.toDate()))
             : 'N/A';
         repSheet
             .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
@@ -603,7 +615,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         final d = reconSnap.docs[i].data();
         final ts = d['timestamp'] as Timestamp?;
         final dateStr = ts != null
-            ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
+            ? DateFormat('yyyy-MM-dd HH:mm')
+                .format(BusinessTime.wallClock(ts.toDate()))
             : 'N/A';
         reconSheet
             .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
@@ -663,7 +676,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       if (bytes != null) {
         final tempDir = await getTemporaryDirectory();
         final file = await File(
-                '${tempDir.path}/Canteen_Report_${DateFormat('yyyyMMdd').format(DateTime.now())}.xlsx')
+                '${tempDir.path}/Canteen_Report_${BusinessTime.dateKey(DateTime.now()).replaceAll('-', '')}.xlsx')
             .create();
         await file.writeAsBytes(bytes);
         if (context.mounted) {
@@ -1589,9 +1602,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   Widget _buildBudgetAlertBanner() {
     final now = DateTime.now();
-    final monthId = DateFormat('yyyy-MM').format(now);
-    final start = DateTime(now.year, now.month, 1);
-    final end = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+    final monthId = BusinessTime.monthKey(now);
+    final month = BusinessTime.monthRange(now);
 
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
@@ -1615,8 +1627,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         return StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('expenses')
-              .where('timestamp', isGreaterThanOrEqualTo: start)
-              .where('timestamp', isLessThanOrEqualTo: end)
+              .where('timestamp', isGreaterThanOrEqualTo: month.start)
+              .where('timestamp', isLessThan: month.end)
               .snapshots(),
           builder: (context, expSnap) {
             if (expSnap.hasError) {

@@ -4,24 +4,19 @@ import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'bill_detail_page.dart';
 import 'canteen_provider.dart';
+import 'business_time.dart';
 
 class TodaySalesPage extends StatelessWidget {
   const TodaySalesPage({super.key});
 
-  (DateTime, DateTime) _getTodayRange() {
-    final now = DateTime.now();
-    return (
-      DateTime(now.year, now.month, now.day, 0, 0, 0),
-      DateTime(now.year, now.month, now.day, 23, 59, 59)
-    );
-  }
-
+  // Branch-scoped (required by firestore.rules for cashiers) and half-open
+  // business-day range. Index: bills(canteenId, timestamp).
   Stream<QuerySnapshot> _getBillsStream() {
-    final (s, e) = _getTodayRange();
-    return FirebaseFirestore.instance
-        .collection('bills')
-        .where('timestamp', isGreaterThanOrEqualTo: s)
-        .where('timestamp', isLessThanOrEqualTo: e)
+    final day = BusinessTime.dayRange(DateTime.now());
+    return CanteenProvider.scopeQuery(
+            FirebaseFirestore.instance.collection('bills'))
+        .where('timestamp', isGreaterThanOrEqualTo: day.start)
+        .where('timestamp', isLessThan: day.end)
         .orderBy('timestamp', descending: true)
         .snapshots();
   }

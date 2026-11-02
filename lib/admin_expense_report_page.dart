@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'theme.dart';
+import 'business_time.dart';
 import 'expense_detail_page.dart';
 
 class AdminExpenseReportPage extends StatefulWidget {
@@ -171,7 +172,7 @@ class _AdminExpenseReportPageState extends State<AdminExpenseReportPage> {
                 final Timestamp? ts = d['timestamp'] as Timestamp?;
                 if (ts == null) continue;
                 final date = ts.toDate();
-                final monthKey = DateFormat('yyyy-MM').format(date);
+                final monthKey = BusinessTime.monthKey(date);
                 if (!groupedExpenses.containsKey(monthKey)) {
                   groupedExpenses[monthKey] = [];
                 }
@@ -179,8 +180,7 @@ class _AdminExpenseReportPageState extends State<AdminExpenseReportPage> {
               }
 
               // Ensure the current month is always present even if no expenses/funds are logged yet
-              final currentMonthKey =
-                  DateFormat('yyyy-MM').format(DateTime.now());
+              final currentMonthKey = BusinessTime.monthKey(DateTime.now());
               if (!fundsMap.containsKey(currentMonthKey)) {
                 fundsMap[currentMonthKey] = 0.0;
                 monthLabels[currentMonthKey] =

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'canteen_provider.dart';
+import 'business_time.dart';
 
 class _AlreadyReconciledException implements Exception {}
 
@@ -21,7 +22,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
   final _formKey = GlobalKey<FormState>();
   bool _isSubmitting = false;
 
-  String get _todayId => DateFormat('yyyy-MM-dd').format(DateTime.now());
+  String get _todayId => BusinessTime.dateKey(DateTime.now());
   String get _todayRecordId =>
       CanteenProvider.cashReconciliationDocumentId(DateTime.now());
   String get _todayLabel => DateFormat('dd MMMM yyyy').format(DateTime.now());

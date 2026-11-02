@@ -9,6 +9,7 @@ import 'logout_splash_page.dart';
 import 'notifications_page.dart';
 import 'sms_broadcast_helper.dart';
 import 'canteen_provider.dart';
+import 'business_time.dart';
 
 class BillingDashboardPage extends StatefulWidget {
   const BillingDashboardPage({super.key});
@@ -134,14 +135,14 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
   }
 
   Stream<Map<String, String>> get _statsStream {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day, 0, 0, 0);
-    final end = DateTime(now.year, now.month, now.day, 23, 59, 59);
+    final day = BusinessTime.dayRange(DateTime.now());
 
-    return FirebaseFirestore.instance
-        .collection('bills')
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThanOrEqualTo: end)
+    // Branch-scoped (required by firestore.rules for cashiers); half-open
+    // business-day range. Needs index bills(canteenId, timestamp).
+    return CanteenProvider.scopeQuery(
+            FirebaseFirestore.instance.collection('bills'))
+        .where('timestamp', isGreaterThanOrEqualTo: day.start)
+        .where('timestamp', isLessThan: day.end)
         .snapshots()
         .map((snap) {
       double sales = 0.0;
@@ -755,9 +756,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
 
   Widget _buildBudgetAlertBanner() {
     final now = DateTime.now();
-    final monthId = DateFormat('yyyy-MM').format(now);
-    final start = DateTime(now.year, now.month, 1);
-    final end = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+    final monthId = BusinessTime.monthKey(now);
+    final month = BusinessTime.monthRange(now);
 
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
@@ -779,10 +779,10 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
         if (allocated == 0) return const SizedBox.shrink();
 
         return StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('expenses')
-              .where('timestamp', isGreaterThanOrEqualTo: start)
-              .where('timestamp', isLessThanOrEqualTo: end)
+          stream: CanteenProvider.scopeQuery(
+                  FirebaseFirestore.instance.collection('expenses'))
+              .where('timestamp', isGreaterThanOrEqualTo: month.start)
+              .where('timestamp', isLessThan: month.end)
               .snapshots(),
           builder: (context, expSnap) {
             if (expSnap.hasError) {

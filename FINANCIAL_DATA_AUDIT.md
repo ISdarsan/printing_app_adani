@@ -72,7 +72,7 @@ The last row double counts: a credit sale is counted at sale time and again when
 | B-17 | P3 | `monthlyFunds` is one global document per month while expenses are per branch; the cashier fund/balance view sums expenses of the whole fund month. Needs confirmation that funds are intended to be global. |
 | B-18 | P3 | Day windows end at 23:59:59 (not exclusive next-midnight), and the device clock defines "today"; a bill saved at 23:59:59.5 falls outside range-based screens but inside `dailyStats`. |
 
-## 6. Business decisions required (nothing below was changed)
+## 6. Business decisions (all answered; see section 9 onward for what was applied)
 
 **Q1 - Cashier read path (B-14).** To make these queries legal they must add `canteenId == <branch>`. A `canteenId` equality plus a `timestamp` range needs a composite index on `bills` and `expenses` (`canteenId ASC, timestamp ASC/DESC`). Index creation is a production Firebase change. Options:
  (a) Add `firestore.indexes.json` to the repo and, with your approval, deploy it; then scope the six screens. *(recommended)*
@@ -96,3 +96,43 @@ The last row double counts: a credit sale is counted at sale time and again when
 
 - New `lib/financial_metrics.dart`: pure functions `dailyStatsDeltaForSale/Repayment`, `FinancialSummary`, `dailyStatsDrift`, and net-position helpers.
 - `print_bill_page.dart` and `credit_detail_page.dart` now build their `dailyStats` increments from those helpers. Field names and values are identical to before.
+
+---
+
+# Phase 2: decisions applied (Q1-Q4, B-17, B-18)
+
+## 9. What changed, calculation by calculation
+
+| Area | Before | After |
+|---|---|---|
+| Excel "Net Position" | Sales + Repayments - Expenses (double counts repaid credit) | Two rows: **Accrual Operating Position** = Sales Revenue - Expenses; **Cash-Basis Movement** = Cash Sales + UPI Sales + Cash Repayments + UPI Repayments - Expenses |
+| Excel "Cash/UPI Collected" | Cash/UPI **sales** under a "Collected" label | Renamed **Cash Sales / UPI Sales**; new Cash Repayments, UPI Repayments, **Total Cash Received**, **Total UPI Received** (= dailyStats totalCash/totalUpi) |
+| Expected register cash | `dailyStats.totalCash` | **Unchanged** (Q2). Expenses are not deducted |
+| Day/month query ranges | `>= 00:00:00` and `<= 23:59:59` on the device clock | `[start, nextStart)` in IST (`lib/business_time.dart`) |
+| dailyStats / reconciliation doc id date | device-local date | IST business date (identical on IST phones) |
+| Cashier bills/expenses queries | no `canteenId` filter (rejected by rules) | `canteenId ==` for cashiers; admin unscoped as before |
+
+Not changed: how bills, repayments, dailyStats, customer balances and bill counters are written; Firestore rules; stored historical data.
+
+## 10. Q2: expenses and register cash (documented, behavior preserved)
+Evidence from the code about how expenses are really paid:
+- Cashiers log expenses with a proof photo; categories are Vegetables, Gas, Groceries, Maintenance, Other. These are typical **petty-cash purchases**, so some may well be paid from the till.
+- Nothing records the payment source (no `paymentMode`/`paidFrom` field), and `cashReconciliations` stores only `systemCash`, `actualCash`, `discrepancy`.
+- Effect today: if a cashier pays a vegetable bill from the till and logs it, expected cash stays higher than the physical cash, producing a shortage of the same amount in the closing.
+- Per your decision this is **not** changed. If you later want it handled, the smallest safe change is an optional "paid from register cash" flag on new expenses, subtracted only when set. That is a schema addition and needs your approval.
+
+## 11. B-17: are monthly funds global or per canteen?
+Facts:
+- `monthlyFunds/{yyyy-MM}` has one `fundAmount` per month, no `canteenId`. Only admins can write it; any active staff can read it (rules).
+- Admin dashboard banner and Expense Report compare the fund with **all branches' expenses** for the month: consistent with a global fund.
+- The **cashier** banner (`billing_dashboard_page`, `_buildBudgetAlertBanner`) and Funds Received page compare the same global fund with **only that branch's expenses** (they filter with `matchesSelectedCanteen`).
+- Result: a cashier sees a fund that is shared by all branches measured against their own spending only, so "balance remaining" and the used-percentage look healthier than the organisation-wide reality, and every branch sees the same full fund.
+- Branch-level cashflow therefore has no allocated budget to compare to. A branch's true share cannot be computed from existing data.
+
+Options for a decision (no change made): (1) keep it global and make the cashier screens show the organisation-wide spend against the fund (or label "your branch spend" separately); (2) allocate per canteen, using doc id `<canteenId>_<yyyy-MM>` and a `canteenId` field, with admin screens summing across branches. Option 2 needs a rules update and a data migration plan.
+
+## 12. B-18: day boundaries (implemented)
+- Business timezone: fixed IST, UTC+05:30, no DST (`BusinessTime`). Ranges are UTC instants, so results do not depend on the phone's timezone setting.
+- Applied to: cashier dashboard, Today's Sales, Daily Sales Report, Bills History, Monthly Breakdown, Funds Received, budget banners (cashier and admin), admin dashboard day/month streams, weekly lookback, monthly cashflow, expense report month grouping, analytics (weekly start, expense month grouping, time-slot hour), Excel timestamps, dailyStats/reconciliation ids, bill and repayment `dailyStats` date.
+- Intentionally unchanged: analytics rolling windows ("last 7/14/30 days" are elapsed-time windows, not calendar days), display of individual bill times on screen (device clock; identical on IST phones), `expenses_page` date picker (writes the picked instant).
+- Known limit: an expense whose timestamp was set by the picker at local midnight on a non-IST phone could fall on the previous IST day. All users are in India today.

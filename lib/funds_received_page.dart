@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'expense_detail_page.dart';
 import 'canteen_provider.dart';
+import 'business_time.dart';
 
 class FundsReceivedPage extends StatefulWidget {
   final bool isAdmin;
@@ -17,7 +18,8 @@ class FundsReceivedPage extends StatefulWidget {
 class _FundsReceivedPageState extends State<FundsReceivedPage> {
   final _fundController = TextEditingController();
   bool _isUpdating = false;
-  DateTime _selectedMonth = DateTime.now();
+  // Only year/month are used; initialised from the business calendar (IST).
+  DateTime _selectedMonth = BusinessTime.wallClock(DateTime.now());
 
   String get _monthId => DateFormat('yyyy-MM').format(_selectedMonth);
   String get _monthLabel => DateFormat('MMMM yyyy').format(_selectedMonth);
@@ -28,13 +30,13 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
       .snapshots();
 
   Stream<QuerySnapshot> get _monthExpensesStream {
-    final start = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
-    final end =
-        DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0, 23, 59, 59);
-    return FirebaseFirestore.instance
-        .collection('expenses')
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThanOrEqualTo: end)
+    final month = BusinessTime.monthRangeForMonth(
+        _selectedMonth.year, _selectedMonth.month);
+    // Branch-scoped for cashiers; index: expenses(canteenId, timestamp).
+    return CanteenProvider.scopeQuery(
+            FirebaseFirestore.instance.collection('expenses'))
+        .where('timestamp', isGreaterThanOrEqualTo: month.start)
+        .where('timestamp', isLessThan: month.end)
         .snapshots();
   }
 

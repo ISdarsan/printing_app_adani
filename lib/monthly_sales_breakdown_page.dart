@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'daily_sales_report_page.dart';
 import 'canteen_provider.dart';
+import 'business_time.dart';
 
 class DailySaleSummary {
   final DateTime date;
@@ -19,7 +20,9 @@ class MonthlySalesBreakdownPage extends StatefulWidget {
 }
 
 class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
-  DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  DateTime _selectedMonth = DateTime(
+      BusinessTime.wallClock(DateTime.now()).year,
+      BusinessTime.wallClock(DateTime.now()).month);
 
   Future<void> _selectMonth(BuildContext context) async {
     final picked = await showDatePicker(
@@ -47,13 +50,13 @@ class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
   }
 
   Stream<List<DailySaleSummary>> _getDailyBreakdown() {
-    final start = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
-    final end =
-        DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0, 23, 59, 59);
-    return FirebaseFirestore.instance
-        .collection('bills')
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThanOrEqualTo: end)
+    final month = BusinessTime.monthRangeForMonth(
+        _selectedMonth.year, _selectedMonth.month);
+    // Branch-scoped + half-open month range. Index: bills(canteenId, timestamp).
+    return CanteenProvider.scopeQuery(
+            FirebaseFirestore.instance.collection('bills'))
+        .where('timestamp', isGreaterThanOrEqualTo: month.start)
+        .where('timestamp', isLessThan: month.end)
         .orderBy('timestamp')
         .snapshots()
         .map((snap) {
@@ -65,7 +68,7 @@ class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
         if (data['timestamp'] is Timestamp) {
           date = (data['timestamp'] as Timestamp).toDate();
         }
-        final dayKey = DateFormat('yyyy-MM-dd').format(date);
+        final dayKey = BusinessTime.dateKey(date);
         dailyTotals[dayKey] = (dailyTotals[dayKey] ?? 0) +
             ((data['totalAmount'] ?? 0) as num).toDouble();
       }

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'bill_detail_page.dart';
 import 'canteen_provider.dart';
+import 'business_time.dart';
 
 class DailySalesReportPage extends StatefulWidget {
   final DateTime? selectedDate;
@@ -19,7 +20,8 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
   @override
   void initState() {
     super.initState();
-    _selectedDate = widget.selectedDate ?? DateTime.now();
+    _selectedDate =
+        widget.selectedDate ?? BusinessTime.wallClock(DateTime.now());
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -45,19 +47,16 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
     }
   }
 
-  (DateTime, DateTime) _getDayRange(DateTime date) {
-    return (
-      DateTime(date.year, date.month, date.day, 0, 0, 0),
-      DateTime(date.year, date.month, date.day, 23, 59, 59),
-    );
-  }
-
+  // _selectedDate is a calendar date (from the picker or "now"); its
+  // year/month/day are interpreted in the business timezone.
   Stream<QuerySnapshot> _getBillsStream() {
-    final (start, end) = _getDayRange(_selectedDate);
-    return FirebaseFirestore.instance
-        .collection('bills')
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThanOrEqualTo: end)
+    final day = BusinessTime.dayRangeForDate(
+        _selectedDate.year, _selectedDate.month, _selectedDate.day);
+    // Branch-scoped + half-open range. Index: bills(canteenId, timestamp).
+    return CanteenProvider.scopeQuery(
+            FirebaseFirestore.instance.collection('bills'))
+        .where('timestamp', isGreaterThanOrEqualTo: day.start)
+        .where('timestamp', isLessThan: day.end)
         .orderBy('timestamp', descending: true)
         .snapshots();
   }

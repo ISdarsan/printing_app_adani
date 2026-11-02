@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'theme.dart';
+import 'business_time.dart';
 import 'canteen_provider.dart';
 
 class AdminAnalyticsPage extends StatefulWidget {
@@ -143,7 +144,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
       final ts = data['timestamp'] as Timestamp?;
       if (ts == null) continue;
 
-      final hour = ts.toDate().hour;
+      final hour = BusinessTime.wallClock(ts.toDate()).hour;
       final bucket = '${hour.toString().padLeft(2, '0')}:00';
       final amount = ((data['totalAmount'] ?? 0.0) as num).toDouble();
       final mode = (data['paymentMode'] ?? 'Cash').toString();
@@ -284,8 +285,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
 
   @override
   Widget build(BuildContext context) {
-    final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
-    final startDateStr = DateFormat('yyyy-MM-dd').format(sevenDaysAgo);
+    final startDateStr = BusinessTime.dateKeyDaysAgo(DateTime.now(), 7);
 
     return Scaffold(
       backgroundColor: AppColors.bgDark,
@@ -383,7 +383,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                     final data = doc.data() as Map<String, dynamic>;
                     final ts = data['timestamp'] as Timestamp?;
                     if (ts == null) continue;
-                    final monthKey = DateFormat('yyyy-MM').format(ts.toDate());
+                    final monthKey = BusinessTime.monthKey(ts.toDate());
                     monthlyExpensesMap[monthKey] =
                         (monthlyExpensesMap[monthKey] ?? 0.0) +
                             ((data['amount'] ?? 0.0) as num).toDouble();

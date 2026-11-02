@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import {
   assertFails,
@@ -13,6 +14,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  orderBy,
   query,
   setDoc,
   updateDoc,
@@ -108,6 +110,64 @@ test('cashier date-range queries on bills/expenses need a canteenId filter (B-14
       getDocs(query(collection(db, name), where('canteenId', '==', 'north'), where('timestamp', '>=', from), where('timestamp', '<=', to))),
     );
   }
+});
+
+// Exact query shapes the six cashier screens now use (scopeQuery + half-open
+// range [start, nextStart) + optional orderBy). Note: the emulator does not
+// enforce composite indexes; see FIRESTORE_INDEX_AUDIT.md.
+test('scoped half-open day/month queries behave correctly per branch and boundary', async () => {
+  const istMidnight = (d) => new Date(`${d}T00:00:00+05:30`);
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    const mk = (id, canteenId, iso, amount) =>
+      setDoc(doc(db, `bills/${id}`), {
+        canteenId, createdBy: 'x', items: [], totalAmount: amount,
+        timestamp: new Date(iso),
+      });
+    await Promise.all([
+      mk('n-last-ms', 'north', '2026-11-02T23:59:59.999+05:30', 10),
+      mk('n-late',    'north', '2026-11-02T23:59:59.500+05:30', 20),
+      mk('n-first',   'north', '2026-11-03T00:00:00.000+05:30', 40),
+      mk('n-prev',    'north', '2026-11-01T23:59:59.999+05:30', 80),
+      mk('s-same',    'south', '2026-11-02T12:00:00+05:30', 160),
+    ]);
+  });
+  const north = testEnvironment.authenticatedContext('cashier-north').firestore();
+  const q = (db, from, to, extra = []) => query(
+    collection(db, 'bills'),
+    where('canteenId', '==', 'north'),
+    where('timestamp', '>=', istMidnight(from)),
+    where('timestamp', '<', istMidnight(to)),
+    ...extra,
+  );
+  const ids = async (p) => (await assertSucceeds(p)).docs.map((d) => d.id).sort();
+
+  // 2 Nov business day: includes 23:59:59.5 and 23:59:59.999, excludes 3 Nov 00:00 and 1 Nov.
+  assert.deepEqual(await ids(getDocs(q(north, '2026-11-02', '2026-11-03'))), ['n-last-ms', 'n-late']);
+  // 3 Nov starts exactly at midnight and contains only the first bill.
+  assert.deepEqual(await ids(getDocs(q(north, '2026-11-03', '2026-11-04'))), ['n-first']);
+  // Month range spanning the month end loses and double counts nothing.
+  assert.deepEqual(
+    await ids(getDocs(q(north, '2026-11-01', '2026-12-01'))),
+    ['n-first', 'n-last-ms', 'n-late', 'n-prev'],
+  );
+  // orderBy variant used by Today's Sales / Daily Report / Bills History.
+  await assertSucceeds(getDocs(q(north, '2026-11-02', '2026-11-03', [orderBy('timestamp', 'desc')])));
+  // A cashier cannot widen the scope to another branch.
+  await assertFails(getDocs(query(
+    collection(testEnvironment.authenticatedContext('cashier-north').firestore(), 'bills'),
+    where('canteenId', '==', 'south'),
+    where('timestamp', '>=', istMidnight('2026-11-02')),
+    where('timestamp', '<', istMidnight('2026-11-03')),
+  )));
+  // Admin keeps the unscoped query (all branches).
+  const admin = testEnvironment.authenticatedContext('admin-1').firestore();
+  const all = await assertSucceeds(getDocs(query(
+    collection(admin, 'bills'),
+    where('timestamp', '>=', istMidnight('2026-11-02')),
+    where('timestamp', '<', istMidnight('2026-11-03')),
+  )));
+  assert.deepEqual(all.docs.map((d) => d.id).sort(), ['n-last-ms', 'n-late', 's-same']);
 });
 
 test('cashier can read exactly their own dailyStats doc by id (no index needed)', async () => {

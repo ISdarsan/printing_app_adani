@@ -152,21 +152,169 @@ void main() {
     });
   });
 
-  group('net position (decision B-07-Q3)', () {
-    test('cash basis = collections - expenses', () {
-      expect(netPositionCashBasis(s, 200), 1350);
+  group('Q3: accrual operating position and cash-basis movement', () {
+    test('accrual = sales revenue (credit included) - expenses', () {
+      expect(accrualOperatingPosition(s, 200), 1500);
     });
 
-    test('accrual basis = sales - expenses (repayments not added)', () {
-      expect(netPositionAccrual(s, 200), 1500);
+    test('cash basis = cash+UPI sales + cash+UPI repayments - expenses', () {
+      // 800 + 400 + 250 + 100 - 200
+      expect(cashBasisMovement(s, 200), 1350);
     });
 
-    test('legacy Excel formula double counts repaid credit', () {
-      // 350 of credit sales were repaid: counted once as sales, again as
-      // repayment. Accrual says 1500; legacy says 1850 (= 1500 + 350).
-      expect(legacyExcelNetPosition(s, 200), 1850);
-      expect(legacyExcelNetPosition(s, 200) - netPositionAccrual(s, 200),
+    test('repayments change cash basis but never accrual', () {
+      final noRep = FinancialSummary.fromRecords(_sales, const []);
+      expect(accrualOperatingPosition(s, 200),
+          accrualOperatingPosition(noRep, 200));
+      expect(cashBasisMovement(s, 200) - cashBasisMovement(noRep, 200),
           s.totalRepayments);
+    });
+
+    test('credit sales raise accrual but not cash basis until repaid', () {
+      final creditOnly = FinancialSummary.fromRecords(
+          const [SaleRecord(500, 'Credit')], const []);
+      expect(accrualOperatingPosition(creditOnly, 0), 500);
+      expect(cashBasisMovement(creditOnly, 0), 0);
+      final repaid = FinancialSummary.fromRecords(
+          const [SaleRecord(500, 'Credit')],
+          const [RepaymentRecord(500, 'Cash')]);
+      expect(accrualOperatingPosition(repaid, 0), 500); // unchanged
+      expect(cashBasisMovement(repaid, 0), 500); // now received
+    });
+
+    test('the two measures differ exactly by outstanding credit', () {
+      final outstanding = s.creditSales - s.totalRepayments;
+      expect(accrualOperatingPosition(s, 200) - cashBasisMovement(s, 200),
+          outstanding);
+    });
+
+    test('legacy Excel formula double counted repaid credit', () {
+      expect(legacyExcelNetPosition(s, 200), 1850);
+      expect(legacyExcelNetPosition(s, 200) - accrualOperatingPosition(s, 200),
+          s.totalRepayments);
+    });
+  });
+
+  group('Q2: expenses and register cash', () {
+    test('expected register cash ignores expenses entirely', () {
+      expect(s.expectedRegisterCash, 1050);
+      expect(s.expectedRegisterCash, s.cashMovement);
+      // Expenses only enter the position measures, not register cash.
+      expect(cashBasisMovement(s, 0) - cashBasisMovement(s, 300), 300);
+    });
+
+    test('expenses reduce both reported positions', () {
+      expect(accrualOperatingPosition(s, 0) - accrualOperatingPosition(s, 200),
+          200);
+      expect(cashBasisMovement(s, 0) - cashBasisMovement(s, 200), 200);
+    });
+  });
+
+  group('Q4: Excel summary rows', () {
+    final rows = buildExecutiveSummaryRows(s,
+        expenses: 200, creditStillDue: 150, cumulativeDiscrepancy: -50);
+    double v(String label) => rows.firstWhere((r) => r.label == label).value;
+    bool has(String label) => rows.any((r) => r.label == label);
+
+    test('old "Collected" labels are gone, new labels present', () {
+      expect(has('Cash Collected'), isFalse);
+      expect(has('UPI Collected'), isFalse);
+      for (final l in [
+        'Cash Sales',
+        'UPI Sales',
+        'Cash Repayments',
+        'UPI Repayments',
+        'Total Cash Received',
+        'Total UPI Received',
+        'Credit Issued',
+        'Total Credits Still Due',
+        'Total Credit Repayments Received',
+        'Overall Expenses',
+        'Cumulative Cash Discrepancy',
+      ]) {
+        expect(has(l), isTrue, reason: l);
+      }
+    });
+
+    test('sales and repayments are separated', () {
+      expect(v('Cash Sales'), 800);
+      expect(v('UPI Sales'), 400);
+      expect(v('Cash Repayments'), 250);
+      expect(v('UPI Repayments'), 100);
+      expect(v('Overall Revenue (All Branches)'), 1700);
+    });
+
+    test('Total Cash/UPI Received reconcile with dailyStats', () {
+      final doc = _applyWriters(_sales.toList(), _repayments.toList());
+      expect(v('Total Cash Received'), doc['totalCash']);
+      expect(v('Total UPI Received'), doc['totalUpi']);
+      expect(v('Total Credit Repayments Received'), doc['creditReceived']);
+      expect(v('Overall Revenue (All Branches)'), doc['totalSales']);
+      expect(v('Credit Issued'), doc['totalCredit']);
+    });
+
+    test('both positions present with correct values and qualified names', () {
+      expect(v('Accrual Operating Position (Sales - Expenses)'), 1500);
+      expect(v('Cash-Basis Movement (Received - Expenses)'), 1350);
+      expect(
+          rows.any((r) => r.label.toLowerCase().contains('profit')), isFalse);
+      expect(
+          rows
+              .where((r) =>
+                  r.label.contains('Position') || r.label.contains('Movement'))
+              .every((r) => r.formula.contains('Not a profit figure')),
+          isTrue);
+    });
+
+    test('credit check is zero when records are consistent', () {
+      expect(v('Credit Check (Issued - Repaid - Still Due)'), 0);
+    });
+
+    test('every row explains its basis', () {
+      expect(rows.every((r) => r.formula.trim().isNotEmpty), isTrue);
+    });
+
+    test('unclassified repayments are shown, not silently dropped', () {
+      final weird = FinancialSummary.fromRecords(
+          const [SaleRecord(100, 'Credit')],
+          const [RepaymentRecord(40, 'Cheque')]);
+      expect(weird.totalRepayments, 40);
+      expect(weird.cashMovement, 0);
+      final r = buildExecutiveSummaryRows(weird,
+          expenses: 0, creditStillDue: 60, cumulativeDiscrepancy: 0);
+      expect(
+          r.any((x) =>
+              x.label.startsWith('Repayments (other') && x.value == 40),
+          isTrue);
+      expect(r.firstWhere((x) => x.label.startsWith('Credit Check')).value, 0);
+    });
+  });
+
+  group('branch split adds up to the whole (export branch rows)', () {
+    test('sum of branch summaries equals the combined summary', () {
+      final north = FinancialSummary.fromRecords(const [
+        SaleRecord(500, 'Cash'),
+        SaleRecord(200, 'Credit')
+      ], const [
+        RepaymentRecord(50, 'Cash')
+      ]);
+      final south = FinancialSummary.fromRecords(
+          const [SaleRecord(400, 'UPI')], const [RepaymentRecord(100, 'UPI')]);
+      final all = FinancialSummary.fromRecords(const [
+        SaleRecord(500, 'Cash'),
+        SaleRecord(200, 'Credit'),
+        SaleRecord(400, 'UPI')
+      ], const [
+        RepaymentRecord(50, 'Cash'),
+        RepaymentRecord(100, 'UPI')
+      ]);
+      expect(north.salesRevenue + south.salesRevenue, all.salesRevenue);
+      expect(north.cashMovement + south.cashMovement, all.cashMovement);
+      expect(north.upiMovement + south.upiMovement, all.upiMovement);
+      expect(
+          north.totalRepayments + south.totalRepayments, all.totalRepayments);
+      expect(cashBasisMovement(north, 30) + cashBasisMovement(south, 20),
+          cashBasisMovement(all, 50));
     });
   });
 }
