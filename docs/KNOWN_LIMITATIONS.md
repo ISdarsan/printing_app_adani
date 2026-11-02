@@ -23,3 +23,9 @@
 18. **Admin monthly sales still reads every bill of the month** and pending credit reads all credit customers. Cheaper alternatives change where financial figures come from and need a decision.
 19. **Portrait-only, phone-first layout.** No tablet layout.
 20. Real read-count and frame-time improvements are **not measured**; the only measured figure is the listener count in a test model.
+
+## Added by the full analysis sweep
+
+21. **Phone-date guard needs the server's time.** It reads the HTTP `Date` header of the Firebase endpoint; offline or blocked networks mean "cannot tell" and the save is allowed. It blocks only when the phone's IST day differs from the server's by more than 2 minutes.
+22. **Firebase client packages are several major versions behind** (see `FULL_ANALYSIS_SWEEP.md`); a major upgrade is a separate, fully tested change.
+23. **Credit limit of ₹2,000 per customer is hard-coded** in the billing screen.

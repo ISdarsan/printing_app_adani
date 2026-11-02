@@ -14,11 +14,13 @@ class ExpenseDetailPage extends StatelessWidget {
     final data = expenseDoc.data() as Map<String, dynamic>;
     final String description = data['description'] ?? 'No Description';
     final String category = data['category'] ?? '';
-    final double amount = (data['amount'] as num).toDouble();
+    final double amount = ((data['amount'] ?? 0) as num).toDouble();
     final String? base64Img = data['proofImageBase64'];
-    final DateTime date = (data['timestamp'] as Timestamp).toDate();
-    final String formattedDate =
-        DateFormat('dd MMMM yyyy, hh:mm a').format(date);
+    // A just-created expense can have no server timestamp yet: never crash on it.
+    final Timestamp? stamp = data['timestamp'] is Timestamp ? data['timestamp'] as Timestamp : null;
+    final String formattedDate = stamp == null
+        ? 'Time not available yet'
+        : DateFormat('dd MMMM yyyy, hh:mm a').format(stamp.toDate());
 
     Widget buildImage() {
       if (base64Img == null || base64Img.isEmpty) {

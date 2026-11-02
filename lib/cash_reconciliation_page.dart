@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'clock_guard.dart';
 import 'state_views.dart';
 import 'report_records.dart' show asDouble;
 import 'money.dart';
@@ -38,6 +39,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
   @override
   void initState() {
     super.initState();
+    ClockGuard.warmUp();
     _openStreams();
   }
 
@@ -83,6 +85,9 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
       return;
     }
 
+    // A phone with the wrong date would file the closing under the wrong day.
+    if (!await ClockGuard.confirmSafe(context)) return;
+    if (!mounted || _isSubmitting) return;
     setState(() => _isSubmitting = true);
     try {
       // Rounded to the paisa: floating point noise must not turn an exact

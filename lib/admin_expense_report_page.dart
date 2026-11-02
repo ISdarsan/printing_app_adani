@@ -449,7 +449,8 @@ class _AdminExpenseReportPageState extends State<AdminExpenseReportPage> {
                 final d = doc.data() as Map<String, dynamic>;
                 final date = (d['timestamp'] as Timestamp).toDate();
                 final dateStr = DateFormat('dd MMM, hh:mm a').format(date);
-                final amt = (d['amount'] as num).toDouble();
+                // an expense with a missing amount shows 0 instead of crashing the page
+                final amt = ((d['amount'] ?? 0) as num).toDouble();
 
                 return Container(
                   decoration: const BoxDecoration(

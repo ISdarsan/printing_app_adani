@@ -9,6 +9,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'theme.dart';
+import 'discard_bill_dialog.dart';
+import 'clock_guard.dart';
 import 'state_views.dart';
 import 'money.dart';
 import 'sync_status.dart';
@@ -322,6 +324,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
   @override
   void initState() {
     super.initState();
+    ClockGuard.warmUp(); // phone-date check runs in the background
     _loadMenu();
     _initPrinter();
     _searchController.addListener(() => setState(() {}));
@@ -753,6 +756,9 @@ class _PrintBillPageState extends State<PrintBillPage> {
     _saveFlowActive = true;
 
     try {
+      // A phone with the wrong date would file this sale under the wrong day.
+      if (!await ClockGuard.confirmSafe(context)) return;
+      if (!mounted) return;
       final billItemsSnapshot = List<BillItem>.from(_billItems);
       final totalSnapshot = _totalAmount;
       final paymentSnapshot = _paymentMethod;
@@ -837,13 +843,14 @@ class _PrintBillPageState extends State<PrintBillPage> {
         final counterSnap = await tx.get(counterRef);
         int newBillNum;
         if (counterSnap.exists) {
-          newBillNum = (counterSnap.data()!['lastNumber'] as int) + 1;
+          newBillNum =
+              ((counterSnap.data()!['lastNumber'] ?? 0) as num).toInt() + 1;
         } else if (branchId == 'main') {
           // Continue the legacy global sequence for the original canteen.
           final legacySnap =
               await tx.get(db.collection('counters').doc('billCounter'));
           newBillNum = legacySnap.exists
-              ? (legacySnap.data()!['lastNumber'] as int) + 1
+              ? ((legacySnap.data()!['lastNumber'] ?? 0) as num).toInt() + 1
               : 1;
         } else {
           newBillNum = 1;
@@ -1299,6 +1306,25 @@ class _PrintBillPageState extends State<PrintBillPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Back button / back swipe must not silently throw away a bill in progress
+    // or leave while it is being saved.
+    return PopScope(
+      canPop: _billItems.isEmpty && !_isSaving && !_saveFlowActive,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (_isSaving || _saveFlowActive) {
+          _snack('Saving the bill. Please wait a moment.');
+          return;
+        }
+        final leave = await confirmDiscardBill(context,
+            itemCount: _billItems.length, total: _totalAmount);
+        if (leave && context.mounted) Navigator.of(context).pop();
+      },
+      child: _billScaffold(context),
+    );
+  }
+
+  Widget _billScaffold(BuildContext context) {
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(

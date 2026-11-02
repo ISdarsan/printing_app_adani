@@ -159,7 +159,7 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
                   var fundData =
                       fundSnapshot.data!.data() as Map<String, dynamic>;
                   if (fundData.containsKey('fundAmount')) {
-                    totalFund = (fundData['fundAmount'] as num).toDouble();
+                    totalFund = ((fundData['fundAmount'] ?? 0) as num).toDouble();
                   }
                 }
 
@@ -178,7 +178,7 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
                       for (var doc in expenseSnapshot.data!.docs) {
                         var data = doc.data() as Map<String, dynamic>;
                         if (data.containsKey('amount')) {
-                          totalSpent += (data['amount'] as num).toDouble();
+                          totalSpent += ((data['amount'] ?? 0) as num).toDouble();
                         }
                       }
                     }
@@ -300,7 +300,7 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
             var doc = snapshot.data!.docs[index];
             var data = doc.data() as Map<String, dynamic>;
 
-            final double amount = (data['amount'] as num).toDouble();
+            final double amount = ((data['amount'] ?? 0) as num).toDouble();
             final String description = data['description'] ?? 'No description';
             final Timestamp timestamp = data['timestamp'] ?? Timestamp.now();
             final String dateTime =

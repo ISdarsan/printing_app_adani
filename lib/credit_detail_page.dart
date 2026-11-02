@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'clock_guard.dart';
 import 'state_views.dart';
 import 'money.dart';
 import 'sync_status.dart';
@@ -41,6 +42,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
   @override
   void initState() {
     super.initState();
+    ClockGuard.warmUp();
     _openStreams();
   }
 
@@ -442,6 +444,10 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
 
   Future<void> _processRepayment(double amount, String paymentMode) async {
     if (_isProcessing) return; // duplicate tap
+    // A phone with the wrong date would file this repayment under the wrong day.
+    if (!await ClockGuard.confirmSafe(context)) return;
+    if (!mounted) return;
+    if (_isProcessing) return; // re-check: another tap may have started while the check ran
     setState(() => _isProcessing = true);
     final db = FirebaseFirestore.instance;
 
