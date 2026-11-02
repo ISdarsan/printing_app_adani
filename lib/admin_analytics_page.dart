@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'business_time.dart';
 import 'analytics_calc.dart';
 import 'analytics_loader.dart';
@@ -169,7 +170,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text('Could not load analytics.\n$_error',
+                              Text('Could not load analytics.\n${friendlyErrorMessage(_error)}',
                                   textAlign: TextAlign.center,
                                   style: AppText.style(
                                       color: AppColors.accentRed,
@@ -192,7 +193,7 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                   if (_error != null)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                      child: Text('Refresh failed: $_error',
+                      child: Text('Refresh failed, showing the earlier figures. ${friendlyErrorMessage(_error)}',
                           style: AppText.style(
                               color: AppColors.accentRed, fontSize: 11)),
                     ),

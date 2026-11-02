@@ -14,3 +14,12 @@
 12. **Firebase Authentication "one account per email"** setting and user list are for you to verify in the Console.
 13. `node --test tool/` (directory form) reports a spurious failure; run the test files explicitly.
 14. An earlier `firebase ext:list` attempted to enable the Extensions API on the production project (BUG_REGISTER B-43). Avoid extension commands.
+
+## UI / performance branch additions
+
+15. **No visual QA or screenshots.** The UI work was verified by analyzer, 77 new tests and source inspection only; no screen was run on a device or emulator.
+16. **Dashboards, customer search, repayment dialog and cash-closing page have no widget tests** because they create Firestore streams directly. Their key behaviours are covered by source guards and the emulator suites.
+17. **About a quarter of text is 11 px or smaller** and was not enlarged without a device pass.
+18. **Admin monthly sales still reads every bill of the month** and pending credit reads all credit customers. Cheaper alternatives change where financial figures come from and need a decision.
+19. **Portrait-only, phone-first layout.** No tablet layout.
+20. Real read-count and frame-time improvements are **not measured**; the only measured figure is the listener count in a test model.

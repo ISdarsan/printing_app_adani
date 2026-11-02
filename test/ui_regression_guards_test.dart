@@ -58,7 +58,11 @@ void main() {
         .listSync()
         .whereType<File>()
         .where((f) => f.path.endsWith('.dart'))) {
-      expect(bad.hasMatch(f.readAsStringSync()), isFalse, reason: f.path);
+      final src = f.readAsStringSync();
+      expect(bad.hasMatch(src), isFalse, reason: f.path);
+      // also `Text('... $_error')` style output of a stored error object
+      expect(RegExp(r"Text\('[^']*\$_error").hasMatch(src), isFalse,
+          reason: '${f.path} prints a raw error object');
     }
   });
 }

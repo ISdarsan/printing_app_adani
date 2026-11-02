@@ -38,3 +38,27 @@ Pick a new port if one is "taken" (a previous emulator may still be closing). Fo
 - Real Firebase project behaviour (Auth token timing, index build time).
 - The Dart code against the emulator – transaction tests use a port of the logic.
 - `node --test tool/` (directory form) reports a spurious failure; pass the files explicitly as above.
+
+---
+
+# UI modernization and performance branch (`feature/ui-modernization-performance`)
+
+Run on the final code of this branch. Nothing here touched production.
+
+| Check | Result |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **317 passed**, 0 failed (240 existing, unmodified, plus 77 new) |
+| New: `stream_cache_test` | 7 (includes the measured listener count: 11 without the cache, 1 with it, over 1 build + 10 rebuilds, test model) |
+| New: `state_views_test` | 17 (loading/empty/error/retry, overflow at 320×480, 200% text, landscape, tablet) |
+| New: `billing_widgets_test` | 17 (stepper, Full/Half, cart, payment selection, save blocked when empty or already saving) |
+| New: `login_ui_test` | 9 |
+| New: `ui_regression_guards_test` | 4 source guards, each confirmed to fail against the pre-change code |
+| New: `theme_contrast_test` | 23 (WCAG AA for every text token) |
+| Emulator suite, whole `security-tests` folder, repository rules | **203 passed** (unchanged: no rules or queries were changed) |
+| Tool tests | 20 passed; `check_indexes` OK (19 queries, 5 indexes) |
+| Deploy-file verifier | stopgap 16, candidate 18, rollback 14, indexes 11 checks, all pass |
+| Excel workbook validator | 56 passed |
+| `flutter build appbundle --release -t lib/main.dart` | built, 58.9 MB, SHA-256 `9FCFAC9E…212338`. **Not uploaded.** |
+
+Not tested: any real device (printer, Bluetooth reconnect, airplane mode, performance), screenshots / visual QA, widget tests of the admin and cashier dashboards, customer search, repayment dialog and cash-closing page (no injection point for Firestore; see UI_UX_AUDIT.md).
