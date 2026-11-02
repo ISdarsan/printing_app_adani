@@ -103,7 +103,8 @@ test('candidate guards: e-mail fallback, implicit main or an open catch-all FAIL
     ['cashier menu delete', (t) => t.replace('allow delete: if isAdmin();\n    }\n\n    match /bills', 'allow delete: if activeStaff();\n    }\n\n    match /bills')],
   ]) {
     const root = sandbox();
-    edit(root, 'proposals/firestore.rules.candidate', mutate);
+    // normalise line endings first: a Windows checkout has CRLF and the mutations match LF text
+    edit(root, 'proposals/firestore.rules.candidate', (t) => mutate(t.split('\r\n').join('\n')));
     assert.equal(verify('candidate', root).pass, false, label);
   }
 });

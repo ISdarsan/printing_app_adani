@@ -40,7 +40,9 @@ Do not run `firebase ext:list` or anything touching extensions (it tries to enab
 
 ## Deploy (⚠ each needs approval)
 
-**8. ⚠ Indexes first (additive, cannot lock anyone out).**
+**8. Indexes: ALREADY DEPLOYED on 2026-11-02 (all 5 showed Enabled in the Console). Do not redeploy; just confirm in Firebase Console -> Firestore -> Indexes that all 5 are Enabled.** The command below is kept only for a fresh project or if an index is ever lost.
+
+(Original wording: Indexes first, additive, cannot lock anyone out.)
 ```powershell
 firebase deploy --only firestore:indexes --project canteen-app-adani
 ```
