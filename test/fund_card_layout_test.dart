@@ -16,7 +16,10 @@ Widget host(Widget child, {Size size = const Size(360, 800), double scale = 1}) 
         builder: (ctx, c) => Center(
             child: SizedBox(width: size.width, height: size.height, child: c)),
         theme: buildAppTheme(),
-        home: Scaffold(body: SingleChildScrollView(child: child)),
+        // the page wraps the card in Padding(all: 16)
+        home: Scaffold(
+            body: SingleChildScrollView(
+                child: Padding(padding: const EdgeInsets.all(16), child: child))),
       ),
     );
 
