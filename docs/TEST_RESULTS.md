@@ -98,3 +98,13 @@ Not tested: any real device (printer, Bluetooth reconnect, airplane mode, perfor
 | `flutter analyze` | No issues found |
 | `flutter test` | **340 passed** |
 | Release APK rebuilt | 62,384,344 bytes, SHA-256 `2AF88935…4FF5E`, signer unchanged |
+
+## Per-canteen monthly budgets (business rule change, 2026-11-02)
+
+| Check | Result |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **359 passed** (includes 14 budget-maths tests, 9 source guards all confirmed to fail on the old shared-fund code, and updated fund-card layout tests) |
+| Emulator, candidate rules suite | **110 passed** (108 + 2 new for per-canteen budgets: own canteen only, other canteens and old shared docs denied, admin write requires id = `<canteenId>_<monthYear>`, old shared-fund payload refused) |
+| Candidate verifier / manifest | regenerated after the intended rule edit; 18 checks pass |
+| Not yet run on a device | admin setting a budget per canteen, cashier view, alerts |

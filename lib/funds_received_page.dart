@@ -8,7 +8,7 @@ import 'state_views.dart';
 import 'expense_detail_page.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
-import 'money.dart';
+import 'fund_budget.dart';
 
 class FundsReceivedPage extends StatefulWidget {
   final bool isAdmin;
@@ -32,9 +32,13 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
   String get _monthId => DateFormat('yyyy-MM').format(_selectedMonth);
   String get _monthLabel => DateFormat('MMMM yyyy').format(_selectedMonth);
 
+  /// Budgets are per canteen: this canteen's document for the shown month.
+  String get _fundDocId =>
+      monthlyFundDocId(CanteenProvider.selectedCanteenId, _monthId);
+
   Stream<DocumentSnapshot> get _fundStream => FirebaseFirestore.instance
       .collection('monthlyFunds')
-      .doc(_monthId)
+      .doc(_fundDocId)
       .snapshots();
 
   Stream<QuerySnapshot> get _monthExpensesStream {
@@ -61,8 +65,11 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
     try {
       await FirebaseFirestore.instance
           .collection('monthlyFunds')
-          .doc(_monthId)
+          .doc(_fundDocId)
           .set({
+        'canteenId': CanteenProvider.selectedCanteenId,
+        'canteenName': CanteenProvider.selectedCanteenName,
+        'monthYear': _monthId,
         'fundAmount': amount,
         'lastUpdated': FieldValue.serverTimestamp(),
         'updatedBy': FirebaseAuth.instance.currentUser?.email ?? 'Admin',
@@ -73,7 +80,7 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content:
-              Text('Fund for $_monthLabel updated!', style: AppText.style()),
+              Text('Budget for $_monthLabel updated!', style: AppText.style()),
           backgroundColor: const Color(0xFF1B4332),
         ));
       }
@@ -97,7 +104,7 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
       builder: (_) => AlertDialog(
         backgroundColor: AppColors.bgCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Set Fund - $_monthLabel',
+        title: Text('Set Budget - ${CanteenProvider.selectedCanteenName} - $_monthLabel',
             style: AppText.style(
                 color: AppColors.textPrimary,
                 fontWeight: FontWeight.w700,
@@ -105,7 +112,7 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Enter the total fund allocated by management for this month.',
+            Text('Enter the monthly budget for this canteen.',
                 style: AppText.style(
                     color: AppColors.textSecondary, fontSize: 13)),
             const SizedBox(height: 16),
@@ -214,7 +221,9 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                       onRetry: () => setState(_streams.reset));
                 }
                 double allocatedFund = 0;
-                String lastUpdated = 'Not set yet';
+                String lastUpdated = widget.isAdmin
+                    ? 'No budget set for this canteen yet'
+                    : 'No budget set for this canteen yet. Ask the admin.';
                 if (fundSnap.hasData && fundSnap.data!.exists) {
                   final d = fundSnap.data!.data() as Map<String, dynamic>;
                   allocatedFund = (d['fundAmount'] as num?)?.toDouble() ?? 0;
@@ -258,40 +267,6 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
 
                     return CustomScrollView(
                       slivers: [
-                        if (!widget.isAdmin)
-                          SliverToBoxAdapter(
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                              child: Container(
-                                key: const Key('shared-fund-note'),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: AppColors.accentBlue
-                                      .withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                      color: AppColors.accentBlue
-                                          .withValues(alpha: 0.35)),
-                                ),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Icon(Icons.info_outline_rounded,
-                                        color: AppColors.accentBlue, size: 18),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        kSharedFundNote,
-                                        style: AppText.style(
-                                            color: AppColors.textSecondary,
-                                            fontSize: 12),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
                         // Budget Summary Card
                         SliverToBoxAdapter(
                           child: Padding(
@@ -302,6 +277,9 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                                   : null,
                               child: FundSummaryCard(
                                 isAdmin: widget.isAdmin,
+                                title: widget.isAdmin
+                                    ? 'Monthly Budget Console'
+                                    : 'Monthly Budget - ${CanteenProvider.selectedCanteenName}',
                                 monthLabel: _monthLabel,
                                 allocatedStr: allocatedStr,
                                 spentStr: spentStr,
@@ -416,6 +394,7 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
 /// can be tested at small screen sizes and large text.
 class FundSummaryCard extends StatelessWidget {
   final bool isAdmin;
+  final String title;
   final String monthLabel;
   final String allocatedStr;
   final String spentStr;
@@ -426,6 +405,7 @@ class FundSummaryCard extends StatelessWidget {
   const FundSummaryCard({
     super.key,
     required this.isAdmin,
+    required this.title,
     required this.monthLabel,
     required this.allocatedStr,
     required this.spentStr,
@@ -452,7 +432,7 @@ class FundSummaryCard extends StatelessWidget {
             const SizedBox(width: 8),
             Flexible(
               child:
-            Text(isAdmin ? 'Monthly Budget Console' : 'Organisation Fund (shared by all canteens)',
+            Text(title,
                 style: AppText.style(
                     color: Colors.white70,
                     fontSize: 13,
@@ -496,7 +476,7 @@ class FundSummaryCard extends StatelessWidget {
                 crossAxisAlignment:
                     CrossAxisAlignment.start,
                 children: [
-                  Text(isAdmin ? 'Allocated Fund' : 'Organisation Fund',
+                  Text('Allocated Budget',
                       textAlign: TextAlign.start,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
@@ -520,7 +500,7 @@ class FundSummaryCard extends StatelessWidget {
                 crossAxisAlignment:
                     CrossAxisAlignment.center,
                 children: [
-                  Text(isAdmin ? 'Total Spent' : 'Spent by this canteen',
+                  Text('Total Spent',
                       textAlign: TextAlign.center,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
@@ -544,7 +524,7 @@ class FundSummaryCard extends StatelessWidget {
                 crossAxisAlignment:
                     CrossAxisAlignment.end,
                 children: [
-                  Text(isAdmin ? 'Available Balance' : 'Fund minus this canteen\'s spending',
+                  Text('Available Balance',
                       textAlign: TextAlign.end,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,

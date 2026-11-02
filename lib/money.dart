@@ -25,12 +25,7 @@ bool moneyGreater(num a, num b) => toPaise(a) > toPaise(b);
 String formatRupees(num v) =>
     toPaise(v) % 100 == 0 ? (toPaise(v) ~/ 100).toString() : v.toStringAsFixed(2);
 
-/// Shown on cashier screens that compare the monthly fund with spending.
-/// The fund is ONE amount for the whole organisation (business decision), while
-/// a cashier only sees their own canteen's expenses.
-const String kSharedFundNote =
-    'The monthly fund is shared by all canteens. Only this canteen\'s spending is '
-    'shown here, so the remaining amount is not the organisation\'s balance.';
+
 
 /// One bill's share of a repayment.
 class RepaymentAllocation {

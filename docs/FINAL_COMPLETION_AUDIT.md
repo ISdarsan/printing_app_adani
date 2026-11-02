@@ -44,7 +44,7 @@ Security
 - Old app builds that do not send `submittedByUid` on day closings are refused by the candidate (no e-mail fallback). Retire them before Phase 2.
 
 Financial
-- Global monthly funds are organisation-wide; every screen labels them so. Branch staff can read them.
+- Monthly budgets are per canteen (changed 2026-11-02 at the owner's direction; was organisation-wide). Each canteen's staff read only their own budget under the candidate rules.
 - Legacy records without `canteenId` stay admin-only under the candidate until classified.
 - Offline billing unsupported: a cashier who bills with no connection gets a clear failure, not a queued bill.
 

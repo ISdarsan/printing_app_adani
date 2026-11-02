@@ -3,7 +3,7 @@
 1. **Production rules are still open** until the stopgap is deployed (needs your approval).
 2. **Stopgap does not isolate branches.** Only the candidate does.
 3. **Offline billing is unsupported** (decision). Failed writes show a clear state; nothing is silently queued.
-4. **Monthly funds are global** across branches (decision). Labelled as organisation-wide.
+4. **Monthly budgets are per canteen** (decision of 2026-11-02, replacing the earlier shared fund). Existing shared fund documents are ignored, so each canteen shows "No budget set" until the admin sets its budget. The production rules are still the open ones, so the new per-canteen access rule only takes effect when the candidate rules are deployed; until then any signed-in user can read budgets.
 5. **Legacy records without `canteenId`** are admin-only under the candidate until classified; nothing is migrated automatically.
 6. **Old app builds** that omit `submittedByUid` on day closings are refused by the candidate. Remove them from devices first.
 7. **Staff record without `canteenId`** gets no access under the candidate (no implicit `main`). Current staff audit: no such records.

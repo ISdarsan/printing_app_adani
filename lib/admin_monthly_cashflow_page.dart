@@ -5,6 +5,8 @@ import 'theme.dart';
 import 'state_views.dart';
 import 'stream_cache.dart';
 import 'business_time.dart';
+import 'canteen_provider.dart';
+import 'fund_budget.dart';
 import 'expense_detail_page.dart';
 
 class AdminMonthlyCashflowPage extends StatefulWidget {
@@ -45,10 +47,12 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
     try {
       await FirebaseFirestore.instance
           .collection('monthlyFunds')
-          .doc(monthId)
+          .doc(monthlyFundDocId(CanteenProvider.selectedCanteenId, monthId))
           .set({
         'fundAmount': amount,
         'lastUpdated': Timestamp.now(),
+        'canteenId': CanteenProvider.selectedCanteenId,
+        'canteenName': CanteenProvider.selectedCanteenName,
         'monthYear': monthId,
       }, SetOptions(merge: true));
 
@@ -65,7 +69,7 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
     final String monthId = BusinessTime.monthKey(DateTime.now());
     return FirebaseFirestore.instance
         .collection('monthlyFunds')
-        .doc(monthId)
+        .doc(monthlyFundDocId(CanteenProvider.selectedCanteenId, monthId))
         .snapshots();
   }
 

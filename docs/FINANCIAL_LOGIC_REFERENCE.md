@@ -32,7 +32,13 @@ Source files: `lib/money.dart`, `lib/business_time.dart`, and the services that 
 - Reconciliation difference = actual cash − expected cash; both stored with the closing.
 
 ## Monthly funds
-Global (organisation-wide), by decision. Screens label them as such. Not split per branch.
+**Assigned per canteen** (owner decision, 2026-11-02; this replaces the earlier "one organisation-wide fund" decision).
+
+- Document: `monthlyFunds/<canteenId>_<yyyy-MM>` with `canteenId`, `canteenName`, `monthYear`, `fundAmount`, `lastUpdated`, `updatedBy`, `monthLabel`. Code: `lib/fund_budget.dart`.
+- A canteen's budget is compared only with **that canteen's** expenses. Remaining = budget - that canteen's spending, in whole paise.
+- Alert when less than 15% of a canteen's budget is left, or when it is exceeded. A canteen with no budget set (or 0) has no alert.
+- Cashier: sees only their own canteen's budget. Admin: Expense Report has a canteen selector; a budget is set for one chosen canteen. "All canteens" shows the total of the budgets set against everything spent and cannot be edited.
+- The previous shared documents (id = month only) are **not** treated as any canteen's budget. They are left in the database untouched and ignored; the admin re-enters each canteen's budget.
 
 ## Bill numbers
 Per-branch counter `billCounter_<canteenId>`; `lastNumber` is a positive integer written by cashiers of that branch only.

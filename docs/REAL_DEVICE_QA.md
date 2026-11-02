@@ -8,9 +8,9 @@ Built 2026-11-02 from branch `feature/ui-modernization-performance` (rebuilt aft
 |---|---|
 | APK path | `D:\app\printing_app_adani-master\build\app\outputs\flutter-apk\app-release.apk` |
 | APK size | 62,384,344 bytes (59.5 MB) |
-| APK SHA-256 | `2AF8893549F3B33D392752FB1766BF0E56D7694EB7E0313FF0538B5AE2F4FF5E` |
+| APK SHA-256 | `A177CA653C86D1236CE2E2C5555CF81435BA6B5B8D9382507E7C282160FD258C` |
 | AAB path (not for phones) | `D:\app\printing_app_adani-master\build\app\outputs\bundle\release\app-release.aab` |
-| AAB size / SHA-256 | 61,739,343 bytes · `C7F633910D9AA76345CEA62BC539A63A7B2D1BEAE1379680BAA28B38B0AD2B9A` |
+| AAB size / SHA-256 | 61,770,658 bytes · `1C1B3BE1DDCEDD560CB9679CBFD80D2B05A66CC90C85013B223170332857AF94` |
 | Commands | `flutter build apk --release -t lib/main.dart` and `flutter build appbundle --release -t lib/main.dart`, both exit 0 |
 | Application id | `com.adani.canteen_adani` |
 | Version | 1.0.5, versionCode 6 |
@@ -125,7 +125,9 @@ Mark each line Pass / Fail / Not tried and write what you saw. Test as the **cas
 - [ ] Credit customers: search, open a customer, see pending bills and repayment history.
 - [ ] Take a small repayment (Cash and UPI): balance drops by exactly that amount; it appears in the repayment log; cash/UPI totals include it.
 - [ ] Expenses: add one, it shows in Today and in the expense report.
-- [ ] Funds: cashier sees "Organisation Fund" (shared by all canteens); admin sees the console. ★ Set a test fund only if agreed.
+- [ ] Budgets are **per canteen**. ★ Admin: Expense Report -> pick one canteen -> pencil icon -> set its budget. Picking "All canteens" and tapping the pencil only tells you to choose a canteen.
+- [ ] Cashier of that canteen: Monthly Budget & Expenses shows "Monthly Budget - <their canteen>", Allocated Budget / Total Spent / Available Balance, and **no** "shared by all canteens" text. Another canteen's cashier sees a different figure ("No budget set for this canteen yet" until the admin sets it).
+- [ ] Spend close to the budget with a small test expense: the cashier's and the admin dashboard's alert appears below 15% left, naming only the canteen that is low.
 - [ ] **Cash closing:** the form shows "Loading…" until expected cash appears and the figure equals cash sales + cash repayments − nothing else you did not expect. Turn on airplane mode before opening it: it must show an error, **never** an expected cash of ₹0. Submit once; submitting again is blocked.
 
 ### G. Menu, notices, staff (admin)

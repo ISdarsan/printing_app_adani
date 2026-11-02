@@ -8,6 +8,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'theme.dart';
+import 'fund_budget.dart';
 import 'state_views.dart';
 import 'logout_splash_page.dart';
 import 'admin_master_credit_ledger_page.dart';
@@ -1243,36 +1244,48 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
+  /// Budgets are per canteen, so each canteen is judged against ITS OWN
+  /// budget for the month (never a pooled total).
   Widget _buildBudgetAlertBanner() {
     final now = DateTime.now();
     final monthId = BusinessTime.monthKey(now);
     final month = BusinessTime.monthRange(now);
 
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('monthlyFunds')
-          .doc(monthId)
-          .snapshots(),
+    return StreamBuilder<QuerySnapshot>(
+      stream: _cached(
+          'budgetFunds',
+          () => FirebaseFirestore.instance
+              .collection('monthlyFunds')
+              .where('monthYear', isEqualTo: monthId)
+              .snapshots()),
       builder: (context, fundSnap) {
         if (fundSnap.hasError) {
           debugPrint("Budget Alert Fund Error: ${fundSnap.error}");
           return const SizedBox.shrink();
         }
-        if (!fundSnap.hasData || !fundSnap.data!.exists) {
-          return const SizedBox.shrink();
-        }
+        if (!fundSnap.hasData) return const SizedBox.shrink();
 
-        final data = fundSnap.data!.data() as Map<String, dynamic>?;
-        if (data == null) return const SizedBox.shrink();
-        final allocated = (data['fundAmount'] as num?)?.toDouble() ?? 0.0;
-        if (allocated == 0) return const SizedBox.shrink();
+        final allocated = <String, double>{};
+        final names = <String, String>{};
+        for (final doc in fundSnap.data!.docs) {
+          final d = doc.data() as Map<String, dynamic>;
+          final id = (d['canteenId'] ?? '').toString();
+          final amount = (d['fundAmount'] as num?)?.toDouble() ?? 0.0;
+          if (id.isNotEmpty && amount > 0) {
+            allocated[id] = amount;
+            names[id] = (d['canteenName'] ?? id).toString();
+          }
+        }
+        if (allocated.isEmpty) return const SizedBox.shrink();
 
         return StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('expenses')
-              .where('timestamp', isGreaterThanOrEqualTo: month.start)
-              .where('timestamp', isLessThan: month.end)
-              .snapshots(),
+          stream: _cached(
+              'budgetExpenses',
+              () => FirebaseFirestore.instance
+                  .collection('expenses')
+                  .where('timestamp', isGreaterThanOrEqualTo: month.start)
+                  .where('timestamp', isLessThan: month.end)
+                  .snapshots()),
           builder: (context, expSnap) {
             if (expSnap.hasError) {
               debugPrint("Budget Alert Expenses Error: ${expSnap.error}");
@@ -1280,23 +1293,18 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             }
             if (!expSnap.hasData) return const SizedBox.shrink();
 
-            double spent = 0;
-            for (var doc in expSnap.data!.docs) {
-              final d = doc.data() as Map<String, dynamic>?;
-              if (d != null) {
-                spent += ((d['amount'] ?? 0.0) as num).toDouble();
-              }
+            final spent = <String, double>{};
+            for (final doc in expSnap.data!.docs) {
+              final d = doc.data() as Map<String, dynamic>;
+              final id = (d['canteenId'] ?? 'main').toString();
+              spent[id] = (spent[id] ?? 0) +
+                  ((d['amount'] ?? 0.0) as num).toDouble();
             }
 
-            double available = allocated - spent;
-            double pctRemaining = available / allocated;
+            final alerts = budgetsNeedingAlert(
+                allocatedByCanteen: allocated, spentByCanteen: spent);
+            if (alerts.isEmpty) return const SizedBox.shrink();
 
-            debugPrint(
-                "Budget Alert values: allocated=$allocated, spent=$spent, available=$available, pctRemaining=$pctRemaining");
-
-            if (pctRemaining >= 0.15) return const SizedBox.shrink();
-
-            final pctStr = (pctRemaining * 100).toStringAsFixed(0);
             return Padding(
               padding: const EdgeInsets.only(bottom: 14),
               child: Container(
@@ -1308,6 +1316,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       color: AppColors.accentRed.withValues(alpha: 0.55)),
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Icon(Icons.warning_amber_rounded,
                         color: AppColors.accentRed, size: 20),
@@ -1317,21 +1326,24 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            available < 0
-                                ? 'Budget Overspent!'
-                                : 'Low Budget Alert ($pctStr% Left)',
+                            alerts.any((b) => b.exceeded)
+                                ? 'Canteen budget exceeded'
+                                : 'Canteen budget running low',
                             style: AppText.style(
                                 color: AppColors.accentRed,
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold),
                           ),
-                          Text(
-                            available < 0
-                                ? 'You have exceeded the allocated budget by ₹${available.abs().toStringAsFixed(0)}.'
-                                : 'Available: ₹${available.toStringAsFixed(0)} left of ₹${allocated.toStringAsFixed(0)} allocated.',
-                            style: AppText.style(
-                                color: AppColors.textSecondary, fontSize: 10),
-                          ),
+                          const SizedBox(height: 2),
+                          for (final b in alerts)
+                            Text(
+                              b.exceeded
+                                  ? '${names[b.canteenId] ?? b.canteenId}: over by ₹${b.available.abs().toStringAsFixed(0)} (budget ₹${b.allocated.toStringAsFixed(0)})'
+                                  : '${names[b.canteenId] ?? b.canteenId}: ₹${b.available.toStringAsFixed(0)} left of ₹${b.allocated.toStringAsFixed(0)} (${b.percentUsed}% used)',
+                              style: AppText.style(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 10),
+                            ),
                         ],
                       ),
                     ),

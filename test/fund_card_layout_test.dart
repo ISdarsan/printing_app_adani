@@ -26,6 +26,7 @@ Widget host(Widget child, {Size size = const Size(360, 800), double scale = 1}) 
 FundSummaryCard card({bool admin = false, String amount = '₹0', bool negative = false}) =>
     FundSummaryCard(
       isAdmin: admin,
+      title: admin ? 'Monthly Budget Console' : 'Monthly Budget - Main Canteen',
       monthLabel: 'November 2026',
       allocatedStr: amount,
       spentStr: amount,
@@ -60,26 +61,27 @@ void main() {
     expect(t.takeException(), isNull);
   });
 
-  testWidgets('cashier labels are all shown, each in its own column', (t) async {
-    await t.pumpWidget(host(card()));
-    expect(find.text('Organisation Fund'), findsOneWidget);
-    expect(find.text('Spent by this canteen'), findsOneWidget);
-    expect(find.text("Fund minus this canteen's spending"), findsOneWidget);
-    // three separate label boxes that do not overlap horizontally
-    final r = [
-      t.getRect(find.text('Organisation Fund')),
-      t.getRect(find.text('Spent by this canteen')),
-      t.getRect(find.text("Fund minus this canteen's spending")),
-    ];
-    expect(r[0].right, lessThanOrEqualTo(r[1].left + 0.5));
-    expect(r[1].right, lessThanOrEqualTo(r[2].left + 0.5));
+  testWidgets('labels are all shown, each in its own column (both roles)', (t) async {
+    for (final admin in [false, true]) {
+      await t.pumpWidget(host(card(admin: admin)));
+      expect(find.text('Allocated Budget'), findsOneWidget);
+      expect(find.text('Total Spent'), findsOneWidget);
+      expect(find.text('Available Balance'), findsOneWidget);
+      // three separate label boxes that do not overlap horizontally
+      final r = [
+        t.getRect(find.text('Allocated Budget')),
+        t.getRect(find.text('Total Spent')),
+        t.getRect(find.text('Available Balance')),
+      ];
+      expect(r[0].right, lessThanOrEqualTo(r[1].left + 0.5));
+      expect(r[1].right, lessThanOrEqualTo(r[2].left + 0.5));
+    }
   });
 
-  testWidgets('admin labels are unchanged and the Edit chip shows', (t) async {
+  testWidgets('the title names the canteen for a cashier and says Console for an admin', (t) async {
+    await t.pumpWidget(host(card()));
+    expect(find.text('Monthly Budget - Main Canteen'), findsOneWidget);
     await t.pumpWidget(host(card(admin: true)));
-    expect(find.text('Allocated Fund'), findsOneWidget);
-    expect(find.text('Total Spent'), findsOneWidget);
-    expect(find.text('Available Balance'), findsOneWidget);
     expect(find.text('Monthly Budget Console'), findsOneWidget);
     expect(find.text('Edit'), findsOneWidget);
   });
