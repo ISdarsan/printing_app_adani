@@ -20,7 +20,11 @@ Built 2026-11-02 from branch `feature/ui-modernization-performance` (rebuilt aft
 
 The build output folder is git-ignored, so the APK is not in the repository. Copy it somewhere safe if you want to keep it.
 
-## STOP: deploy the Firestore indexes first (found during first QA run)
+## DONE 2026-11-02: Firestore indexes deployed
+
+The 5 indexes below were deployed to `canteen-app-adani` with `firebase deploy --only firestore:indexes --config firebase.indexes.json --project canteen-app-adani` (you granted permission; exit 0, rules and data untouched). A read-only listing confirms all 5 exist. They may take a few minutes to finish building: check Firebase Console -> Firestore -> Indexes for **Enabled**, then tap *Try again* on any screen that still shows the setup message. The original explanation is kept below for the record.
+
+## Why the indexes were needed (found during first QA run)
 
 This build reads data with branch-filtered, date-ordered queries. Firestore needs **composite indexes** for them, and the production project does **not have them yet** because indexes have never been deployed. Without them these screens fail with `failed-precondition: The query requires an index` (the app now says "needs a one-time database setup, please tell the admin"): Daily Sales Report, Today's Sales, All Bills, Monthly breakdown, Expenses, Notices, Cash closing history, and the menu list with sorting.
 
