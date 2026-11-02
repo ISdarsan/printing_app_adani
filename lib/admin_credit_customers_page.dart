@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'credit_detail_page.dart';
 
 class AdminCreditCustomersPage extends StatefulWidget {
@@ -62,9 +63,10 @@ class _AdminCreditCustomersPageState extends State<AdminCreditCustomersPage> {
                           color: AppColors.accentBlue));
                 }
                 if (snapshot.hasError) {
-                  return Center(
-                      child: Text('Error: ${snapshot.error}',
-                          style: const TextStyle(color: Colors.white)));
+                  return AppErrorState(
+                      inline: true,
+                      error: snapshot.error,
+                      onRetry: () => setState(() {}));
                 }
 
                 var docs = snapshot.data?.docs ?? [];

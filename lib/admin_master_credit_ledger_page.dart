@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'bill_detail_page.dart';
 
 class AdminMasterCreditLedgerPage extends StatefulWidget {
@@ -106,9 +107,10 @@ class _AdminMasterCreditLedgerPageState
                           color: AppColors.accentBlue));
                 }
                 if (snapshot.hasError) {
-                  return Center(
-                      child: Text('Error: ${snapshot.error}',
-                          style: const TextStyle(color: Colors.white)));
+                  return AppErrorState(
+                      inline: true,
+                      error: snapshot.error,
+                      onRetry: () => setState(() {}));
                 }
 
                 var docs = snapshot.data?.docs ?? [];

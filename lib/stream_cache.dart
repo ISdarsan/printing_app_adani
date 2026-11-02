@@ -11,10 +11,12 @@ import 'dart:async';
 /// Rules this class follows so that behaviour stays identical to a fresh stream:
 ///  * one entry per `name`, so two builders that previously had two listeners
 ///    still have two listeners (no late subscriber missing the first snapshot);
-///  * streams are wrapped with `asBroadcastStream()`, so a builder that is
-///    removed and later re-created can listen again without a
-///    "stream already listened to" error. The upstream listener is cancelled
-///    as soon as nobody listens;
+///  * Firestore `snapshots()` streams (and `.map()` of them) are already
+///    broadcast streams: they can be listened to again after the last listener
+///    left, and the native listener is closed when the last listener leaves.
+///    They are cached as they are. Only a single-subscription source is wrapped
+///    with `asBroadcastStream(onCancel: cancel)` so it never leaks, which means
+///    such a source cannot be listened to again after its listener left;
 ///  * changing the signature, or calling [reset] (used by Retry), discards all
 ///    entries so the next build opens fresh listeners.
 class StreamCache {
@@ -30,8 +32,12 @@ class StreamCache {
       _streams.clear();
       _signature = signature;
     }
-    return (_streams[name] ??= make().asBroadcastStream()) as Stream<T>;
+    return (_streams[name] ??= _share(make())) as Stream<T>;
   }
+
+  static Stream<T> _share<T>(Stream<T> source) => source.isBroadcast
+      ? source
+      : source.asBroadcastStream(onCancel: (sub) => sub.cancel());
 
   /// Forget everything; the next [get] creates new streams (Retry button).
   void reset() => _streams.clear();

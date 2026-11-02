@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'canteen_provider.dart';
 
 class MenuViewPage extends StatefulWidget {
@@ -59,9 +60,10 @@ class _MenuViewPageState extends State<MenuViewPage> {
                           CircularProgressIndicator(color: AppColors.gradBlue));
                 }
                 if (snap.hasError) {
-                  return Center(
-                      child: Text('Error: ${snap.error}',
-                          style: AppText.style(color: AppColors.accentRed)));
+                  return AppErrorState(
+                      inline: true,
+                      error: snap.error,
+                      onRetry: () => setState(() {}));
                 }
                 if (!snap.hasData || snap.data!.docs.isEmpty) {
                   return Center(

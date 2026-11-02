@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'money.dart';
 import 'sync_status.dart';
 import 'canteen_provider.dart';
@@ -40,6 +41,11 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
   @override
   void initState() {
     super.initState();
+    _openStreams();
+  }
+
+  /// Opens (or re-opens, for Retry) the three listeners.
+  void _openStreams() {
     _customerStream = FirebaseFirestore.instance
         .collection('creditCustomers')
         .doc(widget.customerId)
@@ -585,9 +591,10 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
               child: CircularProgressIndicator(color: AppColors.accentBlue));
         }
         if (snapshot.hasError) {
-          return Center(
-              child: Text('Error: ${snapshot.error}',
-                  style: const TextStyle(color: Colors.white)));
+          return AppErrorState(
+              inline: true,
+              error: snapshot.error,
+              onRetry: () => setState(_openStreams));
         }
 
         var docs = snapshot.data?.docs ?? [];
@@ -690,9 +697,10 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
               child: CircularProgressIndicator(color: AppColors.accentBlue));
         }
         if (snapshot.hasError) {
-          return Center(
-              child: Text('Error: ${snapshot.error}',
-                  style: const TextStyle(color: Colors.white)));
+          return AppErrorState(
+              inline: true,
+              error: snapshot.error,
+              onRetry: () => setState(_openStreams));
         }
 
         var docs = snapshot.data?.docs ?? [];
