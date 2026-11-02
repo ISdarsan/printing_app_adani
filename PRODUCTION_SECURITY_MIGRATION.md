@@ -25,6 +25,8 @@ Because the rules have always been open, the app has **never been exercised agai
 | Phase-1 stopgap rules | `proposals/firestore.rules.stopgap`, SHA-256 `d8ef0f4b1e13e44683e695aa3f4902b97a18ded11d8dafad83f1372113a7c728` |
 | Deploy / rollback configs | `firebase.candidate.json`, `firebase.stopgap.json`, `firebase.rollback.json` (each points to one rules file; the emulator loads all three without error; their use on production is untested) |
 
+**Checksum note:** the hashes above were taken on the files with LF line endings. Git on Windows may check them out with CRLF, which changes the SHA-256 of identical rules. If a hash differs, do not assume tampering: run `node tool/compare_rules.mjs --deployed-file <copy of the file> --repo-file proposals/firestore.rules.candidate`, which ignores line endings and comments, and expect exit 0.
+
 ## 3. The recommended path: two phases
 | Phase | Rules | Effect for real staff | Closes |
 |---|---|---|---|
