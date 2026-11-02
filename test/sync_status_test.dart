@@ -352,6 +352,13 @@ void main() {
               existsOnServer: () async => false),
           throwsA(anything));
     });
+    test('a denied confirmation read (missing document) does not hide the original error', () async {
+      await expectLater(
+          confirmedSet(
+              write: () async => throw 'permission-denied: original',
+              existsOnServer: () async => throw 'permission-denied: cannot read a missing document'),
+          throwsA(predicate((e) => e.toString().contains('original'))));
+    });
     test('unrelated errors are rethrown without touching the server', () async {
       var reads = 0;
       await expectLater(

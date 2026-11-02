@@ -51,3 +51,8 @@ Regression proof: the **entire** emulator suite (68 tests: rules, query shapes, 
 
 ## Open question
 Do you also want cashiers to lose *editing* of prices (more sensitive than deleting)? That is a separate decision; this proposal does not change it.
+
+---
+
+## Update: superseded by the production security migration
+The deployed rules turned out to be fully open (no rule exists to patch), so the menu change is delivered as part of `proposals/firestore.rules.candidate` (phase 2), which already contains `allow delete: if isAdmin();`. Deployment follows PRODUCTION_SECURITY_MIGRATION.md; the "apply to the verified deployed rules" step is moot because there is nothing to preserve in the deployed file. The separate one-line proposal file remains for reference.

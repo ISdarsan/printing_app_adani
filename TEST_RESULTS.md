@@ -46,3 +46,24 @@ Branch `stabilize/audit-and-modernize`, release validation phase. All data synth
 ## Environment notes
 - Several emulator processes from earlier interrupted runs are still alive; every run used a fresh port through a temporary `firebase.test.json` (deleted afterwards). Suites read `FIRESTORE_EMULATOR_HOST` and `RULES_FILE`.
 - The transaction suite takes about 65 s (two real connection cuts wait for the SDK to give up, about 12-14 s each).
+
+---
+
+# Security migration phase (candidate rules)
+
+| Suite | Result |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **240 passed** (adds the B-32 source guard, 3 tests, and a `confirmedSet` test) |
+| **Whole emulator suite, default rules** (`security-tests/*.test.mjs`, 9 files) | **176 passed, 0 failed** |
+| Older emulator suites (rules, paging, analytics, transactions, legacy audit) with `RULES_FILE=proposals/firestore.rules.candidate` | **60 passed** (and 60 against the repository rules) |
+| `candidate-rules.test.mjs` | **97 passed** |
+| `menu-delete-proposal.test.mjs` | 10 passed |
+| `stopgap-rules.test.mjs` | **9 passed** |
+| `legacy-audit.test.mjs` (now with the staff lock-out check) | 7 passed |
+| `tool/rules_diff.test.mjs` | 9 passed |
+| `tool/check_indexes.mjs` | OK |
+
+What `candidate-rules.test.mjs` covers: the deployed (open) rules versus the candidate on 19 attack scenarios; 5 identities (signed-out, stranger, deactivated, wrong-case role, role-less) across all collections; privilege escalation; isolation for 8 collections; the branch-`main` leak regression; the cashier and admin operation matrices with Dart payloads; branch `main` end to end (2 variants); financial protections; deny-by-default; B-32; old-build compatibility and breakage; documented residual risks.
+
+**Not tested:** any device; the production rules compiler (`--dry-run` on production is the real check); the Android Firestore SDK; other clients of the database; real latency.

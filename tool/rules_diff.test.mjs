@@ -71,3 +71,19 @@ test('markdown report lists every rule and the differences', () => {
   assert.match(md, /```diff/);
   assert.match(md, /\| function \| `isAdmin` \| IDENTICAL \|/);
 });
+
+test('REGRESSION: a long comment header (blank lines after stripping) does not hide the rules', () => {
+  const header = ['// line one', '//', '// line three', '', '', ''].join('\n');
+  const inner = ["rules_version = '2';", '// comment', '', '// another', ''].join('\n');
+  const withHeader = header + repo.replace("rules_version = '2';\n", inner);
+  const p = parseRules(withHeader);
+  assert.equal(p.functions.size, 10);
+  assert.equal(p.matches.size, 13);
+  assert.equal(compareRules(withHeader, repo).identical, true);
+});
+
+test('an empty or garbage source parses to nothing and is reported as different from real rules', () => {
+  const res = compareRules('', repo);
+  assert.equal(res.identical, false);
+  assert.ok(res.rows.every((r) => r.status === 'ONLY_REPOSITORY'));
+});

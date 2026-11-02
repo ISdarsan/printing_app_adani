@@ -1,0 +1,42 @@
+rules_version = '2';
+// =============================================================================
+// STOPGAP rules, PHASE 1 (NOT DEPLOYED). See PRODUCTION_SECURITY_MIGRATION.md.
+//
+// Purpose: close the internet-facing hole at once, with NO change for real staff.
+//
+// Deployed today:  any signed-in account may read and write everything.
+// This stopgap:    the same, but only for an ACTIVE STAFF MEMBER, i.e. a signed-in
+//                  user whose own canteenStaff/{uid} record exists and is not
+//                  `active: false`. Everything else (strangers, self-registered
+//                  accounts, deactivated staff, signed-out clients) gets nothing.
+//
+// It deliberately does NOT enforce roles, branches or field rules: every
+// currently released app build keeps working exactly as it does today. Those
+// protections arrive with the full candidate (firestore.rules.candidate) in
+// phase 2, after the new app build is in use.
+//
+// Known limits of the stopgap (all exist today too): any staff member can still
+// read other branches, edit staff records (including their own role) and delete
+// data. That is why phase 2 is required.
+// =============================================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isActiveStaff() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/canteenStaff/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/canteenStaff/$(request.auth.uid)).data.get('active', true) == true;
+    }
+
+    // A user must be able to read their OWN staff record even when it is missing
+    // or deactivated, so the app can show "role not found" / "account
+    // deactivated" instead of an error. This reveals nothing about anyone else.
+    match /canteenStaff/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if isActiveStaff();
+    }
+
+    match /{document=**} {
+      allow read, write: if isActiveStaff();
+    }
+  }
+}

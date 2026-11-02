@@ -109,6 +109,31 @@ async function readAll(db, name, pageSize = 500) {
   return out;
 }
 
+/**
+ * Lock-out check for the stricter production rules. Under them a person keeps
+ * access only if their staff record exists, is not `active: false`, and has
+ * role 'admin' or 'cashier' (exactly). Output is document ids and counts only.
+ */
+export function staffReadiness(staffDocs, canteenIds) {
+  const r = { total: staffDocs.length, admins: 0, activeAdmins: 0, cashiers: 0, activeCashiers: 0,
+    invalidRole: [], inactive: [], cashierWithoutCanteen: [], unknownCanteen: [], lockoutRisk: false };
+  for (const d of staffDocs) {
+    const x = d.data();
+    const active = x.active !== false;
+    const role = x.role;
+    if (role !== 'admin' && role !== 'cashier') { r.invalidRole.push(d.id); continue; }
+    if (!active) r.inactive.push(d.id);
+    if (role === 'admin') { r.admins++; if (active) r.activeAdmins++; }
+    else { r.cashiers++; if (active) r.activeCashiers++; }
+    if (role === 'cashier') {
+      if (!isNonEmptyString(x.canteenId)) r.cashierWithoutCanteen.push(d.id); // acts as branch 'main'
+      else if (!canteenIds.has(x.canteenId)) r.unknownCanteen.push(d.id);
+    }
+  }
+  r.lockoutRisk = r.activeAdmins === 0;
+  return r;
+}
+
 export async function runAudit(db, { sampleSize = 10 } = {}) {
   const [canteenDocs, staffDocs] = await Promise.all([readAll(db, 'canteens'), readAll(db, 'canteenStaff')]);
   const ctx = {
@@ -138,6 +163,7 @@ export async function runAudit(db, { sampleSize = 10 } = {}) {
   });
 
   const report = { generatedAt: new Date().toISOString(), readOnly: true, collections: {}, totals: {} };
+  report.staff = staffReadiness(staffDocs, ctx.canteenIds);
   const names = ['bills', 'expenses', 'repayments', 'cashReconciliations', 'creditCustomers', 'dailyStats', 'notifications', 'menuItems', 'canteenStaff'];
   for (const name of names) {
     const docs = name === 'creditCustomers' ? customers : name === 'canteenStaff' ? staffDocs : await readAll(db, name);

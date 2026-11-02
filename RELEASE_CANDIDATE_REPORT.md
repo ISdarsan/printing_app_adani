@@ -7,7 +7,7 @@ Branch `stabilize/audit-and-modernize`, after the release validation phase.
 
 | Gate | Status | Who |
 |---|---|---|
-| G1 Production rules compared with the repository | **OPEN: `deployed.rules` not supplied** | you |
+| G1 Production rules compared with the repository | **DONE: production rules are fully open (P0). Phase-1 stopgap and phase-2 candidate prepared and tested; NOT deployed** | you decide (PRODUCTION_SECURITY_MIGRATION.md) |
 | G2 Five indexes deployed and READY | **OPEN: not deployed** | you (after confirmation) |
 | G3 Cashier device test (nine screens + the added checks) | **OPEN: not performed** | you / a tester with a phone |
 | G4 Code, tests, emulator evidence | **CLOSED: green** | done |
@@ -60,3 +60,11 @@ A release should not go out until G1-G3 are closed, because G1 decides how serio
 - [ ] Legacy backfill (separate project)
 
 UI redesign has not been started.
+
+---
+
+## Update after the production rules comparison
+- **G1 is closed in the sense that the answer is known, and it is a P0 finding:** production Firestore rules allow any signed-in account to read and write everything. Do not wait for G2/G3 to address this: the phase-1 stopgap rules change nothing for real staff and close the exposure.
+- B-32 is confirmed relevant: the candidate rules deny cashier reads of missing documents, which today's open rules allow. The app no longer depends on such reads (guarded by a test).
+- The repository rules were found to be unsafe as written (main-branch leak, cash-closing mismatch); both are fixed in the candidate.
+- Remaining gates unchanged: indexes (G2) and device testing (G3). Rules phase 2 must wait for adoption of the new app build.

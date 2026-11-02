@@ -274,7 +274,16 @@ Future<void> confirmedSet({
     await write();
   } catch (e) {
     final ambiguous = (isDeniedOrExists ?? _defaultAmbiguous)(e);
-    if (ambiguous && await existsOnServer()) return;
+    if (ambiguous) {
+      // A cashier is denied when reading a document that does not exist, so a
+      // failing confirmation read means "not confirmed", never a new error that
+      // would hide the original one.
+      var exists = false;
+      try {
+        exists = await existsOnServer();
+      } catch (_) {}
+      if (exists) return;
+    }
     rethrow;
   }
 }

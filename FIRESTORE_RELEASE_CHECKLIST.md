@@ -98,3 +98,14 @@ The full per-screen checklist is CASHIER_DEVICE_TEST_PLAN.md. Minimum smoke test
 
 ## Rollback
 App: previous Play Store release. Indexes: delete in the Console (additive, harmless). Nothing else was changed in Firebase.
+
+---
+
+# Update: rules are now part of the release plan (security migration)
+
+The rules comparison was performed: **production runs completely open rules** (any signed-in account can read and write everything). This supersedes the statement above that rules are not part of the release. The full plan, commands, lock-out check and rollback are in **PRODUCTION_SECURITY_MIGRATION.md**:
+1. Pre-flight (read-only): Authentication users, staff lock-out check (`legacy-audit.mjs`, `staff` section).
+2. **Phase 1 stopgap** (`firebase.stopgap.json`): no change for real staff, closes strangers. Can go first.
+3. Indexes, then the app build (works with all three rule sets).
+4. **Phase 2 candidate** (`firebase.candidate.json`) after most cashiers are on the new build.
+Rollback: `firebase.rollback.json` (original open rules; prefer rolling back to the stopgap). Always pass `--project canteen-app-adani`. Nothing has been deployed.

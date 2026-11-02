@@ -1,0 +1,5 @@
+{
+  "firestore": {
+    "rules": "backups/deployed.rules.2026-11-02.ORIGINAL"
+  }
+}

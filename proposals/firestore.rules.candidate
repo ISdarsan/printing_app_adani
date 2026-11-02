@@ -1,0 +1,276 @@
+rules_version = '2';
+// =============================================================================
+// CANDIDATE production rules (NOT DEPLOYED). See PRODUCTION_SECURITY_MIGRATION.md.
+//
+// Replaces the deployed rules, which are only:
+//     match /{document=**} { allow read, write: if request.auth != null; }
+// (any signed-in account can read and write everything, including its own role).
+//
+// Base: repository firestore.rules.  Lines marked [CANDIDATE] differ from it.
+// =============================================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function staffPath(uid) {
+      return /databases/$(database)/documents/canteenStaff/$(uid);
+    }
+
+    function staffExists() {
+      return signedIn() && exists(staffPath(request.auth.uid));
+    }
+
+    function staffData() {
+      return get(staffPath(request.auth.uid)).data;
+    }
+
+    // [CANDIDATE] Authenticated AND a staff document exists AND not deactivated
+    // AND the role is one the app knows. A record with a missing or unknown role
+    // (for example "Admin" with a capital A) gets no access at all.
+    function activeStaff() {
+      return staffExists() &&
+        staffData().get('active', true) == true &&
+        staffData().get('role', '') in ['admin', 'cashier'];
+    }
+
+    function isAdmin() {
+      return activeStaff() && staffData().get('role', '') == 'admin';
+    }
+
+    function staffCanteenId() {
+      return staffData().get('canteenId', 'main');
+    }
+
+    // Branch isolation: admins see everything, others only their own canteen.
+    //
+    // [CANDIDATE] SECURITY FIX. The previous helper read
+    //     data.get('canteenId', 'main') == staffCanteenId()
+    // For a LIST query that does not filter on canteenId the rules engine has no
+    // value for the field, so get() returns its default 'main', and for any
+    // staff member of branch 'main' the unfiltered query was allowed: it returned
+    // the records of EVERY branch (verified in the emulator). The field is now
+    // read directly: a query must carry `canteenId == <own branch>` to be allowed,
+    // and a record without a canteenId can only be read or changed by an admin
+    // (until the legacy backfill tags it). The app already queries this way.
+    function canReadBranch(data) {
+      return isAdmin() ||
+        (activeStaff() && data.canteenId == staffCanteenId());
+    }
+
+    function canWriteBranch(data) {
+      return activeStaff() &&
+        (isAdmin() || data.canteenId == staffCanteenId());
+    }
+
+    function nonDecreasing(field) {
+      return !request.resource.data.keys().hasAny([field]) ||
+        request.resource.data[field] >= resource.data.get(field, 0);
+    }
+
+    match /canteenStaff/{uid} {
+      // A user may read ONLY their own staff document (needed at sign-in, also
+      // for a deactivated account so the app can say so). Nobody but an admin
+      // can list, create, change or delete staff: no self-promotion.
+      allow get: if signedIn() && request.auth.uid == uid || isAdmin();
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /canteens/{canteenId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /menuItems/{itemId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if canWriteBranch(request.resource.data) &&
+        request.resource.data.canteenId is string;
+      // [CANDIDATE] admins may also re-tag an item (needed by the legacy
+      // backfill); the field read is null-safe for legacy items.
+      allow update: if isAdmin() || (
+        canWriteBranch(resource.data) &&
+        request.resource.data.get('canteenId', 'main') ==
+          resource.data.get('canteenId', 'main')
+      );
+      // [CANDIDATE] business decision: menu items are deleted by admins only.
+      allow delete: if isAdmin();
+    }
+
+    match /bills/{billId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if canWriteBranch(request.resource.data) &&
+        request.resource.data.get('createdBy', '') == request.auth.uid &&
+        request.resource.data.get('items', []) is list &&
+        request.resource.data.get('totalAmount', -1) is number &&
+        request.resource.data.totalAmount >= 0 &&
+        // [CANDIDATE] only the three real payment modes
+        request.resource.data.get('paymentMode', '') in ['Cash', 'UPI', 'Credit'] &&
+        // [CANDIDATE] the bill time is the server's time: no back-dating
+        request.resource.data.get('timestamp', null) == request.time &&
+        // [CANDIDATE] a new credit bill starts fully pending
+        (request.resource.data.paymentMode != 'Credit' || (
+          request.resource.data.get('creditStatus', '') == 'Pending' &&
+          request.resource.data.get('pendingAmount', -1) == request.resource.data.totalAmount
+        ));
+      // Cashiers may only record a repayment's effect on a CREDIT bill.
+      // [CANDIDATE] the pending amount can only go down (never be raised or
+      // reset), stays >= 0, status is Pending/Paid, and Paid means 0 pending.
+      allow update: if isAdmin() || (
+        canReadBranch(resource.data) &&
+        resource.data.get('paymentMode', '') == 'Credit' &&
+        request.resource.data.get('canteenId', 'main') ==
+          resource.data.get('canteenId', 'main') &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['pendingAmount', 'creditStatus']) &&
+        request.resource.data.get('pendingAmount', -1) is number &&
+        request.resource.data.get('pendingAmount', -1) >= 0 &&
+        request.resource.data.get('pendingAmount', -1) <=
+          resource.data.get('pendingAmount', resource.data.get('totalAmount', 0)) &&
+        request.resource.data.get('creditStatus', 'Pending') in ['Pending', 'Paid'] &&
+        (request.resource.data.get('creditStatus', 'Pending') != 'Paid' ||
+          request.resource.data.get('pendingAmount', -1) == 0)
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /dailyStats/{statsId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if canWriteBranch(request.resource.data) &&
+        request.resource.data.canteenId is string &&
+        request.resource.data.date is string &&
+        request.resource.data.keys().hasOnly([
+          'canteenId', 'canteenName', 'date', 'totalSales', 'totalBills',
+          'totalCash', 'totalUpi', 'totalCredit', 'creditReceived', 'lastUpdated'
+        ]);
+      allow update: if isAdmin() || (
+        canReadBranch(resource.data) &&
+        request.resource.data.canteenId == resource.data.get('canteenId', 'main') &&
+        request.resource.data.date == resource.data.date &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'canteenName', 'totalSales', 'totalBills', 'totalCash', 'totalUpi',
+          'totalCredit', 'creditReceived', 'lastUpdated'
+        ]) &&
+        nonDecreasing('totalSales') &&
+        nonDecreasing('totalBills') &&
+        nonDecreasing('totalCash') &&
+        nonDecreasing('totalUpi') &&
+        nonDecreasing('totalCredit') &&
+        nonDecreasing('creditReceived')
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if canWriteBranch(request.resource.data) &&
+        request.resource.data.get('userId', '') == request.auth.uid &&
+        request.resource.data.get('amount', -1) is number &&
+        request.resource.data.amount > 0;
+      allow update, delete: if isAdmin();
+    }
+
+    match /creditCustomers/{customerId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if canWriteBranch(request.resource.data) &&
+        request.resource.data.get('phone', '') is string &&
+        request.resource.data.get('totalPending', 0) is number &&
+        request.resource.data.totalPending >= 0;
+      allow update: if isAdmin() || (
+        canReadBranch(resource.data) &&
+        request.resource.data.get('canteenId', 'main') ==
+          resource.data.get('canteenId', 'main') &&
+        // [CANDIDATE] null-safe for legacy customers without a phone field
+        request.resource.data.get('phone', '') == resource.data.get('phone', '') &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'totalPending', 'lastUpdated'
+        ]) &&
+        request.resource.data.get('totalPending', 0) is number &&
+        request.resource.data.totalPending >= 0
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /repayments/{repaymentId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if canWriteBranch(request.resource.data) &&
+        request.resource.data.get('amount', 0) is number &&
+        request.resource.data.amount > 0 &&
+        // [CANDIDATE] server time: no back-dated repayments
+        request.resource.data.get('timestamp', null) == request.time;
+      allow update, delete: if isAdmin();
+    }
+
+    match /cashReconciliations/{reconciliationId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if canWriteBranch(request.resource.data) &&
+        // [CANDIDATE] identity: the closing must be signed by the caller, either
+        // with their uid (current app) or, TRANSITIONALLY, with their own
+        // verified token e-mail (app builds already in the field send only
+        // submittedBy = e-mail). Neither lets a user sign as someone else.
+        (request.resource.data.get('submittedByUid', '') == request.auth.uid ||
+          (request.auth.token.get('email', '') != '' &&
+            request.resource.data.get('submittedBy', '') == request.auth.token.email)) &&
+        request.resource.data.get('actualCash', -1) is number &&
+        request.resource.data.actualCash >= 0 &&
+        // [CANDIDATE] server time
+        request.resource.data.get('timestamp', null) == request.time;
+      allow update, delete: if isAdmin();
+    }
+
+    match /notifications/{noticeId} {
+      allow read: if canReadBranch(resource.data);
+      allow create: if isAdmin() &&
+        request.resource.data.get('canteenId', '') is string &&
+        request.resource.data.get('title', '') is string &&
+        request.resource.data.get('message', '') is string;
+      allow update: if activeStaff() &&
+        canReadBranch(resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']) &&
+        request.resource.data.get('readBy', []) is list &&
+        request.resource.data.readBy.hasOnly(
+          resource.data.get('readBy', []).concat([request.auth.uid])
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /monthlyFunds/{monthId} {
+      // One organisation-wide fund per month (business decision): every active
+      // staff member may read it, only admins may set it.
+      allow read: if activeStaff();
+      allow create, update: if isAdmin() &&
+        request.resource.data.get('fundAmount', -1) is number &&
+        request.resource.data.fundAmount >= 0;
+      allow delete: if isAdmin();
+    }
+
+    match /counters/{counterId} {
+      // Per-canteen counters: billCounter_<canteenId>. The legacy global
+      // 'billCounter' stays readable so 'main' can continue its sequence.
+      allow get: if activeStaff() && (
+        counterId == 'billCounter' ||
+        isAdmin() ||
+        counterId == 'billCounter_' + staffCanteenId()
+      );
+      allow list: if false;
+      allow create: if activeStaff() &&
+        (isAdmin() || counterId == 'billCounter_' + staffCanteenId()) &&
+        counterId.matches('billCounter_.+') &&
+        request.resource.data.keys().hasOnly(['canteenId', 'lastNumber']) &&
+        counterId == 'billCounter_' + request.resource.data.canteenId &&
+        request.resource.data.lastNumber is int &&
+        request.resource.data.lastNumber >= 1;
+      allow update: if activeStaff() &&
+        (isAdmin() || counterId == 'billCounter_' + staffCanteenId()) &&
+        counterId.matches('billCounter_.+') &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastNumber']) &&
+        request.resource.data.lastNumber == resource.data.lastNumber + 1;
+      allow delete: if isAdmin();
+    }
+
+    // Everything not matched above is denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

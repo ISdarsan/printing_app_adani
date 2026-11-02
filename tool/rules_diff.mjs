@@ -68,7 +68,9 @@ export function parseRules(source) {
       } else {
         // skip to next token boundary
         const nxt = rest.search(/\n/);
-        i += nxt <= 0 ? rest.length : nxt + 1;
+        // advance past this line; a blank line (nxt === 0) must advance by one,
+        // not swallow the rest of the file
+        i += nxt < 0 ? rest.length : nxt + 1;
       }
     }
   };

@@ -124,6 +124,9 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
           'note': _noteController.text.trim(),
           'submittedBy':
               FirebaseAuth.instance.currentUser?.email ?? 'Unknown Cashier',
+          // Required by the security rules: the closing is signed with the
+          // caller's uid, so it cannot be filed in someone else's name.
+          'submittedByUid': FirebaseAuth.instance.currentUser?.uid,
           'timestamp': FieldValue.serverTimestamp(),
         });
         });

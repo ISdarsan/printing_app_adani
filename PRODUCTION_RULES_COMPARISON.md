@@ -1,64 +1,57 @@
 # Production Rules Comparison
 
-## Status: NOT PERFORMED (blocked on input)
+## Status: PERFORMED (2 Nov 2026) from the saved `deployed.rules`
+Input: `deployed.rules` supplied by you (11 lines). Preserved untouched as `backups/deployed.rules.2026-11-02.ORIGINAL`, SHA-256 `ae2ee8da028777e9c26193163c1b318d7a4d4d54c5de38916a3a714ded6a819a`.
+Tool: `node tool/compare_rules.mjs --deployed-file backups/deployed.rules.2026-11-02.ORIGINAL` (rule by rule; no token or credential was used or printed).
 
-The deployed Firestore rules could not be fetched in this session. The approved method needs one of two inputs and neither was available:
+## Result: the deployed rules are completely open
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+```
+**Any signed-in account can read, create, change and delete every document in every collection**, including `canteenStaff` (so any user can make themselves an admin). No branch isolation, no roles, no `active` check, no field validation.
 
-| Input | Available? |
+## Rule-by-rule comparison with the repository `firestore.rules` (23 elements)
+| Kind | Element | Deployed | Repository |
+|---|---|---|---|
+| function | `signedIn`, `staffPath`, `staffExists`, `staffData`, `activeStaff`, `isAdmin`, `staffCanteenId`, `canReadBranch`, `canWriteBranch`, `nonDecreasing` (10) | absent | present |
+| match | `/canteenStaff/{uid}` | absent (covered by the catch-all) | self-read, admin-only writes |
+| match | `/canteens/{canteenId}` | absent | admin only |
+| match | `/menuItems/{itemId}` | absent | branch scoped; delete allowed for branch staff |
+| match | `/bills/{billId}` | absent | branch scoped create; limited update; admin delete |
+| match | `/dailyStats/{statsId}` | absent | branch scoped; non-decreasing totals |
+| match | `/expenses/{expenseId}` | absent | branch scoped create; admin edit/delete |
+| match | `/creditCustomers/{customerId}` | absent | branch scoped; limited update |
+| match | `/repayments/{repaymentId}` | absent | branch scoped create; admin edit/delete |
+| match | `/cashReconciliations/{reconciliationId}` | absent | branch scoped create (needs `submittedByUid`); admin edit/delete |
+| match | `/notifications/{noticeId}` | absent | branch read; admin create; `readBy` update |
+| match | `/monthlyFunds/{monthId}` | absent | staff read; admin write |
+| match | `/counters/{counterId}` | absent | per-branch, +1 only |
+| match | `/{document=**}` | `allow read, write: if request.auth != null` | `allow read, write: if false` |
+
+All 23 elements differ. None of the repository's protections is deployed.
+
+## Security implications
+| Collection | What is possible today (deployed) |
 |---|---|
-| `FIREBASE_ACCESS_TOKEN` environment variable (short-lived token of your own account) | **No**, not set |
-| A rules file copied from Firebase Console > Firestore > Rules | **No**, none provided |
-| `gcloud` on this machine (to mint such a token) | **No**, not installed |
+| `canteenStaff` | any user lists all staff, creates a staff record for themselves with `role: admin`, changes anyone's role or branch, deletes staff |
+| `bills`, `repayments`, `creditCustomers`, `dailyStats` | any user, of any branch, reads, edits or deletes financial history; wipes a customer's debt; lowers sales |
+| `cashReconciliations` | edit or delete submitted cash closings (hides shortages) |
+| `expenses`, `monthlyFunds` | edit or delete expenses; change the monthly fund |
+| `notifications`, `menuItems`, `counters`, `canteens` | send notices to any branch, delete menu items, reset bill numbers, create canteens |
+| everything | readable by **any signed-in account**, which very likely includes anyone who registers one (staff logins are created from the app with `createUserWithEmailAndPassword`, so sign-up is presumably open; the Authentication settings were not visible to me) |
 
-The Firebase CLI is signed in, but it has no command that prints deployed rules, and the only other route would be to extract its stored refresh token from disk. I did not do that: the approved method forbids reading credential files, and a stored refresh token is more powerful than the read-only access this task needs. **No comparison result exists, and none is claimed.** The repository rules are NOT known to match production.
+## Intentional or problematic?
+**Problematic.** The comment in the deployed file ("allows ANY logged-in user to read and write to ALL collections") shows it is a development default that was never replaced. Do not treat it as deliberate. Production was not changed by this work.
 
-## What is ready (so this takes about a minute for you)
-`tool/compare_rules.mjs` now performs a true rule-by-rule comparison (functions, each collection, each `allow` statement; insensitive to comments, whitespace and line endings). It is read-only, never prints a token, has no deploy path.
+## What was prepared
+See PRODUCTION_SECURITY_MIGRATION.md: a tested two-phase plan (a stopgap that only requires an active staff record and changes nothing for real staff, then the full candidate rules), the preserved backup, and deploy and rollback configs. **Nothing was deployed.**
 
-Option A, no token needed:
-1. Firebase Console > Firestore Database > Rules > select all > copy into a file `deployed.rules`.
-2. `node tool/compare_rules.mjs --deployed-file deployed.rules`
-
-Option B, token from your own shell (never written to disk by the tool):
-```
-gcloud auth print-access-token                      # run in your shell
-$env:FIREBASE_ACCESS_TOKEN = "<token>"              # PowerShell
-node tool/compare_rules.mjs --project canteen-app-adani
-```
-Exit code 0 = identical, 1 = differences (listed per element, `-` deployed / `+` repository), 2 = input or network problem.
-
-Verified (offline): `node --test tool/rules_diff.test.mjs` passes 7/7: parses the real `firestore.rules` into 10 functions and 13 match blocks; reports CRLF/comment/whitespace-only changes as identical; reports a loosened `delete` on `bills` on exactly that collection and operation; reports collections present on only one side; reports a changed helper function; catches a flipped catch-all deny rule. **Not verified:** the live fetch path of option B (no token was available).
-
-## Rule inventory of the repository (what the comparison will check)
-23 elements: 10 helper functions, 12 collection matches, 1 catch-all.
-
-| Element | Intent in the repository | Security meaning if production differed |
-|---|---|---|
-| `signedIn`, `staffPath`, `staffExists`, `staffData` | Identify the caller through `canteenStaff/{uid}` | A change here changes every rule that uses them |
-| `activeStaff` | Staff document exists and `active` is not false | Weaker: deactivated staff keep access |
-| `isAdmin` | active and `role == 'admin'` | Weaker: privilege escalation |
-| `staffCanteenId` | Branch of the caller (default `main`) | Different default would move users between branches |
-| `canReadBranch` / `canWriteBranch` | Admin, or same `canteenId` | **Branch isolation**; the core multi-canteen guarantee |
-| `nonDecreasing` | Non-admins may only increase `dailyStats` counters | Weaker: cashiers could lower sales totals |
-| `canteenStaff` | self-read; admin list/write | Looser: staff enumeration or self-promotion |
-| `canteens` | admin only | |
-| `menuItems` | branch read; create/update own branch (cannot change `canteenId`); **delete: any branch member (repository)** | Repository already lets a cashier delete menu items; production may be stricter (see B-20) |
-| `bills` | branch read; create own branch with `createdBy == uid`; update only pending fields (non-admin); delete admin | Looser update/delete = tampering with sales |
-| `dailyStats` | create with fixed key set; non-decreasing updates for non-admins; delete admin | Looser = a cashier could rewrite daily totals |
-| `expenses` | branch read; create own; update/delete admin | |
-| `creditCustomers` | branch read/create; non-admin update limited to `name`, `totalPending`, `lastUpdated` | Looser = phone/branch rewrite |
-| `repayments` | branch read/create (`amount > 0`); update/delete admin | |
-| `cashReconciliations` | branch read; create own (`submittedByUid == uid`); update/delete admin | Looser = closings editable after submission |
-| `notifications` | branch read; admin create; `readBy` append-only update | |
-| `monthlyFunds` | any active staff read; admin write | |
-| `counters` | per-branch `billCounter_<branch>`; increment by exactly 1; no list | Looser = bill-number manipulation |
-| `/{document=**}` | deny everything else | **If production allowed this, the whole database would be open** |
-
-## How I will interpret a difference (decision guide)
-- Production **stricter** than the repository: usually safe for security but may break app features (for example reads rejected for a screen the repository allows). I will map it to the screen and tell you.
-- Production **looser**: a security finding; I will state the exact exposure and recommend deploying the repository version, but I will not deploy it. Deployment of rules always needs your explicit approval.
-- Only in production: a collection the app does not know. I will list who can read it.
-- Only in the repository: an unreleased rule. Check whether the app version in the Play Store depends on it.
-
-## One known candidate difference
-`menuItems` `delete` is `canReadBranch(...)` in the repository (any member of the branch can delete a menu item). Every other collection restricts delete to admins. If production says `isAdmin()` there, the Add Item screen's delete button would currently fail for cashiers. This is bug B-20 (needs your decision); it is listed here because it is the first thing I would expect the comparison to show.
+## Review finding that affects this comparison
+The repository rules are not safe to deploy as they stand either: staff of branch `main` could list every branch's records by omitting the branch filter, and the cash-closing rule would refuse every closing from the released app. Both are fixed in the candidate (see the migration document, sections 5.2 and 6).

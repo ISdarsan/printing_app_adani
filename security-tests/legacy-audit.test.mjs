@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { after, before, test } from 'node:test';
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import { doc, getDocs, collection, setDoc } from 'firebase/firestore';
-import { classifyCanteen, classifyDate, istDateKey, runAudit } from './legacy-audit.mjs';
+import { classifyCanteen, classifyDate, istDateKey, runAudit, staffReadiness } from './legacy-audit.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let env;
@@ -27,6 +27,9 @@ before(async () => {
       put('canteenStaff/admin-1', { role: 'admin', canteenId: 'main', email: 'admin@x.com' }),
       put('canteenStaff/cn', { role: 'cashier', canteenId: 'north', email: 'cn@x.com' }),
       put('canteenStaff/old', { role: 'cashier', email: 'old@x.com' }), // staff with no branch
+      put('canteenStaff/weird', { role: 'Admin', canteenId: 'north', email: 'w@x.com' }),   // wrong-case role: locked out by the new rules
+      put('canteenStaff/off', { role: 'cashier', canteenId: 'north', active: false }),       // deactivated
+      put('canteenStaff/ghost', { role: 'cashier', canteenId: 'nowhere' }),                  // branch that does not exist
       // bills: 7 docs
       put('bills/b1', { canteenId: 'main', createdBy: 'cn', totalAmount: 1 }),                      // fine
       put('bills/b2', { createdBy: 'cn', totalAmount: 2 }),                                          // missing -> staff-uid north (medium)
@@ -124,7 +127,7 @@ test('audit of the synthetic legacy dataset: counts, evidence and samples', asyn
   assert.equal(c.expenses.recoverable.medium, 1);
   assert.equal(c.notifications.recoverable.low, 1);
   assert.equal(c.menuItems.unrecoverableDefaultMain, 1);
-  assert.equal(c.canteenStaff.total, 3);
+  assert.equal(c.canteenStaff.total, 6);
 
   // bills 6 + customers 2 + repayments 2 + dailyStats 1 + closings 1 + expenses 1 + notices 1 + menu 1 + staff 1
   assert.equal(r.totals.missingCanteenId, 16);
@@ -147,4 +150,27 @@ test('the audit is read-only: it cannot write, and nothing changed', async () =>
 test('it also works for a non-admin only in the sense that it fails loudly (cashiers cannot list collections)', async () => {
   const cashier = env.authenticatedContext('cn').firestore();
   await assert.rejects(runAudit(cashier));
+});
+
+test('staff readiness (lock-out check for the stricter rules)', async () => {
+  const admin = env.authenticatedContext('admin-1').firestore();
+  const r = (await runAudit(admin)).staff;
+  assert.equal(r.total, 6);
+  assert.equal(r.admins, 1);
+  assert.equal(r.activeAdmins, 1);
+  assert.equal(r.cashiers, 4);
+  assert.equal(r.activeCashiers, 3);
+  assert.deepEqual(r.invalidRole, ['weird']);
+  assert.deepEqual(r.inactive, ['off']);
+  assert.deepEqual(r.cashierWithoutCanteen, ['old']);
+  assert.deepEqual(r.unknownCanteen, ['ghost']);
+  assert.equal(r.lockoutRisk, false);
+});
+
+test('staff readiness flags the catastrophic case: no active admin', () => {
+  const mkDoc = (id, data) => ({ id, data: () => data });
+  const r = staffReadiness([mkDoc('a', { role: 'admin', active: false }), mkDoc('b', { role: 'Admin' }), mkDoc('c', { role: 'cashier', canteenId: 'main' })], new Set(['main']));
+  assert.equal(r.activeAdmins, 0);
+  assert.equal(r.lockoutRisk, true);
+  assert.deepEqual(r.invalidRole, ['b']);
 });

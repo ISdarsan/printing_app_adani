@@ -485,10 +485,22 @@ test('NETWORK OUTAGE: a bill transaction fails, nothing is saved or queued; once
     const attempts = new AttemptTracker(); attempts.attempted = true; attempts.key = 'k'; attempts.id = 'req_net';
     let creates = 0;
     const adminDb = adm();
-    await createOnce(attempts,
-      async () => { const q = await getDocsFromServer(query(collection(adminDb, 'bills'), where('canteenId', '==', 'north'), where('clientRequestId', '==', 'req_net'), limit(1))); return q.empty ? null : 'x'; },
-      async () => { creates++; return saveBillTx(db, { requestId: 'req_net', mode: 'Cash', total: 60 }); });
-    assert.equal(creates, 1);
+    // The cashier taps Save again until it goes through. Right after the network
+    // returns the client may still be in reconnect backoff (UNAVAILABLE); every
+    // tap reuses the same request id, which is what makes repeating safe.
+    const deadline = Date.now() + 90000;
+    for (let taps = 1; ; taps++) {
+      try {
+        await createOnce(attempts,
+          async () => { const q = await getDocsFromServer(query(collection(adminDb, 'bills'), where('canteenId', '==', 'north'), where('clientRequestId', '==', 'req_net'), limit(1))); return q.empty ? null : 'x'; },
+          async () => { creates++; return saveBillTx(db, { requestId: 'req_net', mode: 'Cash', total: 60 }); });
+        break;
+      } catch (e) {
+        if (Date.now() > deadline) throw e;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+    assert.ok(creates >= 1);
     assert.equal((await adminSnap('bills/req_net')).totalAmount, 60);
     const st = await adminSnap(`dailyStats/north_${dateKey}`);
     assert.equal(st.totalBills, 2); assert.equal(st.totalSales, 61);        // warm-up bill + this one, each once

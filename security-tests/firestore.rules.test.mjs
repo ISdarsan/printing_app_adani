@@ -17,6 +17,7 @@ import {
   limit,
   orderBy,
   query,
+  serverTimestamp,
   setDoc,
   updateDoc,
   where,
@@ -230,10 +231,12 @@ test('clientRequestId: cashiers can store it and verify with a scoped equality q
   const north = testEnvironment.authenticatedContext('cashier-north').firestore();
   await assertSucceeds(setDoc(doc(north, 'bills/new-bill'), {
     canteenId: 'north', createdBy: 'cashier-north', items: [], totalAmount: 120.5,
+    paymentMode: 'Cash', timestamp: serverTimestamp(),
     clientRequestId: 'req_abc', billId: 'BILL-1', billNumber: 1,
   }));
   await assertSucceeds(setDoc(doc(north, 'repayments/new-rep'), {
     canteenId: 'north', amount: 50, customerPhone: '900', clientRequestId: 'req_rep',
+    paymentMode: 'Cash', timestamp: serverTimestamp(),
   }));
   const found = await assertSucceeds(getDocs(query(collection(north, 'bills'),
     where('canteenId', '==', 'north'), where('clientRequestId', '==', 'req_abc'), limit(1))));
