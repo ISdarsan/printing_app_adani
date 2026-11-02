@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:canteen_adani/stream_cache.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  listenerMeasurement();
+
   test('same name and signature returns the very same stream (no new listener)', () {
     final cache = StreamCache();
     var made = 0;
@@ -88,5 +91,76 @@ void main() {
     await ss.cancel();
     await Future<void>.delayed(Duration.zero);
     expect(cancelledS, isTrue);
+  });
+}
+
+// Measurement: how many Firestore listeners does a screen open when it is
+// rebuilt 10 times (e.g. by a filter change, keyboard, theme or parent update)?
+class _Probe extends StatefulWidget {
+  final bool cached;
+  final void Function(VoidCallback rebuild) onReady;
+  final void Function() onListenerOpened;
+  const _Probe(
+      {super.key,
+      required this.cached,
+      required this.onReady,
+      required this.onListenerOpened});
+
+  @override
+  State<_Probe> createState() => _ProbeState();
+}
+
+class _ProbeState extends State<_Probe> {
+  final StreamCache _cache = StreamCache();
+
+  Stream<int> _makeStream() {
+    // Same shape as Firestore snapshots(): broadcast, native listener opened
+    // in onListen.
+    late final StreamController<int> c;
+    c = StreamController<int>.broadcast(onListen: widget.onListenerOpened);
+    return c.stream;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.onReady(() => setState(() {}));
+  }
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<int>(
+        stream: widget.cached
+            ? _cache.get<int>('x', _makeStream, signature: 'main|day')
+            : _makeStream(),
+        builder: (_, __) => const SizedBox(),
+      );
+}
+
+Future<int> listenersAfterRebuilds(WidgetTester t, {required bool cached}) async {
+  var opened = 0;
+  late VoidCallback rebuild;
+  await t.pumpWidget(MaterialApp(
+      home: _Probe(
+          key: UniqueKey(),
+          cached: cached,
+          onReady: (r) => rebuild = r,
+          onListenerOpened: () => opened++)));
+  for (var i = 0; i < 10; i++) {
+    rebuild();
+    await t.pump();
+  }
+  return opened;
+}
+
+void listenerMeasurement() {
+  testWidgets('MEASURED: 10 rebuilds open 11 listeners without the cache, 1 with it',
+      (t) async {
+    final before = await listenersAfterRebuilds(t, cached: false);
+    final after = await listenersAfterRebuilds(t, cached: true);
+    // ignore: avoid_print
+    print('listeners opened over 1 build + 10 rebuilds: '
+        'without cache=$before, with cache=$after');
+    expect(before, 11);
+    expect(after, 1);
   });
 }
