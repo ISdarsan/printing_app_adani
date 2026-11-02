@@ -26,8 +26,10 @@ before(async () => {
   testEnvironment = await initializeTestEnvironment({
     projectId: 'demo-canteen-security',
     firestore: {
-      host: '127.0.0.1',
-      port: 8080,
+      // `firebase emulators:exec` exports FIRESTORE_EMULATOR_HOST; default to
+      // the port in firebase.json when run by hand.
+      host: (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080').split(':')[0],
+      port: Number((process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080').split(':')[1]),
       rules: fs.readFileSync(path.join(here, '..', 'firestore.rules'), 'utf8'),
     },
   });
@@ -90,6 +92,33 @@ test('cashiers can read only their branch and must scope collection queries', as
     getDocs(query(collection(db, 'bills'), where('canteenId', '==', 'north'))),
   );
   await assertFails(getDocs(collection(db, 'bills')));
+});
+
+test('cashier date-range queries on bills/expenses need a canteenId filter (B-14)', async () => {
+  const db = testEnvironment.authenticatedContext('cashier-north').firestore();
+  const from = new Date('2026-01-01');
+  const to = new Date('2026-12-31');
+  // Shape used today by billing_dashboard, today_sales, daily_sales_report,
+  // all_bills, monthly_sales_breakdown and the cashier expense/fund views.
+  for (const name of ['bills', 'expenses']) {
+    await assertFails(
+      getDocs(query(collection(db, name), where('timestamp', '>=', from), where('timestamp', '<=', to))),
+    );
+    await assertSucceeds(
+      getDocs(query(collection(db, name), where('canteenId', '==', 'north'), where('timestamp', '>=', from), where('timestamp', '<=', to))),
+    );
+  }
+});
+
+test('cashier can read exactly their own dailyStats doc by id (no index needed)', async () => {
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'dailyStats/north_2026-11-02'), {
+      canteenId: 'north', date: '2026-11-02', totalCash: 100,
+    });
+  });
+  const db = testEnvironment.authenticatedContext('cashier-north').firestore();
+  await assertSucceeds(getDoc(doc(db, 'dailyStats/north_2026-11-02')));
+  await assertFails(getDoc(doc(db, 'dailyStats/south_2026-11-02')));
 });
 
 test('cashiers can create branch records but cannot change another branch', async () => {

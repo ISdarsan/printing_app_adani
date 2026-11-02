@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
 import 'canteen_provider.dart';
+import 'financial_metrics.dart';
 
 class CreditDetailPage extends StatefulWidget {
   final String customerId;
@@ -514,10 +515,8 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
             'canteenId': widget.canteenId,
             'canteenName': widget.canteenName,
             'date': todayId,
-            if (paymentMode == 'Cash')
-              'totalCash': FieldValue.increment(amount),
-            if (paymentMode == 'UPI') 'totalUpi': FieldValue.increment(amount),
-            'creditReceived': FieldValue.increment(amount),
+            ...dailyStatsDeltaForRepayment(amount, paymentMode)
+                .map((k, v) => MapEntry(k, FieldValue.increment(v))),
             'lastUpdated': FieldValue.serverTimestamp(),
           },
           SetOptions(merge: true),

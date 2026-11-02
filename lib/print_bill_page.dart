@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'theme.dart';
 import 'canteen_provider.dart';
+import 'financial_metrics.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'printer_bridge.dart';
 
@@ -866,14 +867,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
             'canteenId': selectedCanteenId,
             'canteenName': CanteenProvider.selectedCanteenName,
             'date': dateId,
-            'totalSales': FieldValue.increment(_totalAmount),
-            'totalBills': FieldValue.increment(1),
-            if (_paymentMethod == 'Cash')
-              'totalCash': FieldValue.increment(_totalAmount),
-            if (_paymentMethod == 'UPI')
-              'totalUpi': FieldValue.increment(_totalAmount),
-            if (_paymentMethod == 'Credit')
-              'totalCredit': FieldValue.increment(_totalAmount),
+            ...dailyStatsDeltaForSale(_totalAmount, _paymentMethod)
+                .map((k, v) => MapEntry(k, FieldValue.increment(v))),
             'lastUpdated': FieldValue.serverTimestamp(),
           },
           SetOptions(merge: true),
