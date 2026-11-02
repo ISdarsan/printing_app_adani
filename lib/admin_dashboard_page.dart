@@ -517,11 +517,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       stream: _cached('weekly', _getWeeklyStatsStream),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SizedBox(
-            height: 220,
-            child: Center(
-                child: CircularProgressIndicator(color: AppColors.accentBlue)),
-          );
+          return const SizedBox(height: 220, child: AppLoading());
         }
         if (snapshot.hasError) {
           return AppErrorState(
@@ -1106,13 +1102,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   stream: _cached('recent', _getRecentBillsStream),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: CircularProgressIndicator(
-                              color: AppColors.accentBlue),
-                        ),
-                      );
+                      return const AppLoading();
                     }
                     if (snapshot.hasError) {
                       return AppErrorState(
@@ -1515,8 +1505,7 @@ class _CanteensTabState extends State<_CanteensTab> {
                 onRetry: () => setState(() {}));
           }
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(
-                child: CircularProgressIndicator(color: AppColors.accentGreen));
+            return const AppLoading();
           }
           final docs = snap.data?.docs ?? [];
           if (docs.isEmpty) {
@@ -1787,12 +1776,7 @@ class _AssignedCanteenStaff extends StatelessWidget {
           return AppErrorState(inline: true, error: snap.error);
         }
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.all(16),
-            child: Center(
-                child: CircularProgressIndicator(
-                    color: AppColors.accentGreen, strokeWidth: 2)),
-          );
+          return const AppLoading();
         }
         if (snap.hasError) {
           return Padding(
@@ -1923,8 +1907,7 @@ class _StaffTab extends StatelessWidget {
             return AppErrorState(inline: true, error: snap.error);
           }
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(
-                child: CircularProgressIndicator(color: AppColors.accentBlue));
+            return const AppLoading();
           }
           final docs = snap.data?.docs ?? [];
           if (docs.isEmpty) {

@@ -267,8 +267,7 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
               onRetry: () => setState(_streams.reset));
         }
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator(color: AppColors.gradBlue));
+          return const AppLoading();
         }
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return Center(

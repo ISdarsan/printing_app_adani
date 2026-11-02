@@ -162,9 +162,7 @@ class _AdminExpenseReportPageState extends State<AdminExpenseReportPage> {
               }
               if (fundsSnapshot.connectionState == ConnectionState.waiting ||
                   expensesSnapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
-                    child:
-                        CircularProgressIndicator(color: AppColors.gradBlue));
+                return const AppLoading();
               }
 
               // 1. Process Monthly Funds

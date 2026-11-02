@@ -58,9 +58,7 @@ class _MenuViewPageState extends State<MenuViewPage> {
                   .snapshots()),
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child:
-                          CircularProgressIndicator(color: AppColors.gradBlue));
+                  return const AppLoading();
                 }
                 if (snap.hasError) {
                   return AppErrorState(

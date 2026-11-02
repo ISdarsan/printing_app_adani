@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
@@ -28,31 +30,69 @@ String friendlyErrorMessage(Object? error, {String action = 'loading'}) {
 }
 
 /// Centered progress indicator with an optional message.
-class AppLoading extends StatelessWidget {
+///
+/// A spinner that never ends (no connection and nothing cached) used to leave
+/// staff guessing. After [slowAfter] it adds: "Still loading. Check your
+/// internet connection."
+class AppLoading extends StatefulWidget {
   final String? message;
-  const AppLoading({super.key, this.message});
+  final Duration slowAfter;
+  const AppLoading(
+      {super.key, this.message, this.slowAfter = const Duration(seconds: 8)});
+
+  @override
+  State<AppLoading> createState() => _AppLoadingState();
+}
+
+class _AppLoadingState extends State<AppLoading> {
+  Timer? _timer;
+  bool _slow = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(widget.slowAfter, () {
+      if (mounted) setState(() => _slow = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final text = _slow
+        ? 'Still loading. Check your internet connection.'
+        : widget.message;
     return Center(
       child: Semantics(
         liveRegion: true,
-        label: message ?? 'Loading',
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(
-              width: 28,
-              height: 28,
-              child: CircularProgressIndicator(strokeWidth: 3),
-            ),
-            if (message != null) ...[
-              const SizedBox(height: 12),
-              Text(message!,
-                  style: AppText.style(
-                      color: AppColors.textSecondary, fontSize: 13)),
+        label: text ?? 'Loading',
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              if (text != null) ...[
+                const SizedBox(height: 12),
+                Text(text,
+                    textAlign: TextAlign.center,
+                    style: AppText.style(
+                        color: _slow
+                            ? AppColors.accentOrange
+                            : AppColors.textSecondary,
+                        fontSize: 13)),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

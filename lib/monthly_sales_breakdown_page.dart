@@ -144,9 +144,7 @@ class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
                       onRetry: () => setState(_streams.reset));
                 }
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child:
-                          CircularProgressIndicator(color: AppColors.gradBlue));
+                  return const AppLoading();
                 }
                 if (!snap.hasData || snap.data!.isEmpty) {
                   return Center(

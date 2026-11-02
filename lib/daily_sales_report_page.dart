@@ -123,9 +123,7 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
                   _selectedDate.toIso8601String().substring(0, 10)),
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child:
-                          CircularProgressIndicator(color: AppColors.gradBlue));
+                  return const AppLoading();
                 }
                 if (snap.hasError) {
                   debugPrint('[DailySalesReport] Error: ${snap.error}');

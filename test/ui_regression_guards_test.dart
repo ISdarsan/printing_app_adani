@@ -121,4 +121,16 @@ void main() {
     expect(recentErr, greaterThan(-1), reason: 'recent bills must handle errors');
     expect(recentErr, lessThan(s.indexOf('No recent bills recorded.')));
   });
+
+  test('loading states in builders use the shared AppLoading (it explains a slow connection)', () {
+    final bare = RegExp(r'return (const )?Center\(\s*child:\s*(Padding\([^)]*child:\s*)?CircularProgressIndicator');
+    for (final f in Directory('lib')
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.dart'))) {
+      if (f.path.endsWith('state_views.dart')) continue;
+      expect(bare.hasMatch(f.readAsStringSync()), isFalse,
+          reason: '${f.path} has a bare spinner as a loading state');
+    }
+  });
 }

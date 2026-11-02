@@ -270,9 +270,7 @@ class _AddItemPageState extends State<AddItemPage>
                           onRetry: () => setState(_streams.reset));
                     }
                     if (snap.connectionState == ConnectionState.waiting) {
-                      return const Center(
-                          child: CircularProgressIndicator(
-                              color: AppColors.accentGreen));
+                      return const AppLoading();
                     }
                     if (!snap.hasData || snap.data!.docs.isEmpty) {
                       return Center(

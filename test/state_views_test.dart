@@ -60,6 +60,20 @@ void main() {
       expect(find.text('Loading bills'), findsOneWidget);
     });
 
+    testWidgets('a loading view that takes too long tells the user to check the internet', (t) async {
+      await t.pumpWidget(host(const AppLoading()));
+      expect(find.textContaining('Still loading'), findsNothing);
+      await t.pump(const Duration(seconds: 9));
+      expect(find.text('Still loading. Check your internet connection.'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+
+    testWidgets('removing the loading view before the timeout leaves no pending timer', (t) async {
+      await t.pumpWidget(host(const AppLoading()));
+      await t.pumpWidget(host(const SizedBox()));
+      await t.pump(const Duration(seconds: 20)); // would throw if a timer fired on a dead state
+    });
+
     testWidgets('empty state shows title and hint', (t) async {
       await t.pumpWidget(host(const AppEmptyState(
           title: 'No bills yet', message: 'Bills made today appear here.')));

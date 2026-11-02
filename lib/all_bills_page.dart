@@ -95,9 +95,7 @@ class _AllBillsPageState extends State<AllBillsPage> {
                       '${_selectedMonth.year}-${_selectedMonth.month}|${CanteenProvider.selectedCanteenId}'),
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child:
-                          CircularProgressIndicator(color: AppColors.gradBlue));
+                  return const AppLoading();
                 }
                 if (snap.hasError) {
                   debugPrint('[AllBills] Error: ${snap.error}');

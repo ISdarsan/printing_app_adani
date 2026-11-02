@@ -71,3 +71,14 @@ Not tested: any real device (printer, Bluetooth reconnect, airplane mode, perfor
 | `flutter test` | **323 passed** (240 existing unmodified + 83 new) |
 | New guards (mutation-verified against the previous code) | no raw error text anywhere outside debug logs; no Firestore listener opened inside `build()` on any `*_page.dart` except the admin dashboard's documented dialog lists; no made-up ₹0 on admin money cards; chart and recent bills show errors, not "empty" |
 | Release APK rebuilt | 62,351,576 bytes, SHA-256 `FF3F4BB7…973B29`, signer certificate unchanged |
+
+## Second loading sweep (slow connection, spinners, one-shot reads)
+
+| Check | Result |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **326 passed** (240 existing unmodified + 86 new) |
+| Index registry vs code vs `firestore.indexes.json` | agree (every app query is covered by the 5 indexes or by automatic single-field indexes) |
+| Tool tests | 20 passed |
+| New: loading view says "Still loading. Check your internet connection." after 8 s; no leaked timer; guard against bare spinners as loading states | included above |
+| Release APK rebuilt | 62,367,960 bytes, SHA-256 `E2691D35…F6B2D`, signer certificate unchanged |
