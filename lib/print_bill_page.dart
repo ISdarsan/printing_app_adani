@@ -282,6 +282,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
   final List<BillItem> _billItems = [];
   double _totalAmount = 0.0;
   bool _isSaving = false;
+  bool _saveFlowActive = false;
   bool _isAdding = false;
   bool _menuLoading = true;
 
@@ -720,33 +721,41 @@ class _PrintBillPageState extends State<PrintBillPage> {
       _snack('Add at least one item first.', error: true);
       return;
     }
+    // Block re-entry for the whole flow (credit dialog + save + print), so a
+    // double tap cannot create two bills.
+    if (_isSaving || _saveFlowActive) return;
+    _saveFlowActive = true;
 
-    final billItemsSnapshot = List<BillItem>.from(_billItems);
-    final totalSnapshot = _totalAmount;
-    final paymentSnapshot = _paymentMethod;
-    String? customerName, customerPhone;
+    try {
+      final billItemsSnapshot = List<BillItem>.from(_billItems);
+      final totalSnapshot = _totalAmount;
+      final paymentSnapshot = _paymentMethod;
+      String? customerName, customerPhone;
 
-    if (_paymentMethod == 'Credit') {
-      final result = await _showCreditCustomerDialog();
-      if (result == null) return;
-      customerName = result['name'];
-      customerPhone = result['phone'];
-    }
+      if (_paymentMethod == 'Credit') {
+        final result = await _showCreditCustomerDialog();
+        if (result == null) return;
+        customerName = result['name'];
+        customerPhone = result['phone'];
+      }
 
-    final billId = await _saveBill(
-      customerName: customerName,
-      customerPhone: customerPhone,
-    );
-
-    if (billId != null) {
-      await _printReceipt(
-        billId: billId,
-        items: billItemsSnapshot,
-        totalAmount: totalSnapshot,
-        paymentMode: paymentSnapshot,
+      final billId = await _saveBill(
         customerName: customerName,
         customerPhone: customerPhone,
       );
+
+      if (billId != null && mounted) {
+        await _printReceipt(
+          billId: billId,
+          items: billItemsSnapshot,
+          totalAmount: totalSnapshot,
+          paymentMode: paymentSnapshot,
+          customerName: customerName,
+          customerPhone: customerPhone,
+        );
+      }
+    } finally {
+      _saveFlowActive = false;
     }
   }
 
@@ -872,6 +881,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
         tx.set(counterRef, {'canteenId': branchId, 'lastNumber': newBillNum});
       });
 
+      if (!mounted) return generatedBillId;
       _snack(
           'Bill saved! ₹${_totalAmount.toStringAsFixed(2)} · $_paymentMethod');
       setState(() {
@@ -885,7 +895,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
       });
       return generatedBillId;
     } catch (e) {
-      _snack('Error saving bill: $e', error: true);
+      if (mounted) _snack('Error saving bill: $e', error: true);
       return null;
     } finally {
       if (mounted) setState(() => _isSaving = false);

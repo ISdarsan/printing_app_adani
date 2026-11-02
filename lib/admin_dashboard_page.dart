@@ -145,6 +145,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     return FirebaseFirestore.instance
         .collection('bills')
         .orderBy('timestamp', descending: true)
+        // Only the latest few bills are shown; never stream the whole
+        // collection. A wider window is used when filtering by branch because
+        // the filter is applied client-side (avoids a new composite index).
+        .limit(_selectedCanteenFilter == 'all' ? 4 : 100)
         .snapshots()
         .map((s) {
       if (_selectedCanteenFilter == 'all') {
@@ -166,7 +170,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     final startDateStr = DateFormat('yyyy-MM-dd').format(sevenDaysAgo);
     return FirebaseFirestore.instance
         .collection('dailyStats')
-        .where(FieldPath.documentId, isGreaterThanOrEqualTo: startDateStr)
+        // Filter on the 'date' field (set on every dailyStats doc). Doc IDs are
+        // "<canteenId>_<date>", so a documentId range matched all history.
+        .where('date', isGreaterThanOrEqualTo: startDateStr)
         .snapshots()
         .map((s) {
       final totalsByDate = <String, Map<String, dynamic>>{};

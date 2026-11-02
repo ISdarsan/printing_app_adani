@@ -48,25 +48,28 @@ class CanteenProvider {
     _selectedCanteenName = name.trim().isEmpty ? 'Main Canteen' : name.trim();
   }
 
+  /// Loads the signed-in staff member's role and branch.
+  ///
+  /// Errors are intentionally NOT swallowed: silently falling back to the
+  /// 'main' canteen on a network failure would attach a branch cashier to the
+  /// wrong branch. Callers must handle the exception (e.g. show a retry).
   static Future<void> initializeForStaff(String staffId) async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('canteenStaff')
-          .doc(staffId)
-          .get();
+    final doc = await FirebaseFirestore.instance
+        .collection('canteenStaff')
+        .doc(staffId)
+        .get();
+    applyStaffData(doc.data());
+  }
 
-      final data = doc.data();
-      _isAdmin = data?['role'] == 'admin';
-      final canteenId = (data?['canteenId'] ?? '').toString();
-      final canteenName = (data?['canteenName'] ?? 'Main Canteen').toString();
+  /// Applies a staff document's fields. Split out so it can be unit-tested.
+  static void applyStaffData(Map<String, dynamic>? data) {
+    _isAdmin = data?['role'] == 'admin';
+    final canteenId = (data?['canteenId'] ?? '').toString();
+    final canteenName = (data?['canteenName'] ?? 'Main Canteen').toString();
 
-      if (canteenId.isNotEmpty) {
-        setSelectedCanteen(id: canteenId, name: canteenName);
-      } else {
-        setSelectedCanteen(id: 'main', name: 'Main Canteen');
-      }
-    } catch (_) {
-      _isAdmin = false;
+    if (canteenId.isNotEmpty) {
+      setSelectedCanteen(id: canteenId, name: canteenName);
+    } else {
       setSelectedCanteen(id: 'main', name: 'Main Canteen');
     }
   }

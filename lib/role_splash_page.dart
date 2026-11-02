@@ -54,9 +54,21 @@ class _RoleSplashPageState extends State<RoleSplashPage>
           .doc(widget.role)
           .get();
 
-      if (doc.exists) {
-        actualRole = doc.data()?['role'] ?? 'unknown';
-        await CanteenProvider.initializeForStaff(widget.role);
+      if (doc.exists && doc.data()?['active'] == false) {
+        // Deactivated staff: Firestore rules would reject every read anyway,
+        // so deny cleanly here instead of showing a broken dashboard.
+        if (mounted) {
+          setState(() {
+            _welcomeMessage = 'Access Denied';
+            _subMessage = 'This account has been deactivated.';
+            _error = 'Contact your administrator.';
+            _showDots = false;
+          });
+        }
+      } else if (doc.exists) {
+        final role = (doc.data()?['role'] ?? 'unknown').toString();
+        CanteenProvider.applyStaffData(doc.data());
+        actualRole = role;
 
         if (mounted) {
           setState(() {
