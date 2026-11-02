@@ -150,6 +150,7 @@ class _AddItemPageState extends State<AddItemPage>
   }
 
   Future<void> _deleteItem(String docId, String name) async {
+    if (!CanteenProvider.isAdmin) return; // admin-only action
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -499,13 +500,19 @@ class _AddItemPageState extends State<AddItemPage>
                                                     Icons.edit_rounded,
                                                     AppColors.accentBlue,
                                                     () => _loadForEdit(data)),
-                                                const SizedBox(height: 4),
-                                                _iconBtn(
-                                                    Icons
-                                                        .delete_outline_rounded,
-                                                    AppColors.accentRed,
-                                                    () => _deleteItem(
-                                                        data['docId'], name)),
+                                                // Deleting a menu item is an
+                                                // admin action (business
+                                                // decision; see
+                                                // MENU_SECURITY_CHANGE_PROPOSAL.md)
+                                                if (CanteenProvider.isAdmin) ...[
+                                                  const SizedBox(height: 4),
+                                                  _iconBtn(
+                                                      Icons
+                                                          .delete_outline_rounded,
+                                                      AppColors.accentRed,
+                                                      () => _deleteItem(
+                                                          data['docId'], name)),
+                                                ],
                                               ],
                                             ),
                                           ],

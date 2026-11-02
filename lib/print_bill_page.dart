@@ -795,6 +795,18 @@ class _PrintBillPageState extends State<PrintBillPage> {
     try {
       final branchForCheck = CanteenProvider.selectedCanteenId;
       final requestId = _billAttempts.idFor(_billAttemptKey(customerPhone));
+      // Does this credit customer already have a record? (a query, not a get of
+      // a possibly missing document; see the note in the transaction)
+      var customerExists = false;
+      if (_paymentMethod == 'Credit' && customerPhone != null) {
+        final q = await db
+            .collection('creditCustomers')
+            .where('canteenId', isEqualTo: branchForCheck)
+            .where('phone', isEqualTo: customerPhone)
+            .limit(1)
+            .get(const GetOptions(source: Source.server));
+        customerExists = q.docs.isNotEmpty;
+      }
       generatedBillId = await SyncTracker.instance.track<String?>(
         key: 'bill:$requestId',
         label: 'Bill ₹${_totalAmount.toStringAsFixed(2)} ($_paymentMethod)',
@@ -842,7 +854,11 @@ class _PrintBillPageState extends State<PrintBillPage> {
           canteenId: selectedCanteenId,
         );
         final dateId = BusinessTime.dateKey(today);
-        final billRef = db.collection('bills').doc();
+        // Document id == request id. A second create with the same id is an
+        // UPDATE to the rules, which cashiers may not do, so a duplicate bill
+        // is rejected atomically (and this transaction rolls back) without
+        // reading a document that may not exist (cashiers cannot read those).
+        final billRef = db.collection('bills').doc(requestId);
 
         // Generate a bill ID like "BILL-20260915170112"
         final now = DateTime.now();
@@ -888,22 +904,30 @@ class _PrintBillPageState extends State<PrintBillPage> {
           );
           final customerRef =
               db.collection('creditCustomers').doc(customerDocId);
-          final customerSnap = await tx.get(customerRef);
-          if (customerSnap.exists) {
+          // No read inside the transaction: cashiers cannot read a customer
+          // document that does not exist yet. Existence was established just
+          // before (scoped query). A new customer is created with merge +
+          // increment, so even if another device created the same customer in
+          // between, the balance is ADDED to, never overwritten.
+          if (customerExists) {
             tx.update(customerRef, {
               'totalPending': FieldValue.increment(_totalAmount),
               'lastUpdated': FieldValue.serverTimestamp(),
               'name': customerName,
             });
           } else {
-            tx.set(customerRef, {
-              'phone': customerPhone,
-              'name': customerName,
-              'canteenId': selectedCanteenId,
-              'canteenName': CanteenProvider.selectedCanteenName,
-              'totalPending': _totalAmount,
-              'lastUpdated': FieldValue.serverTimestamp(),
-            });
+            tx.set(
+              customerRef,
+              {
+                'phone': customerPhone,
+                'name': customerName,
+                'canteenId': selectedCanteenId,
+                'canteenName': CanteenProvider.selectedCanteenName,
+                'totalPending': FieldValue.increment(_totalAmount),
+                'lastUpdated': FieldValue.serverTimestamp(),
+              },
+              SetOptions(merge: true),
+            );
           }
         }
 

@@ -6,6 +6,7 @@ import 'theme.dart';
 import 'expense_detail_page.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
+import 'money.dart';
 
 class FundsReceivedPage extends StatefulWidget {
   final bool isAdmin;
@@ -240,6 +241,40 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
 
                     return CustomScrollView(
                       slivers: [
+                        if (!widget.isAdmin)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                              child: Container(
+                                key: const Key('shared-fund-note'),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppColors.accentBlue
+                                      .withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                      color: AppColors.accentBlue
+                                          .withValues(alpha: 0.35)),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(Icons.info_outline_rounded,
+                                        color: AppColors.accentBlue, size: 18),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        kSharedFundNote,
+                                        style: AppText.style(
+                                            color: AppColors.textSecondary,
+                                            fontSize: 12),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                         // Budget Summary Card
                         SliverToBoxAdapter(
                           child: Padding(
@@ -262,7 +297,7 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                                           color: Colors.white,
                                           size: 24),
                                       const SizedBox(width: 8),
-                                      Text('Monthly Budget Console',
+                                      Text(widget.isAdmin ? 'Monthly Budget Console' : 'Organisation Fund (shared by all canteens)',
                                           style: AppText.style(
                                               color: Colors.white70,
                                               fontSize: 13,
@@ -304,7 +339,7 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
                                           children: [
-                                            Text('Allocated Fund',
+                                            Text(widget.isAdmin ? 'Allocated Fund' : 'Organisation Fund',
                                                 style: AppText.style(
                                                     color: Colors.white60,
                                                     fontSize: 11)),
@@ -321,7 +356,7 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                                           crossAxisAlignment:
                                               CrossAxisAlignment.center,
                                           children: [
-                                            Text('Total Spent',
+                                            Text(widget.isAdmin ? 'Total Spent' : 'Spent by this canteen',
                                                 style: AppText.style(
                                                     color: Colors.white60,
                                                     fontSize: 11)),
@@ -338,7 +373,7 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                                           crossAxisAlignment:
                                               CrossAxisAlignment.end,
                                           children: [
-                                            Text('Available Balance',
+                                            Text(widget.isAdmin ? 'Available Balance' : 'Fund minus this canteen\'s spending',
                                                 style: AppText.style(
                                                     color: Colors.white60,
                                                     fontSize: 11)),

@@ -1,58 +1,48 @@
 # Test Results
 
-Branch `stabilize/audit-and-modernize`, after phase 4 (release preparation, cashier reliability, sync, login, precision). All data is synthetic.
+Branch `stabilize/audit-and-modernize`, release validation phase. All data synthetic. Nothing deployed, no production access, **no physical device used**.
 
-| Suite | Command | Result |
-|---|---|---|
-| Static analysis | `flutter analyze` | No issues found |
-| Dart tests | `flutter test` | **232 passed, 0 failed** |
-| Firestore emulator (rules, query shapes, paging, analytics, create-once) | `firebase emulators:exec --config <temp config> --only firestore --project demo-test "cd security-tests && node --test"` | **27 passed, 0 failed** |
-| Rules diff engine | `node --test tool/rules_diff.test.mjs` | **7 passed** |
-| Index registry vs source vs `firestore.indexes.json` | `node tool/check_indexes.mjs` | OK: 15 queries -> 5 indexes, file declares 5 |
-| Independent workbook check | `flutter test test/excel_report_builder_test.dart && python tool/validate_workbook.py` | 56 passed, 0 failed |
+| Suite | Result |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **236 passed, 0 failed** |
+| Firestore emulator suite (`security-tests/*.test.mjs`) against the repository rules | **68 passed, 0 failed** |
+| The same 68 against the PROPOSED rules (`RULES_FILE=proposals/firestore.rules.menu-admin-delete`) | **68 passed, 0 failed** |
+| `node --test tool/rules_diff.test.mjs` | 7 passed |
+| `node tool/check_indexes.mjs` | OK: 19 registered queries -> 5 composite indexes, file declares 5 |
+| `python tool/validate_workbook.py` (after `flutter test test/excel_report_builder_test.dart`) | 56 passed |
 
-## Dart tests by file (232)
+## Dart tests (236)
+`widget_test` 9, `canteen_provider_staff` 3, `financial_metrics` 30, `business_time` 16, `business_day_ids` 5, `excel_report_builder` 14, `paged_fetch` 44, `analytics_equivalence` 24, `auth_flow` 18, `sync_status` 40, `today_summary` 12, `money_precision` 17, **`shared_fund_wording` 4 (new)**: shared-fund note text; cashier labels explicit and admin labels unchanged; the dashboard alert no longer calls the fund "this canteen's budget"; Add Item delete is admin-only in the app.
+
+## Emulator tests (68)
 | File | Tests | Covers |
 |---|---|---|
-| `widget_test.dart` | 9 | original suite |
-| `canteen_provider_staff_test.dart` | 3 | branch/role assignment |
-| `financial_metrics_test.dart` | 30 | sales/repayment arithmetic, Q2-Q4 rules, Excel summary rows |
-| `business_time_test.dart` / `business_day_ids_test.dart` | 16 / 5 | IST boundaries, ids at midnight and month end |
-| `excel_report_builder_test.dart` | 14 | real .xlsx generated and inspected |
-| `paged_fetch_test.dart` | 44 | paging with ties, retry, cancel, cap, 50,000 records, export periods |
-| `analytics_equivalence_test.dart` | 24 | new analytics equals the original on 2,500 synthetic bills |
-| **`auth_flow_test.dart`** (new) | 18 | **authentication routing**: admin/cashier/deactivated/missing/unknown role/read error decisions; role splash goes to the dashboard right after the lookup (no 3 s wait), denials never reach a dashboard and sign out; **login loading behaviour**: spinner, repeated taps start one sign-in, wrong password, unexpected error, sign-in alone never opens a dashboard |
-| **`sync_status_test.dart`** (new) | 40 | **sync status, failed writes, reconnection, duplicate prevention**: every state; success only after acknowledgement; offline -> reconnect -> acknowledged; failure recording and retry (safe vs financial); duplicate keys; create-once (lost acknowledgement creates nothing); idempotent set; tracked writes; banner UI |
-| **`today_summary_test.dart`** (new) | 12 | **daily stats consistency**: `dailyStats` card equals the bills query for sales / count / credit; repayments never change sales; collections = sales + repayments; equals the reconciliation figure; missing doc; deleted-bill drift detected; noise not reported; per-branch ids; midnight rollover |
-| **`money_precision_test.dart`** (new) | 17 | **financial precision**: old vs new logic on 24,000 / 151,360 / 2,000 / 15,920 / 2,518,464 cases; `planRepayment` semantics and conservation; rounding; `BillItem`; `dailyStats` deltas; price display |
+| `firestore.rules.test.mjs` | 13 | rules, scoped query shapes, B-19 shapes, create-once field and checks, idempotent expense |
+| `export-paging.test.mjs` | 7 | document-cursor paging with ties, negative control, period range |
+| `analytics-queries.test.mjs` | 7 | analytics query shapes and branch isolation |
+| **`transactions.test.mjs`** (new) | **26** | **Tasks 4 and 5**: bill and repayment workflows, double tap, concurrency, lost acknowledgement, retry with the same request id, real network cut, balances, closings, offline expenses (details in TRANSACTION_INTEGRATION_REPORT.md) |
+| **`legacy-audit.test.mjs`** (new) | **5** | **Task 6**: audit classification and counts on a synthetic legacy dataset; read-only |
+| **`menu-delete-proposal.test.mjs`** (new) | **10** | **Task 7**: current vs proposed rules side by side |
 
-## Emulator tests (27)
-`firestore.rules.test.mjs` (13): original coverage, B-14 scoped queries, half-open boundaries, B-19 shapes, **`clientRequestId` store + branch-scoped verification query (allowed) and unscoped/other-branch (denied)**, **idempotent expense: repeat of a committed create is denied for a cashier and a server read confirms it**, own-branch `dailyStats` read. `export-paging.test.mjs` (7) and `analytics-queries.test.mjs` (7) unchanged from phase 3.
+## Task-by-task status
+| Task | Status | Evidence |
+|---|---|---|
+| 1 Index release | **Verified, ready; NOT deployed** | `check_indexes.mjs` OK (19 queries, 5 indexes); file has exactly 5 entries and no `fieldOverrides`; project `canteen-app-adani` in `firebase.json` and `firebase_options.dart`; no `.firebaserc` so every command must pass `--project`; production has 0 indexes (read-only listing) so no index can be deleted |
+| 2 Rules comparison | **NOT PERFORMED: `deployed.rules` was not supplied** | tool ready (7 tests); PRODUCTION_RULES_COMPARISON.md |
+| 3 Cashier device testing | **NOT PERFORMED: no device, and indexes are not deployed** | CASHIER_DEVICE_TEST_PLAN.md (updated); every row NOT RUN |
+| 4 Financial transaction integration | **Done on the emulator (port of the Dart logic)** | 26/26; limits stated in the report |
+| 5 Offline reliability | **Done at protocol/SDK level on the emulator; NOT on a device** | offline-write, outage and reconnect tests; sync banner logic by 40 unit tests; no real airplane-mode run |
+| 6 Legacy data audit | **Tool built and validated; production audit NOT run** | 5 tests; LEGACY_DATA_AUDIT.md |
+| 7 Menu security | **Proposal + tests done; NOT deployed** | 10 tests + full suite against the proposal |
 
-## What each requested test area maps to
-| Requested | Where |
-|---|---|
-| Sync status | `sync_status_test.dart` (states, message text, banner) |
-| Failed writes | `sync_status_test.dart` (failure recording, retry rules, tracked-write failures) |
-| Reconnection | `sync_status_test.dart` (offline/reconnect/flapping, restored writes) |
-| Duplicate submission prevention | `sync_status_test.dart` (same key refused, create-once), `auth_flow_test.dart` (repeated sign-in taps), emulator (idempotent expense) |
-| Daily stats consistency | `today_summary_test.dart`, `financial_metrics_test.dart` |
-| Authentication routing | `auth_flow_test.dart` |
-| Login loading behaviour | `auth_flow_test.dart` |
-| Financial precision | `money_precision_test.dart` |
-
-## Tested vs NOT tested
-Tested: all pure logic above; widget behaviour against fakes; rules and query shapes on the emulator.
-
-**Not tested (pending):**
-- **Anything on a physical device**, including login speed, banner behaviour in real airplane mode, printing, layout (CASHIER_DEVICE_TEST_PLAN.md is not executed).
-- **Production rules vs repository**: not compared (no token or pasted rules).
-- **Composite indexes**: the emulator neither builds nor enforces them; deployed state unknown (production list was empty on 2 Nov 2026).
-- The Firestore-bound code executed from Dart: `ConnectionProbe` (listener + `waitForPendingWrites`), `ReportDataLoader`, `AnalyticsLoader`, the bill and repayment create-once wiring inside the real transactions, `Source.server` staff lookup. Their decision logic is unit-tested and their query shapes proven in Node, but no Flutter-to-emulator integration test exists.
-- Live fetch path of `tool/compare_rules.mjs --project` (only the file mode ran).
-- LibreOffice recalculation of the workbook (not installed), opening the workbook in Excel/Sheets.
-- Real menu-price exposure to the precision problems (menu data not visible here).
+## NOT tested
+- Anything on a physical device (login speed, layout, printing, real airplane mode, banner timing, Add Item delete gating on screen, the new fund wording on screen).
+- The Dart code against the emulator (only a port plus unit tests), and the Android Firestore SDK behaviour.
+- Production rules versus the repository; composite index build/READY state; legacy data in production.
+- A network-level loss of only the commit acknowledgement (simulated at protocol level instead).
+- Excel workbook opened in Excel/Sheets; LibreOffice recalculation.
 
 ## Environment notes
-- Emulator processes from earlier interrupted runs remain; each run used a fresh port through a temporary `firebase.test.json` (deleted afterwards). Tests read `FIRESTORE_EMULATOR_HOST`.
-- `build/validation/` holds the generated workbook (git-ignored).
+- Several emulator processes from earlier interrupted runs are still alive; every run used a fresh port through a temporary `firebase.test.json` (deleted afterwards). Suites read `FIRESTORE_EMULATOR_HOST` and `RULES_FILE`.
+- The transaction suite takes about 65 s (two real connection cuts wait for the SDK to give up, about 12-14 s each).

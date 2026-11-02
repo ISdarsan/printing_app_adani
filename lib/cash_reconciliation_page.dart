@@ -30,22 +30,27 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
       CanteenProvider.cashReconciliationDocumentId(DateTime.now());
   String get _todayLabel => DateFormat('dd MMMM yyyy').format(DateTime.now());
 
-  late Stream<DocumentSnapshot> _todayStatsStream;
-  late Stream<DocumentSnapshot> _todayReconciliationStream;
+  late Stream<Map<String, dynamic>?> _todayStatsStream;
+  late Stream<Map<String, dynamic>?> _todayReconciliationStream;
   late Stream<QuerySnapshot> _reconciliationHistoryStream;
 
   @override
   void initState() {
     super.initState();
-    _todayStatsStream = FirebaseFirestore.instance
-        .collection('dailyStats')
-        .doc(CanteenProvider.dailyStatsDocumentId(DateTime.now()))
-        .snapshots();
-
-    _todayReconciliationStream = FirebaseFirestore.instance
-        .collection('cashReconciliations')
-        .doc(_todayRecordId)
-        .snapshots();
+    // Branch-scoped queries instead of document streams: a cashier cannot read
+    // a document that does not exist yet, and a failed stream ends for good, so
+    // the screen would never notice the closing being submitted. A query just
+    // returns nothing and then the new record. Equality filters only.
+    Stream<Map<String, dynamic>?> today(String collection) => FirebaseFirestore
+        .instance
+        .collection(collection)
+        .where('canteenId', isEqualTo: CanteenProvider.selectedCanteenId)
+        .where('date', isEqualTo: _todayId)
+        .limit(1)
+        .snapshots()
+        .map((s) => s.docs.isEmpty ? null : s.docs.first.data());
+    _todayStatsStream = today('dailyStats');
+    _todayReconciliationStream = today('cashReconciliations');
 
     Query<Map<String, dynamic>> historyQuery =
         FirebaseFirestore.instance.collection('cashReconciliations');
@@ -85,20 +90,30 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
         key: 'closing:$_todayRecordId',
         label: 'Cash closing ₹${actual.toStringAsFixed(2)} for $_todayLabel',
         safeToRetry: false,
-        run: () => FirebaseFirestore.instance.runTransaction((transaction) async {
-        final existing = await transaction.get(reconciliationRef);
-        if (existing.exists) {
-          // If a previous attempt of THIS submission did commit but its
-          // acknowledgement was lost, the record is ours: report success
-          // instead of "already submitted".
-          final d = existing.data();
-          alreadyMine = d != null &&
+        run: () async {
+        // Already closed today? Asked with a branch-scoped query (cashiers cannot
+        // read a missing document). If a previous attempt of THIS submission
+        // did commit but its acknowledgement was lost, the record is ours:
+        // report success instead of "already submitted".
+        final prior = await FirebaseFirestore.instance
+            .collection('cashReconciliations')
+            .where('canteenId', isEqualTo: CanteenProvider.selectedCanteenId)
+            .where('date', isEqualTo: _todayId)
+            .limit(1)
+            .get(const GetOptions(source: Source.server));
+        if (prior.docs.isNotEmpty) {
+          final d = prior.docs.first.data();
+          alreadyMine =
               d['submittedBy'] == FirebaseAuth.instance.currentUser?.email &&
-              moneyEquals(asDouble(d['actualCash']), actual);
+                  moneyEquals(asDouble(d['actualCash']), actual);
           if (alreadyMine) return;
           throw _AlreadyReconciledException();
         }
-
+        // Create-only: the record id is fixed per branch and day, so a second
+        // create is an UPDATE to the rules, which cashiers may not do. A
+        // transaction (not a plain set) so that it fails when offline instead
+        // of being queued.
+        await FirebaseFirestore.instance.runTransaction((transaction) async {
         transaction.set(reconciliationRef, {
           'date': _todayId,
           'canteenId': CanteenProvider.selectedCanteenId,
@@ -111,7 +126,8 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
               FirebaseAuth.instance.currentUser?.email ?? 'Unknown Cashier',
           'timestamp': FieldValue.serverTimestamp(),
         });
-      }),
+        });
+        },
       );
 
       _cashController.clear();
@@ -168,7 +184,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
   }
 
   Widget _buildCashierSubmissionView() {
-    return StreamBuilder<DocumentSnapshot>(
+    return StreamBuilder<Map<String, dynamic>?>(
       stream: _todayReconciliationStream,
       builder: (context, reconSnap) {
         if (reconSnap.connectionState == ConnectionState.waiting) {
@@ -177,8 +193,8 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
         }
 
         // If today is already reconciled, show status and details
-        if (reconSnap.hasData && reconSnap.data!.exists) {
-          final data = reconSnap.data!.data() as Map<String, dynamic>;
+        if (reconSnap.data != null) {
+          final data = reconSnap.data!;
           final system = asDouble(data['systemCash']);
           final actual = asDouble(data['actualCash']);
           final discrepancy = asDouble(data['discrepancy']);
@@ -251,13 +267,13 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
         }
 
         // Otherwise show the submission form
-        return StreamBuilder<DocumentSnapshot>(
+        return StreamBuilder<Map<String, dynamic>?>(
           stream: _todayStatsStream,
           builder: (context, statsSnap) {
             double systemCash = 0.0;
-            if (statsSnap.hasData && statsSnap.data!.exists) {
-              final d = statsSnap.data!.data() as Map<String, dynamic>;
-              systemCash = ((d['totalCash'] ?? 0.0) as num).toDouble();
+            final d = statsSnap.data;
+            if (d != null) {
+              systemCash = asDouble(d['totalCash']);
             }
 
             return Form(

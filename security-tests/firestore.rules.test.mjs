@@ -33,7 +33,7 @@ before(async () => {
       // the port in firebase.json when run by hand.
       host: (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080').split(':')[0],
       port: Number((process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080').split(':')[1]),
-      rules: fs.readFileSync(path.join(here, '..', 'firestore.rules'), 'utf8'),
+      rules: fs.readFileSync(path.join(here, '..', process.env.RULES_FILE || 'firestore.rules'), 'utf8'),
     },
   });
 });

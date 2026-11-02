@@ -524,7 +524,9 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
         }
 
         // 3.5. Create repayment audit log document
-        final repaymentRef = db.collection('repayments').doc();
+        // Document id == request id: a second create is an UPDATE to the rules
+        // (admin only), so a duplicate repayment is rejected atomically.
+        final repaymentRef = db.collection('repayments').doc(requestId);
         tx.set(repaymentRef, {
           'customerPhone': widget.customerPhone,
           'customerName': widget.customerName,

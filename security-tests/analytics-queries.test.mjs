@@ -22,7 +22,7 @@ before(async () => {
     firestore: {
       host: hostPort.split(':')[0],
       port: Number(hostPort.split(':')[1]),
-      rules: fs.readFileSync(path.join(here, '..', 'firestore.rules'), 'utf8'),
+      rules: fs.readFileSync(path.join(here, '..', process.env.RULES_FILE || 'firestore.rules'), 'utf8'),
     },
   });
   await env.withSecurityRulesDisabled(async (ctx) => {

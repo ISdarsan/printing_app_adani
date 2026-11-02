@@ -67,3 +67,34 @@ The full per-screen checklist is CASHIER_DEVICE_TEST_PLAN.md. Minimum smoke test
 - Production rules versus repository (step 1).
 - Whether the three existing-query screens currently fail for cashiers without the indexes.
 - Anything about real devices, real data volumes, or billing.
+
+
+---
+
+# Release validation addendum (final order of operations)
+
+## Task 1 verification (done, read-only)
+| Check | Result |
+|---|---|
+| Exactly five required composite indexes | `node tool/check_indexes.mjs`: **19 registered queries -> 5 required indexes; file declares 5; OK**. The registry grew from 15 to 19 with four new equality-only queries (customer-exists check, request-id checks, closing/dashboard "today" queries); none needs a composite index |
+| The 15 original mappings | unchanged; each re-checked against its source file by the tool |
+| No accidental deletions | `firebase firestore:indexes --project canteen-app-adani` returned `{"indexes": [], "fieldOverrides": []}`: production has **no** indexes, so a deploy can only add. The file has `"fieldOverrides": []`. Never use `--force`; if the CLI offers to delete anything, answer No |
+| Correct project | `canteen-app-adani` in `firebase.json` and `lib/firebase_options.dart`. **There is no `.firebaserc`**, so a command without `--project` would use whatever the CLI default is. Always pass `--project canteen-app-adani` |
+
+## Final order (nothing below has been run)
+1. (YOU) Provide `deployed.rules`; run the comparison; send me the output. **Blocking for step 5.**
+2. (YOU) `node tool/check_indexes.mjs` -> expect OK.
+3. (YOU, after final confirmation) `firebase deploy --only firestore:indexes --project canteen-app-adani`; wait until every index is READY.
+4. (YOU) Run CASHIER_DEVICE_TEST_PLAN.md on a real phone **with a build from this branch**. No result is recorded yet.
+5. Only after 1-4: decide on deploying the app build. **Rules are not part of this release.** The menu-delete rule is a separate, later change (MENU_SECURITY_CHANGE_PROPOSAL.md) and must be applied to the *verified deployed* rules, not the repository copy.
+6. Legacy backfill is a separate project after the production audit (LEGACY_DATA_AUDIT.md).
+
+## What changed in the app since the last checklist (all rule-agnostic; no rules change needed)
+| Change | Why |
+|---|---|
+| Bill and repayment document id == request id | duplicate create is rejected by the rules atomically |
+| No reads of possibly-missing documents (customer, closing, dashboard card, closing screen) | cashiers cannot read missing documents under the repository rules (B-32) |
+| Fund wording on cashier screens; menu delete hidden for non-admins | business decisions 2 and 3 |
+
+## Rollback
+App: previous Play Store release. Indexes: delete in the Console (additive, harmless). Nothing else was changed in Firebase.

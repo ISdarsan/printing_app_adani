@@ -10,6 +10,7 @@ import 'notifications_page.dart';
 import 'sms_broadcast_helper.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
+import 'money.dart';
 import 'today_summary.dart';
 
 class BillingDashboardPage extends StatefulWidget {
@@ -147,11 +148,17 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
     final docId = CanteenProvider.dailyStatsDocumentId(DateTime.now());
     if (_statsStreamCache == null || _statsStreamDocId != docId) {
       _statsStreamDocId = docId; // also rolls over at IST midnight
+      // A query, not a document get: cashiers cannot read a document that does
+      // not exist yet (before the day's first sale), but an own-branch query
+      // simply returns nothing. Equality filters only, so no index.
       _statsStreamCache = FirebaseFirestore.instance
           .collection('dailyStats')
-          .doc(docId)
+          .where('canteenId', isEqualTo: CanteenProvider.selectedCanteenId)
+          .where('date', isEqualTo: BusinessTime.dateKey(DateTime.now()))
+          .limit(1)
           .snapshots()
-          .map((snap) => TodaySummary.fromDailyStats(snap.data()));
+          .map((snap) => TodaySummary.fromDailyStats(
+              snap.docs.isEmpty ? null : snap.docs.first.data()));
     }
     return _statsStreamCache!;
   }
@@ -831,8 +838,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                         children: [
                           Text(
                             available < 0
-                                ? 'Budget Overspent!'
-                                : 'Low Budget Alert ($pctStr% Left)',
+                                ? 'Shared fund exceeded by this canteen alone'
+                                : 'Shared fund: this canteen has used ${(100 - double.parse(pctStr)).toStringAsFixed(0)}% of it',
                             style: AppText.style(
                                 color: AppColors.accentRed,
                                 fontSize: 12,
@@ -840,8 +847,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                           ),
                           Text(
                             available < 0
-                                ? 'You have exceeded the allocated budget by ₹${available.abs().toStringAsFixed(0)}.'
-                                : 'Available: ₹${available.toStringAsFixed(0)} left of ₹${allocated.toStringAsFixed(0)} allocated.',
+                                ? 'This canteen has spent ₹${available.abs().toStringAsFixed(0)} more than the organisation-wide fund of ₹${allocated.toStringAsFixed(0)}. $kSharedFundNote'
+                                : 'This canteen has spent ₹${spent.toStringAsFixed(0)} of the organisation-wide fund of ₹${allocated.toStringAsFixed(0)}. $kSharedFundNote',
                             style: AppText.style(
                                 color: AppColors.textSecondary, fontSize: 10),
                           ),

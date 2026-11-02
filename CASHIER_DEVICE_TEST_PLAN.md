@@ -128,3 +128,30 @@ Save a bill and print to the thermal printer; receipt total equals the bill tota
 | X | Login | | | | NOT RUN | |
 
 Sign-off requires every row PASS on at least one small and one large phone. Any `failed-precondition` text means a missing index; any `permission-denied` means a rules difference: stop and report it.
+
+
+---
+
+# Update after release validation (Task 3)
+
+## Execution status: NOT EXECUTED
+No physical device was available in this session and the 5 indexes are not deployed, so **no screen was tested on a device and no result is recorded**. The results sheet above remains NOT RUN. This update only adds checks for changes made since the plan was written. Do not start until the indexes show READY.
+
+## Added checks (run on a real phone)
+| # | Scenario | Expected |
+|---|---|---|
+| A1 | **First credit bill for a customer who has never bought on credit** | saves; customer appears with the right balance. (Under the repository rules this flow used to read a missing document; this is the screen most likely to behave differently from older builds) |
+| A2 | **First cash closing of the day**, branch with sales | form shows expected cash; submit works; screen switches to "Reconciled for Today" without reopening |
+| A3 | **Cash closing before any sale today** | expected cash 0.00, no error text; submitting 0 works |
+| A4 | **Dashboard card in the morning before the first bill** | shows ₹0 and 0 (not a dash, not an error); after the first bill it updates |
+| A5 | Dashboard card after midnight IST | resets to ₹0 / 0 |
+| A6 | **Funds Received (cashier)**: title "Organisation Fund (shared by all canteens)", labels "Organisation Fund", "Spent by this canteen", "Fund minus this canteen's spending", blue note visible | as written; admin view keeps its original labels |
+| A7 | Dashboard budget alert (needs a fund set and high spending) | reads "Shared fund: this canteen has used N% of it" / "Shared fund exceeded by this canteen alone", with the shared-fund note |
+| A8 | **Add Item as cashier**: edit and add work; **no delete button**. As admin: delete button present and works on a test item | as written |
+| A9 | Save a bill with airplane mode on | fails with "Bill not confirmed..."; cart kept; nothing saved; turn network on, tap Save: exactly one bill |
+| A10 | Tap Save twice quickly | exactly one bill |
+| A11 | Repayment: tap Confirm twice quickly | exactly one repayment; balance reduced once |
+| A12 | Expense in airplane mode | "Saved on this device, not confirmed yet" after ~8 s; strip shows 1 waiting; reconnect: strip clears, one expense on the admin side |
+
+## Recording rules
+For every row record: device model, Android version, app build, tester, date, PASS/FAIL, and a screenshot for any red text. `failed-precondition` = a missing index; `permission-denied` = a rules difference or the missing-document behaviour (B-32): stop and report it exactly as shown.
