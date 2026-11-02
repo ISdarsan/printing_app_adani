@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:excel/excel.dart' hide Border;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'theme.dart';
@@ -15,7 +14,10 @@ import 'bill_detail_page.dart';
 import 'sms_broadcast_helper.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
-import 'financial_metrics.dart';
+import 'excel_report_builder.dart';
+import 'export_range.dart';
+import 'paged_fetch.dart';
+import 'report_data_loader.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -194,507 +196,123 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     });
   }
 
+  /// Excel export entry point: choose a period, then read and build in pages.
   Future<void> _exportExcelReport(BuildContext context) async {
+    final range = await _pickExportRange(context);
+    if (range == null || !context.mounted) return;
+    await _runExport(context, range);
+  }
+
+  Future<ExportRange?> _pickExportRange(BuildContext context) {
+    final presets = ExportRange.presets(DateTime.now());
+    return showDialog<ExportRange>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        backgroundColor: AppColors.bgCard,
+        title: Text('Export period',
+            style: AppText.style(
+                color: Colors.white, fontWeight: FontWeight.w700)),
+        children: [
+          for (final p in presets)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, p),
+              child: Text(
+                p.isAllTime ? '${p.label} (large, can be slow)' : p.label,
+                style: AppText.style(color: AppColors.textPrimary),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _runExport(BuildContext context, ExportRange range) async {
+    var cancelled = false;
+    final progress = ValueNotifier<String>('Starting...');
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: AppColors.accentBlue),
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        content: Row(children: [
+          const CircularProgressIndicator(color: AppColors.accentBlue),
+          const SizedBox(width: 20),
+          Expanded(
+            child: ValueListenableBuilder<String>(
+              valueListenable: progress,
+              builder: (_, text, __) => Text(text,
+                  style: AppText.style(
+                      color: AppColors.textPrimary, fontSize: 13)),
+            ),
+          ),
+        ]),
+        actions: [
+          TextButton(
+            onPressed: () {
+              cancelled = true;
+              progress.value = 'Cancelling...';
+            },
+            child: Text('Cancel', style: AppText.style(color: Colors.white70)),
+          ),
+        ],
       ),
     );
 
     try {
-      final db = FirebaseFirestore.instance;
-
-      // Fetch all data
-      final billsSnap = await db
-          .collection('bills')
-          .orderBy('timestamp', descending: true)
-          .get();
-      final expensesSnap = await db
-          .collection('expenses')
-          .orderBy('timestamp', descending: true)
-          .get();
-      final creditSnap = await db
-          .collection('creditCustomers')
-          .orderBy('totalPending', descending: true)
-          .get();
-      final repaymentsSnap = await db
-          .collection('repayments')
-          .orderBy('timestamp', descending: true)
-          .get();
-      final reconSnap = await db
-          .collection('cashReconciliations')
-          .orderBy('timestamp', descending: true)
-          .get();
-      final canteensSnap = await db.collection('canteens').get();
-
-      // Build canteen name map: id -> name
-      final Map<String, String> canteenNames = {'main': 'Main Canteen'};
-      for (final doc in canteensSnap.docs) {
-        final d = doc.data();
-        canteenNames[doc.id] = d['name'] ?? doc.id;
-      }
-
-      String resolveCanteenName(String? cId) {
-        if (cId == null || cId.isEmpty || cId == 'main') return 'Main Canteen';
-        return canteenNames[cId] ?? cId;
-      }
-
-      // Collect unique canteen IDs present in bills/expenses
-      final Set<String> branchIds = {'main'};
-      for (final doc in billsSnap.docs) {
-        final cId = (doc.data()['canteenId'] ?? 'main').toString();
-        branchIds.add(cId.isEmpty ? 'main' : cId);
-      }
-      for (final doc in expensesSnap.docs) {
-        final cId = (doc.data()['canteenId'] ?? 'main').toString();
-        branchIds.add(cId.isEmpty ? 'main' : cId);
-      }
-
-      var excel = Excel.createExcel();
-      String defaultSheet = excel.getDefaultSheet() ?? 'Sheet1';
-      excel.rename(defaultSheet, 'Dashboard Summary');
-      Sheet dashboardSheet = excel['Dashboard Summary'];
-
-      void writeHeader(Sheet s, List<String> cols) {
-        for (int c = 0; c < cols.length; c++) {
-          s
-              .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 0))
-              .value = TextCellValue(cols[c]);
-        }
-      }
-
-      // SHEET 1: Dashboard Summary
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0))
-          .value = TextCellValue('CANTEEN MANAGEMENT SUMMARY - ALL BRANCHES');
-      dashboardSheet
-              .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1))
-              .value =
-          TextCellValue(
-              'Report Generated: ${DateFormat('yyyy-MM-dd HH:mm').format(BusinessTime.wallClock(DateTime.now()))} IST');
-
-      // Source records -> pure FinancialSummary (see financial_metrics.dart).
-      // Sales and repayments are kept separate: repayments are never revenue.
-      String branchOf(Map<String, dynamic> d) {
-        final c = (d['canteenId'] ?? 'main').toString();
-        return c.isEmpty ? 'main' : c;
-      }
-
-      SaleRecord saleOf(Map<String, dynamic> d) => SaleRecord(
-          ((d['totalAmount'] ?? 0.0) as num).toDouble(),
-          (d['paymentMode'] ?? '').toString());
-      RepaymentRecord repaymentOf(Map<String, dynamic> d) => RepaymentRecord(
-          ((d['amount'] ?? 0.0) as num).toDouble(),
-          (d['paymentMode'] ?? '').toString());
-
-      final allSummary = FinancialSummary.fromRecords(
-        billsSnap.docs.map((d) => saleOf(d.data())),
-        repaymentsSnap.docs.map((d) => repaymentOf(d.data())),
+      final data = await ReportDataLoader(FirebaseFirestore.instance).load(
+        range: range,
+        isCancelled: () => cancelled,
+        onProgress: (stage, n) => progress.value = 'Reading $stage: $n records',
       );
-      final double totalExpenses = expensesSnap.docs.fold(
-          0.0, (s, d) => s + ((d.data()['amount'] ?? 0.0) as num).toDouble());
-      final double totalOutstandingCredit = creditSnap.docs.fold(0.0,
-          (s, d) => s + ((d.data()['totalPending'] ?? 0.0) as num).toDouble());
-      final double totalDiscrepancy = reconSnap.docs.fold(0.0,
-          (s, d) => s + ((d.data()['discrepancy'] ?? 0.0) as num).toDouble());
+      progress.value = 'Building workbook...';
+      await Future<void>.delayed(Duration.zero); // let the dialog repaint
+      final bytes = ExcelReportBuilder.build(data).encode();
+      if (bytes == null) throw StateError('The workbook could not be encoded.');
 
-      final summaryRows = buildExecutiveSummaryRows(
-        allSummary,
-        expenses: totalExpenses,
-        creditStillDue: totalOutstandingCredit,
-        cumulativeDiscrepancy: totalDiscrepancy,
-      );
-
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 2))
-          .value = TextCellValue(
-          'All dates and times are Indian Standard Time (IST, UTC+05:30).');
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 3))
-          .value = TextCellValue('Metric');
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 3))
-          .value = TextCellValue('Total Value (INR)');
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: 3))
-          .value = TextCellValue('Basis / Formula');
-      for (int i = 0; i < summaryRows.length; i++) {
-        dashboardSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 4 + i))
-            .value = TextCellValue(summaryRows[i].label);
-        dashboardSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 4 + i))
-            .value = DoubleCellValue(summaryRows[i].value);
-        dashboardSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: 4 + i))
-            .value = TextCellValue(summaryRows[i].formula);
-      }
-
-      // Per-branch summary in the dashboard sheet
-      int bRow = 4 + summaryRows.length + 2;
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: bRow++))
-          .value = TextCellValue('BRANCH-WISE BREAKDOWN');
-      const branchHeaders = [
-        'Branch',
-        'Sales (INR)',
-        'Bills Count',
-        'Expenses (INR)',
-        'Cash Sales (INR)',
-        'UPI Sales (INR)',
-        'Credit Issued (INR)',
-        'Cash Repayments (INR)',
-        'UPI Repayments (INR)',
-        'Accrual Operating Position (INR)',
-        'Cash-Basis Movement (INR)',
-      ];
-      for (int c = 0; c < branchHeaders.length; c++) {
-        dashboardSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: bRow))
-            .value = TextCellValue(branchHeaders[c]);
-      }
-      bRow++;
-      for (final bId in branchIds) {
-        final bSummary = FinancialSummary.fromRecords(
-          billsSnap.docs
-              .where((d) => branchOf(d.data()) == bId)
-              .map((d) => saleOf(d.data())),
-          repaymentsSnap.docs
-              .where((d) => branchOf(d.data()) == bId)
-              .map((d) => repaymentOf(d.data())),
-        );
-        final bExp = expensesSnap.docs
-            .where((d) => branchOf(d.data()) == bId)
-            .fold<double>(
-                0.0,
-                (total, d) =>
-                    total + ((d.data()['amount'] ?? 0.0) as num).toDouble());
-        final cells = <CellValue>[
-          TextCellValue(resolveCanteenName(bId)),
-          DoubleCellValue(bSummary.salesRevenue),
-          IntCellValue(bSummary.billCount),
-          DoubleCellValue(bExp),
-          DoubleCellValue(bSummary.cashSales),
-          DoubleCellValue(bSummary.upiSales),
-          DoubleCellValue(bSummary.creditSales),
-          DoubleCellValue(bSummary.cashRepayments),
-          DoubleCellValue(bSummary.upiRepayments),
-          DoubleCellValue(accrualOperatingPosition(bSummary, bExp)),
-          DoubleCellValue(cashBasisMovement(bSummary, bExp)),
-        ];
-        for (int c = 0; c < cells.length; c++) {
-          dashboardSheet
-              .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: bRow))
-              .value = cells[c];
-        }
-        bRow++;
-      }
-
-      // SHEET: All Bills (combined with canteen column)
-      Sheet billsSheet = excel['All Bills'];
-      writeHeader(billsSheet, [
-        'Date & Time',
-        'Bill Number',
-        'Canteen Branch',
-        'Customer Name',
-        'Customer Phone',
-        'Payment Mode',
-        'Total Amount (INR)'
-      ]);
-      for (int i = 0; i < billsSnap.docs.length; i++) {
-        final d = billsSnap.docs[i].data();
-        final ts = d['timestamp'] as Timestamp?;
-        final dateStr = ts != null
-            ? DateFormat('yyyy-MM-dd HH:mm')
-                .format(BusinessTime.wallClock(ts.toDate()))
-            : 'N/A';
-        final cId = (d['canteenId'] ?? 'main').toString();
-        billsSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
-            .value = TextCellValue(dateStr);
-        billsSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
-            .value = IntCellValue((d['billNumber'] ?? 0) as int);
-        billsSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1))
-            .value = TextCellValue(resolveCanteenName(cId));
-        billsSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: i + 1))
-            .value = TextCellValue((d['customerName'] ?? 'Walk-in').toString());
-        billsSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: i + 1))
-            .value = TextCellValue((d['customerPhone'] ?? '-').toString());
-        billsSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: i + 1))
-            .value = TextCellValue((d['paymentMode'] ?? '').toString());
-        billsSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: i + 1))
-            .value = DoubleCellValue(((d['totalAmount'] ?? 0.0)
-                as num)
-            .toDouble());
-      }
-
-      // Per-branch Bills sheets
-      for (final bId in branchIds) {
-        final bName = resolveCanteenName(bId);
-        final sheetName =
-            '${bName.length > 22 ? bName.substring(0, 22) : bName} Bills';
-        Sheet branchSheet = excel[sheetName];
-        writeHeader(branchSheet, [
-          'Date & Time',
-          'Bill Number',
-          'Customer Name',
-          'Customer Phone',
-          'Payment Mode',
-          'Total Amount (INR)'
-        ]);
-        int row = 1;
-        for (final doc in billsSnap.docs) {
-          final d = doc.data();
-          final cId = (d['canteenId'] ?? 'main').toString();
-          if ((cId.isEmpty ? 'main' : cId) != bId) continue;
-          final ts = d['timestamp'] as Timestamp?;
-          final dateStr = ts != null
-              ? DateFormat('yyyy-MM-dd HH:mm')
-                .format(BusinessTime.wallClock(ts.toDate()))
-              : 'N/A';
-          branchSheet
-              .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row))
-              .value = TextCellValue(dateStr);
-          branchSheet
-              .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row))
-              .value = IntCellValue((d['billNumber'] ?? 0) as int);
-          branchSheet
-              .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row))
-              .value = TextCellValue((d['customerName'] ??
-                  'Walk-in')
-              .toString());
-          branchSheet
-              .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: row))
-              .value = TextCellValue((d['customerPhone'] ?? '-').toString());
-          branchSheet
-              .cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: row))
-              .value = TextCellValue((d['paymentMode'] ?? '').toString());
-          branchSheet
-              .cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: row))
-              .value = DoubleCellValue(((d['totalAmount'] ?? 0.0)
-                  as num)
-              .toDouble());
-          row++;
-        }
-      }
-
-      // SHEET: All Expenses (combined with canteen column)
-      Sheet expSheet = excel['All Expenses'];
-      writeHeader(expSheet,
-          ['Date & Time', 'Canteen Branch', 'Description', 'Amount (INR)']);
-      for (int i = 0; i < expensesSnap.docs.length; i++) {
-        final d = expensesSnap.docs[i].data();
-        final ts = d['timestamp'] as Timestamp?;
-        final dateStr = ts != null
-            ? DateFormat('yyyy-MM-dd HH:mm')
-                .format(BusinessTime.wallClock(ts.toDate()))
-            : 'N/A';
-        final cId = (d['canteenId'] ?? 'main').toString();
-        expSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
-            .value = TextCellValue(dateStr);
-        expSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
-            .value = TextCellValue(resolveCanteenName(cId));
-        expSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1))
-            .value = TextCellValue((d['description'] ?? '').toString());
-        expSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: i + 1))
-            .value = DoubleCellValue(((d['amount'] ?? 0.0) as num).toDouble());
-      }
-
-      // Per-branch Expenses sheets
-      for (final bId in branchIds) {
-        final bName = resolveCanteenName(bId);
-        final sheetName =
-            '${bName.length > 19 ? bName.substring(0, 19) : bName} Expenses';
-        Sheet branchExp = excel[sheetName];
-        writeHeader(branchExp, ['Date & Time', 'Description', 'Amount (INR)']);
-        int row = 1;
-        for (final doc in expensesSnap.docs) {
-          final d = doc.data();
-          final cId = (d['canteenId'] ?? 'main').toString();
-          if ((cId.isEmpty ? 'main' : cId) != bId) continue;
-          final ts = d['timestamp'] as Timestamp?;
-          final dateStr = ts != null
-              ? DateFormat('yyyy-MM-dd HH:mm')
-                .format(BusinessTime.wallClock(ts.toDate()))
-              : 'N/A';
-          branchExp
-              .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row))
-              .value = TextCellValue(dateStr);
-          branchExp
-              .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row))
-              .value = TextCellValue((d['description'] ?? '').toString());
-          branchExp
-              .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row))
-              .value = DoubleCellValue(((d['amount'] ?? 0.0)
-                  as num)
-              .toDouble());
-          row++;
-        }
-      }
-
-      // Credit Accounts
-      Sheet creditSheet = excel['Credit Accounts'];
-      writeHeader(creditSheet,
-          ['Customer Name', 'Phone Number', 'Total Pending Due (INR)']);
-      for (int i = 0; i < creditSnap.docs.length; i++) {
-        final d = creditSnap.docs[i].data();
-        creditSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
-            .value = TextCellValue((d['name'] ?? 'Unknown').toString());
-        creditSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
-            .value = TextCellValue((d['phone'] ?? '').toString());
-        creditSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1))
-            .value = DoubleCellValue(((d['totalPending'] ?? 0.0)
-                as num)
-            .toDouble());
-      }
-
-      // Repayment Logs
-      Sheet repSheet = excel['Repayment Logs'];
-      writeHeader(repSheet, [
-        'Date & Time',
-        'Customer Name',
-        'Customer Phone',
-        'Cleared Mode',
-        'Repayment Amount (INR)',
-        'Processed By'
-      ]);
-      for (int i = 0; i < repaymentsSnap.docs.length; i++) {
-        final d = repaymentsSnap.docs[i].data();
-        final ts = d['timestamp'] as Timestamp?;
-        final dateStr = ts != null
-            ? DateFormat('yyyy-MM-dd HH:mm')
-                .format(BusinessTime.wallClock(ts.toDate()))
-            : 'N/A';
-        repSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
-            .value = TextCellValue(dateStr);
-        repSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
-            .value = TextCellValue((d['customerName'] ?? 'Unknown').toString());
-        repSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1))
-            .value = TextCellValue((d['customerPhone'] ?? '-').toString());
-        repSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: i + 1))
-            .value = TextCellValue((d['paymentMode'] ?? '').toString());
-        repSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: i + 1))
-            .value = DoubleCellValue(((d['amount'] ?? 0.0) as num).toDouble());
-        repSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: i + 1))
-            .value = TextCellValue((d['processedBy'] ?? '').toString());
-      }
-
-      // Cash Reconciliations
-      Sheet reconSheet = excel['Cash Reconciliations'];
-      writeHeader(reconSheet, [
-        'Reconciled Date',
-        'System Cash (INR)',
-        'Actual Cash (INR)',
-        'Discrepancy (INR)',
-        'Audited By',
-        'Notes',
-        'Timestamp'
-      ]);
-      for (int i = 0; i < reconSnap.docs.length; i++) {
-        final d = reconSnap.docs[i].data();
-        final ts = d['timestamp'] as Timestamp?;
-        final dateStr = ts != null
-            ? DateFormat('yyyy-MM-dd HH:mm')
-                .format(BusinessTime.wallClock(ts.toDate()))
-            : 'N/A';
-        reconSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
-            .value = TextCellValue((d['date'] ?? '').toString());
-        reconSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
-            .value = DoubleCellValue(((d['systemCash'] ?? 0.0)
-                as num)
-            .toDouble());
-        reconSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1))
-            .value = DoubleCellValue(((d['actualCash'] ?? 0.0)
-                as num)
-            .toDouble());
-        reconSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: i + 1))
-            .value = DoubleCellValue(((d['discrepancy'] ?? 0.0)
-                as num)
-            .toDouble());
-        reconSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: i + 1))
-            .value = TextCellValue((d['submittedBy'] ?? '').toString());
-        reconSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: i + 1))
-            .value = TextCellValue((d['note'] ?? '').toString());
-        reconSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: i + 1))
-            .value = TextCellValue(dateStr);
-      }
-
-      // Top Selling Items
-      Sheet topSheet = excel['Top Selling Items'];
-      writeHeader(topSheet, ['Menu Item Name', 'Portions Sold (Total)']);
-      Map<String, int> topItemsMap = {};
-      for (var doc in billsSnap.docs) {
-        final items =
-            List<Map<String, dynamic>>.from(doc.data()['items'] ?? []);
-        for (var item in items) {
-          final name = item['name']?.toString() ?? 'Unknown';
-          final qty = (item['quantity'] ?? 0) as int;
-          topItemsMap[name] = (topItemsMap[name] ?? 0) + qty;
-        }
-      }
-      final sortedTopItems = topItemsMap.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
-      for (int i = 0; i < sortedTopItems.length; i++) {
-        topSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
-            .value = TextCellValue(sortedTopItems[i].key);
-        topSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
-            .value = IntCellValue(sortedTopItems[i].value);
-      }
-
-      // Save & Share
-      final bytes = excel.encode();
-      if (bytes != null) {
-        final tempDir = await getTemporaryDirectory();
-        final file = await File(
-                '${tempDir.path}/Canteen_Report_${BusinessTime.dateKey(DateTime.now()).replaceAll('-', '')}.xlsx')
-            .create();
-        await file.writeAsBytes(bytes);
-        if (context.mounted) {
-          Navigator.pop(context);
-          final xFile = XFile(file.path);
-          await Share.shareXFiles([xFile],
-              text: 'Canteen Full Ledger & Analytics - All Branches');
-        }
-      }
+      final tempDir = await getTemporaryDirectory();
+      final stamp = BusinessTime.dateKey(DateTime.now()).replaceAll('-', '');
+      final file =
+          await File('${tempDir.path}/Canteen_Report_${stamp}_${range.id}.xlsx')
+              .create();
+      await file.writeAsBytes(bytes);
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      await Share.shareXFiles([XFile(file.path)],
+          text: 'Canteen Ledger & Analytics - All Branches (${range.periodLabel})');
+    } on PagedFetchCancelled {
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Export cancelled.', style: AppText.style()),
+        backgroundColor: AppColors.accentOrange,
+      ));
     } catch (e) {
-      if (context.mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to export Excel: $e', style: AppText.style()),
-            backgroundColor: AppColors.accentRed,
-          ),
-        );
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      // No partial file is shared: an interrupted export must not look complete.
+      final retry = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.bgCard,
+          title: Text('Export failed',
+              style: AppText.style(
+                  color: Colors.white, fontWeight: FontWeight.w700)),
+          content: Text(
+              'No file was created. Check the connection and try again.\n\n$e',
+              style: AppText.style(color: AppColors.textSecondary, fontSize: 13)),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text('Close', style: AppText.style(color: Colors.white70))),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text('Retry',
+                    style: AppText.style(color: AppColors.accentBlue))),
+          ],
+        ),
+      );
+      if (retry == true && context.mounted) {
+        await _runExport(context, range);
       }
     }
   }

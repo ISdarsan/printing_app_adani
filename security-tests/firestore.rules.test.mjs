@@ -14,6 +14,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   orderBy,
   query,
   setDoc,
@@ -168,6 +169,59 @@ test('scoped half-open day/month queries behave correctly per branch and boundar
     where('timestamp', '<', istMidnight('2026-11-03')),
   )));
   assert.deepEqual(all.docs.map((d) => d.id).sort(), ['n-last-ms', 'n-late', 's-same']);
+});
+
+// B-19: the three existing cashier queries that pair `canteenId ==` with an
+// orderBy. Rules requirement: the query must carry the cashier's own canteenId.
+// Index requirement (not enforceable in the emulator): see FIRESTORE_INDEX_AUDIT.md.
+test('B-19 query shapes: cash-closing history, notices, menu list', async () => {
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await Promise.all([
+      setDoc(doc(db, 'cashReconciliations/north_2026-11-01'), {
+        canteenId: 'north', date: '2026-11-01', timestamp: new Date('2026-11-01T20:00:00+05:30'),
+      }),
+      setDoc(doc(db, 'cashReconciliations/south_2026-11-01'), {
+        canteenId: 'south', date: '2026-11-01', timestamp: new Date('2026-11-01T20:05:00+05:30'),
+      }),
+      setDoc(doc(db, 'menuItems/tea-n'), { canteenId: 'north', name: 'Tea', price: 10 }),
+      setDoc(doc(db, 'menuItems/tea-s'), { canteenId: 'south', name: 'Tea', price: 12 }),
+    ]);
+    await setDoc(doc(db, 'notifications/notice-north'), {
+      canteenId: 'north', title: 'North notice', message: 'm', readBy: [],
+      timestamp: new Date('2026-11-01T09:00:00+05:30'),
+    });
+    await setDoc(doc(db, 'notifications/notice-south'), {
+      canteenId: 'south', title: 'South notice', message: 'm', readBy: [],
+      timestamp: new Date('2026-11-01T09:00:00+05:30'),
+    });
+  });
+  const north = testEnvironment.authenticatedContext('cashier-north').firestore();
+  const names = (s) => s.docs.map((d) => d.id).sort();
+
+  // 1. Cash-closing history (cash_reconciliation_page.dart)
+  const hist = (db, cid) => query(collection(db, 'cashReconciliations'),
+    ...(cid ? [where('canteenId', '==', cid)] : []), orderBy('timestamp', 'desc'), limit(30));
+  assert.deepEqual(names(await assertSucceeds(getDocs(hist(north, 'north')))), ['north_2026-11-01']);
+  await assertFails(getDocs(hist(north, null)));           // unscoped
+  await assertFails(getDocs(hist(north, 'south')));        // other branch
+  const admin = testEnvironment.authenticatedContext('admin-1').firestore();
+  assert.equal((await assertSucceeds(getDocs(hist(admin, null)))).size, 2); // admin history is unscoped
+
+  // 2. Notices (notifications_page.dart + billing_dashboard_page.dart, limit 1)
+  const notices = (db, cid, n) => query(collection(db, 'notifications'),
+    ...(cid ? [where('canteenId', '==', cid)] : []), orderBy('timestamp', 'desc'), ...(n ? [limit(n)] : []));
+  assert.deepEqual(names(await assertSucceeds(getDocs(notices(north, 'north')))), ['notice-north']);
+  assert.deepEqual(names(await assertSucceeds(getDocs(notices(north, 'north', 1)))), ['notice-north']);
+  await assertFails(getDocs(notices(north, null)));
+  await assertFails(getDocs(notices(north, 'south')));
+
+  // 3. Menu list (add_item_page.dart)
+  const menu = (db, cid) => query(collection(db, 'menuItems'),
+    ...(cid ? [where('canteenId', '==', cid)] : []), orderBy('name'));
+  assert.deepEqual(names(await assertSucceeds(getDocs(menu(north, 'north')))), ['tea-n']);
+  await assertFails(getDocs(menu(north, null)));
+  await assertFails(getDocs(menu(north, 'south')));
 });
 
 test('cashier can read exactly their own dailyStats doc by id (no index needed)', async () => {

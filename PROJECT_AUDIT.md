@@ -19,3 +19,12 @@ Stack: Flutter, Firebase Auth, Cloud Firestore, ~16k lines in `lib/` (largest: `
 - Decisions recorded: Q1 option A, Q2 keep expected cash = totalCash, Q3 show both positions, Q4 separate sales/repayments. B-17 (global funds) documented, not changed.
 - Tests: 63 Dart + 10 emulator; see TEST_RESULTS.md for what is not covered.
 - Still not audited line by line: expenses entry, funds screens beyond queries, notifications, menu/add item, printing, theme.
+
+## Phase 3 additions (Excel validation, B-08, B-09, index/rules review)
+- New pure modules: `report_records.dart` (small records), `excel_report_builder.dart` (workbook), `paged_fetch.dart` (paging engine), `export_range.dart`, `analytics_calc.dart` (moved analytics maths + periods). Firestore adapters: `report_data_loader.dart`, `analytics_loader.dart`.
+- `admin_dashboard_page.dart` export is now: choose period -> paged read with progress/cancel -> build -> share, with Retry on failure and no partial file. `admin_analytics_page.dart` shrank 1,134 -> 922 lines and no longer holds live listeners on whole collections.
+- Tools: `tool/validate_workbook.py` (independent XLSX check), `tool/compare_rules.mjs` (read-only rules diff).
+- Tests: 145 Dart + 25 emulator + 56 workbook checks; see TEST_RESULTS.md for what is not covered (no device, no Dart-to-emulator integration, indexes unverifiable offline).
+- New findings: B-19 (production has no composite indexes; three existing cashier queries need them), B-20 (menu delete allowed for cashiers), B-21/B-22 (legacy documents without `canteenId` / `date`).
+- Architecture note: report logic is now separated from UI and Firestore (records -> pure builders -> thin adapters), which is what made the independent validation possible.
+- Still not audited line by line: expenses entry, notifications, menu/add item, printing, theme.

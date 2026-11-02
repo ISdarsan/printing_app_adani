@@ -41,7 +41,7 @@ Timestamps in every sheet and the "Report Generated" line are now IST (UTC+05:30
 Verified by unit tests on hypothetical data: Total Cash/UPI Received, Total Credit Repayments, Overall Revenue and Credit Issued each equal the value produced by applying the same `dailyStats` writers to the same records; branch rows sum to the combined row.
 The export does not read `dailyStats` itself, so a live cross-check of stored documents against the sheet needs the read-only drift check described in FINANCIAL_DATA_AUDIT.md (not run).
 
-## Tested vs untested
-- Tested: every number on the summary sheet (pure functions), labels, absence of the old labels, no "profit" wording, formula text present.
-- Untested: actual workbook generation and sharing (the `excel` package cell writing, sheet layout, file sharing on a device). The cell-writing code was only compile-checked by `flutter analyze`. Please export once and open the file.
-- Unchanged and still heavy: the export downloads whole collections (B-09).
+## Tested vs untested (updated)
+- Superseded by **EXCEL_WORKBOOK_VALIDATION.md**: a real workbook was generated from synthetic data and read back with two independent readers (14 Dart checks, 56 openpyxl checks, all passing).
+- Still untested: opening the file in Excel/Sheets/a phone viewer, LibreOffice recalculation (not installed; the workbook has no formulas), and running the export inside the app on a device.
+- The export no longer downloads whole collections: see EXPORT_OPTIMIZATION_REPORT.md (B-09).

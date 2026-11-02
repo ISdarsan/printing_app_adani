@@ -56,3 +56,48 @@ diff deployed.rules firestore.rules
 ## 6. Behavior notes for scoped queries
 - A cashier's `canteenId ==` filter cannot match legacy documents that have **no** `canteenId` field. The rules treat a missing `canteenId` as `main`, but a query cannot. Cashiers of non-`main` branches never saw those documents; `main` cashiers will not see untagged legacy bills in the six screens (the previous unscoped queries were rejected for cashiers anyway). Admin screens are unchanged and still include untagged documents as `main`.
 - `scopeQuery` leaves admin queries unscoped; admins' branch filtering is still done on the device as before.
+
+---
+
+# Phase 3 additions
+
+## 7. B-19: the three existing cashier queries (shape, rule, index)
+
+Verified against the **rules** in the emulator (test `B-19 query shapes`). Real-device behaviour is **PENDING: no cashier device was available and none of this was tested on one.**
+
+| Screen / file | Exact query | Rule that applies | Rule outcome (emulator) | Index needed | Index in production |
+|---|---|---|---|---|---|
+| Daily Cash Closing history (`cash_reconciliation_page.dart`, cashier) | `cashReconciliations` where `canteenId == <own>` orderBy `timestamp` desc limit 30 | `read: canReadBranch(resource.data)` | own branch allowed; unscoped denied; other branch denied | `canteenId ASC, timestamp DESC` | **missing** |
+| Same screen, admin | `cashReconciliations` orderBy `timestamp` desc limit 30 (no filter) | admin passes `canReadBranch` | allowed | single-field only | n/a |
+| Notices (`notifications_page.dart`) | `notifications` where `canteenId == <selected>` orderBy `timestamp` desc | `read: canReadBranch(resource.data)` | own allowed; unscoped and other branch denied | `canteenId ASC, timestamp DESC` | **missing** |
+| Dashboard notice alert (`billing_dashboard_page.dart`) | same + `limit(1)` | same | allowed | same index | **missing** |
+| Menu list (`add_item_page.dart`) | `menuItems` where `canteenId == <selected>` orderBy `name` | `read: canReadBranch(resource.data)` | own allowed; unscoped and other branch denied | `canteenId ASC, name ASC` | **missing** |
+
+Consequence: with no composite index, Firestore rejects each of these with `FAILED_PRECONDITION` ("The query requires an index"), so these three cashier screens would show an error or stay empty. Whether they do in production could not be checked from here. The `StreamBuilder`s on those screens will surface the error text, and the Flutter console prints a one-click link that creates the index. Verification steps are in FIRESTORE_RELEASE_CHECKLIST.md section 6.
+
+Note on the notice query: it filters with `selectedCanteenId`, so a notice document with an empty/missing `canteenId` (legacy, which the app treats as `main`) is not returned by the server query even though `matchesNotificationCanteen` would accept it on the device.
+
+## 8. Index review after B-08 / B-09
+All queries were re-listed. The analytics loader and the paged export introduce **no new composite index**:
+
+| New query | Shape | Index |
+|---|---|---|
+| Export: bills / expenses / repayments / cashReconciliations | `timestamp >= a`, `timestamp < b`, orderBy `timestamp desc` (admin, unscoped) | single-field (range and order on the same field) |
+| Export: creditCustomers | orderBy `totalPending` desc | single-field |
+| Analytics: bills, concrete branch | `canteenId ==`, `timestamp >= a`, orderBy `timestamp desc` | existing entry #2 |
+| Analytics: bills, branch main | `timestamp >= a`, orderBy `timestamp desc` | single-field |
+| Analytics: expenses, concrete branch | `canteenId ==`, `timestamp >= a`, orderBy `timestamp` asc | existing entry #3 (ASC is why expenses is ASC only) |
+| Analytics: dailyStats window | `date >= a`, orderBy `date` | single-field |
+| Analytics: dailyStats all-time | orderBy `__name__` | automatic |
+
+The 6 entries in `firestore.indexes.json` are the complete list. Validation performed: JSON parses; the Firestore emulator starts with the file configured and reports no error. **Not validated**: the emulator does not build or enforce composite indexes, so `READY` status can only be observed after a real deploy.
+
+## 9. Comparing deployed rules with the repository
+Added `tool/compare_rules.mjs` (read-only):
+- `--deployed-file <path>`: compares a file you copy from the Console.
+- `--project <id>`: fetches the ruleset through the Firebase Rules REST API using a **short-lived access token you place in the `FIREBASE_ACCESS_TOKEN` environment variable** (for example from `gcloud auth print-access-token` in your own shell). The tool never reads credential files, never prints the token, never writes to Firebase, and has no deploy code path.
+- Ignores line-ending and trailing-space differences; prints a unified diff otherwise; exit codes 0 / 1 / 2.
+Tested offline on local files only. The live fetch path has not been run (no token was available here).
+
+## 10. Repository rule worth a look (not changed)
+`firestore.rules` allows `delete` on `menuItems` for any staff member who can read that branch (`allow delete: if canReadBranch(resource.data)`), i.e. a cashier can delete a menu item of their own branch. Every other collection restricts delete to admins. This may be intentional (the Add Item screen has a delete button); flagged for your decision, not modified.
