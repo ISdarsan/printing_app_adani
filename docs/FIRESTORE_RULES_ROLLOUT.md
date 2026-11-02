@@ -24,7 +24,7 @@ See SECURITY_MIGRATION_PLAN.md ("Gating for Phase 2"). In short: ≥ 14 days aft
 - Cashier cannot change staff, menu deletes, or their own role/branch.
 - Admin can do everything and sees all branches.
 - Day closing succeeds from the current app (sends `submittedByUid`).
-- Monthly funds still readable by all active staff (global, labelled as organisation-wide).
+- Monthly budgets are per canteen: a cashier reads only `<ownCanteenId>_<yyyy-MM>` (also when the month has no budget yet), not other canteens' budgets and not the old month-only shared documents. Admin lists and writes (the document id must equal `<canteenId>_<monthYear>`). Old app builds that write a shared fund are refused.
 
 ## When rules change after testing
 Edit → re-run the emulator suites → `node tool/verify_deploy_files.mjs --update-manifest` → commit. The manifest update is deliberate; any unexplained rules edit makes the verifier fail.

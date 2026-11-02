@@ -8,7 +8,7 @@
     },
     "candidate": {
       "path": "proposals/firestore.rules.candidate",
-      "sha256": "977c29af285a74f5dfd71d2111b6f7a2dcdca8c359ee89bdcd60562e1364af99"
+      "sha256": "1df30bf9b420ff66f946bbd6e3db70abef046a6cdb262dd715bfa159d7e290c5"
     },
     "originalOpenRules": {
       "path": "backups/deployed.rules.2026-11-02.ORIGINAL",

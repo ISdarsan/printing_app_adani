@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'tracked_write.dart';
 import 'canteen_provider.dart';
 
@@ -83,7 +84,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Failed to pick image: $e', style: AppText.style()),
+            content: Text('Could not pick the image. ${friendlyErrorMessage(e, action: 'picking the image')}', style: AppText.style()),
             backgroundColor: AppColors.accentRed));
       }
     }
@@ -171,7 +172,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Failed to log expense: $e', style: AppText.style()),
+            content: Text('Could not save the expense. ${friendlyErrorMessage(e, action: 'saving')}', style: AppText.style()),
             backgroundColor: AppColors.accentRed));
       }
     } finally {

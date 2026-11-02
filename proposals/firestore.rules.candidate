@@ -234,13 +234,25 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    match /monthlyFunds/{monthId} {
-      // One organisation-wide fund per month (business decision): every active
-      // staff member may read it, only admins may set it.
-      allow read: if activeStaff();
+    match /monthlyFunds/{fundId} {
+      // Budgets are assigned PER CANTEEN (business decision): the document id is
+      // <canteenId>_<yyyy-MM>. A cashier may read only their own canteen's
+      // budget; the check is on the id, so it also works for a month that has
+      // no budget yet (a get on a missing document is otherwise denied). The
+      // older shared documents (id = month only) are not readable by cashiers.
+      // Canteen ids are lowercase slugs (a-z, 0-9, _), safe inside the pattern.
+      allow get: if isAdmin() ||
+        (activeStaff() && fundId.matches(staffCanteenId() + '_[0-9]{4}-[0-9]{2}'));
+      allow list: if isAdmin();
+      // Admins set budgets. The document must name its own canteen and month so
+      // the id cannot disagree with its contents.
       allow create, update: if isAdmin() &&
         request.resource.data.get('fundAmount', -1) is number &&
-        request.resource.data.fundAmount >= 0;
+        request.resource.data.fundAmount >= 0 &&
+        request.resource.data.get('canteenId', '') is string &&
+        request.resource.data.get('monthYear', '') is string &&
+        request.resource.data.get('canteenId', '') != '' &&
+        fundId == request.resource.data.canteenId + '_' + request.resource.data.monthYear;
       allow delete: if isAdmin();
     }
 

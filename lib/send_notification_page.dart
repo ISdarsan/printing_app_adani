@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'tracked_write.dart';
 import 'canteen_provider.dart';
 
@@ -63,7 +64,7 @@ class _SendNotificationPageState extends State<SendNotificationPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Failed: $e', style: AppText.style()),
+              content: Text('Could not send the notice. ${friendlyErrorMessage(e, action: 'sending')}', style: AppText.style()),
               backgroundColor: AppColors.accentRed),
         );
       }

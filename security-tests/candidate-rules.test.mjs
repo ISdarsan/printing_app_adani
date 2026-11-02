@@ -61,7 +61,9 @@ async function seed(env) {
       put('notifications/nt-s', { canteenId: 'south', title: 'S', message: 'm', readBy: [], timestamp: ago(0) }),
       put('menuItems/north_TEA', { code: 'TEA', name: 'Tea', canteenId: 'north', fullPrice: 10, costPrice: 4 }),
       put('menuItems/south_TEA', { code: 'TEA', name: 'Tea', canteenId: 'south', fullPrice: 11, costPrice: 4 }),
-      put('monthlyFunds/2026-11', { fundAmount: 100000, monthYear: '2026-11' }),
+      put('monthlyFunds/north_2026-11', { canteenId: 'north', canteenName: 'North', monthYear: '2026-11', fundAmount: 100000 }),
+      put('monthlyFunds/south_2026-11', { canteenId: 'south', canteenName: 'South', monthYear: '2026-11', fundAmount: 50000 }),
+      put('monthlyFunds/2026-11', { fundAmount: 999999, monthYear: '2026-11' }), // the OLD shared fund: no longer anyone's budget
       put('counters/billCounter_north', { canteenId: 'north', lastNumber: 5 }),
       put('counters/billCounter', { lastNumber: 40 }),
     ]);
@@ -96,7 +98,8 @@ describe('A. The deployed rules are wide open; the candidate closes each hole', 
     ['a cashier edits a submitted cash closing', (e) => updateDoc(doc(N(e), `cashReconciliations/north_${DAY}`), { actualCash: 999 })],
     ['a cashier deletes an expense', (e) => deleteDoc(doc(N(e), 'expenses/e-n'))],
     ['a cashier lowers daily sales', (e) => updateDoc(doc(N(e), `dailyStats/north_${DAY}`), { totalSales: 1 })],
-    ['a cashier sets the monthly fund', (e) => setDoc(doc(N(e), 'monthlyFunds/2026-11'), { fundAmount: 1 })],
+    ['a cashier sets their own canteen budget', (e) => setDoc(doc(N(e), 'monthlyFunds/north_2026-11'), { canteenId: 'north', monthYear: '2026-11', fundAmount: 1 })],
+    ['a cashier sets another canteen budget', (e) => setDoc(doc(N(e), 'monthlyFunds/south_2026-11'), { canteenId: 'south', monthYear: '2026-11', fundAmount: 1 })],
     ['a cashier writes a notice to all branches', (e) => setDoc(doc(N(e), 'notifications/fake'), { canteenId: 'south', title: 'x', message: 'y' })],
     ['a cashier resets the bill counter', (e) => setDoc(doc(N(e), 'counters/billCounter_north'), { canteenId: 'north', lastNumber: 1 })],
     ['a cashier creates a canteen', (e) => setDoc(doc(N(e), 'canteens/evil'), { name: 'Evil' })],
@@ -127,10 +130,9 @@ describe('B. Authentication and active-staff boundary (candidate)', () => {
         await no(getDocs(query(collection(db(cand), c), where('canteenId', '==', 'north'))));
         await no(getDocs(collection(db(cand), c)));
       }
-      // The organisation-wide fund is readable by ANY active staff member (by decision),
-      // so a branch-less cashier may read it; everyone else listed here may not.
-      const fund = getDoc(doc(db(cand), 'monthlyFunds/2026-11'));
-      if (who.startsWith('cashier whose staff record has NO canteenId')) await ok(fund); else await no(fund);
+      // Budgets are per canteen: only an active staff member of THAT canteen (or an admin) may read one.
+      // Everyone in this list (no branch, inactive, wrong role...) is denied.
+      await no(getDoc(doc(db(cand), 'monthlyFunds/north_2026-11')));
       await no(getDoc(doc(db(cand), 'counters/billCounter_north')));
     });
     test(`${who}: cannot write business data`, async () => {
@@ -282,9 +284,10 @@ describe('E. Every cashier operation of the app, with its real payload (candidat
     const db = N(cand);
     await ok(getDocs(query(collection(db, 'dailyStats'), where('canteenId', '==', 'north'), where('date', '==', DAY), limit(1))));
     await ok(getDocs(query(collection(db, 'notifications'), where('canteenId', '==', 'north'), orderBy('timestamp', 'desc'), limit(1))));
-    await ok(getDoc(doc(db, 'monthlyFunds/2026-11')));
-    const missingFund = await assertSucceeds(getDoc(doc(db, 'monthlyFunds/2030-01'))); // month without a fund: allowed, not found
+    await ok(getDoc(doc(db, 'monthlyFunds/north_2026-11'))); // this canteen's budget
+    const missingFund = await assertSucceeds(getDoc(doc(db, 'monthlyFunds/north_2030-01'))); // month without a budget: allowed, not found
     assert.equal(missingFund.exists(), false);
+    await no(getDoc(doc(db, 'monthlyFunds/south_2026-11'))); // another canteen's budget
     await ok(getDocs(query(collection(db, 'expenses'), where('canteenId', '==', 'north'), ...RANGE)));
   });
 
@@ -473,13 +476,41 @@ describe('F. Financial protections (bills, repayments, expenses, closings, count
     await no(updateDoc(doc(db, `cashReconciliations/north_${DAY}`), { actualCash: 1 }));
     await ok(updateDoc(doc(A(cand), `cashReconciliations/north_${DAY}`), { note: 'audited' })); // admin audit stays possible
   });
-  test('monthly fund and canteens: read by active staff / admin only; written by admin only', async () => {
-    await ok(getDoc(doc(N(cand), 'monthlyFunds/2026-11')));
-    await no(setDoc(doc(N(cand), 'monthlyFunds/2026-11'), { fundAmount: 5 }));
-    await no(deleteDoc(doc(N(cand), 'monthlyFunds/2026-11')));
-    await ok(setDoc(doc(A(cand), 'monthlyFunds/2026-12'), { fundAmount: 5000, lastUpdated: serverTimestamp(), updatedBy: 'admin@x.com', monthLabel: 'December 2026' })); // funds_received_page payload
-    await ok(setDoc(doc(A(cand), 'monthlyFunds/2026-11'), { fundAmount: 7000, lastUpdated: Timestamp.now(), monthYear: '2026-11' }, { merge: true })); // admin_monthly_cashflow payload
-    await no(setDoc(doc(A(cand), 'monthlyFunds/2027-01'), { fundAmount: -1 }));
+  test('monthly budgets are PER CANTEEN: a cashier reads only their own; admin writes with a matching id', async () => {
+    // own canteen: readable (also when the month has no budget yet), read-only
+    await ok(getDoc(doc(N(cand), 'monthlyFunds/north_2026-11')));
+    await ok(getDoc(doc(N(cand), 'monthlyFunds/north_2031-01')));
+    await no(setDoc(doc(N(cand), 'monthlyFunds/north_2026-11'), { canteenId: 'north', monthYear: '2026-11', fundAmount: 5 }));
+    await no(deleteDoc(doc(N(cand), 'monthlyFunds/north_2026-11')));
+    // other canteens and the old shared document: not readable
+    await no(getDoc(doc(N(cand), 'monthlyFunds/south_2026-11')));
+    await no(getDoc(doc(N(cand), 'monthlyFunds/2026-11')));
+    await no(getDocs(collection(N(cand), 'monthlyFunds')));
+    // a different-looking id that merely starts like the canteen id is not the canteen's budget
+    await no(getDoc(doc(N(cand), 'monthlyFunds/northeast_2026-11')));
+    // the south cashier mirrors it
+    const S = as(cand, 'cashier-south', 's@x.com');
+    await ok(getDoc(doc(S, 'monthlyFunds/south_2026-11')));
+    await no(getDoc(doc(S, 'monthlyFunds/north_2026-11')));
+  });
+  test('monthly budgets: admin can set any canteen budget with the payload the admin screens send', async () => {
+    const a = A(cand);
+    // admin_expense_report_page / funds_received_page payload
+    await ok(setDoc(doc(a, 'monthlyFunds/north_2026-12'), { canteenId: 'north', canteenName: 'North', monthYear: '2026-12', fundAmount: 5000, lastUpdated: serverTimestamp(), updatedBy: 'admin@x.com', monthLabel: 'December 2026' }));
+    await ok(setDoc(doc(a, 'monthlyFunds/south_2026-12'), { canteenId: 'south', canteenName: 'South', monthYear: '2026-12', fundAmount: 8000, lastUpdated: serverTimestamp(), updatedBy: 'admin@x.com', monthLabel: 'December 2026' }));
+    await ok(getDocs(collection(a, 'monthlyFunds'))); // admin list (expense report, dashboard banner)
+    await ok(getDocs(query(collection(a, 'monthlyFunds'), where('monthYear', '==', '2026-11')))); // admin dashboard banner
+    await ok(getDoc(doc(a, 'monthlyFunds/south_2026-11')));
+    // the id must agree with the contents
+    await no(setDoc(doc(a, 'monthlyFunds/north_2027-01'), { canteenId: 'south', monthYear: '2027-01', fundAmount: 1 }));
+    await no(setDoc(doc(a, 'monthlyFunds/north_2027-01'), { canteenId: 'north', monthYear: '2027-02', fundAmount: 1 }));
+    // the OLD shared-fund payload (no canteen) is refused: old app builds cannot create a shared fund any more
+    await no(setDoc(doc(a, 'monthlyFunds/2027-01'), { fundAmount: 5000, lastUpdated: serverTimestamp(), updatedBy: 'admin@x.com', monthLabel: 'January 2027' }));
+    // validation
+    await no(setDoc(doc(a, 'monthlyFunds/north_2027-01'), { canteenId: 'north', monthYear: '2027-01', fundAmount: -1 }));
+    await no(setDoc(doc(a, 'monthlyFunds/north_2027-01'), { canteenId: 'north', monthYear: '2027-01', fundAmount: '5000' }));
+    await no(setDoc(doc(a, 'monthlyFunds/_2027-01'), { canteenId: '', monthYear: '2027-01', fundAmount: 1 }));
+    await ok(deleteDoc(doc(a, 'monthlyFunds/north_2026-12')));
   });
   test('notices: only an admin can send or delete', async () => {
     const n = { title: 'Hi', message: 'Msg', timestamp: Timestamp.now(), sentBy: 'admin@x.com', canteenId: 'north', canteenName: 'North' };
@@ -596,8 +627,8 @@ describe('I. B-32: reading a document that does not exist', () => {
       assert.equal(s.exists(), false);
     }
   });
-  test('the exceptions: the fund, own staff record and counters can be read when missing', async () => {
-    for (const p of ['monthlyFunds/2099-01', 'canteenStaff/cashier-north', 'counters/billCounter_north', 'counters/billCounter']) {
+  test('the exceptions: the own-canteen budget, own staff record and counters can be read when missing', async () => {
+    for (const p of ['monthlyFunds/north_2099-01', 'canteenStaff/cashier-north', 'counters/billCounter_north', 'counters/billCounter']) {
       await ok(getDoc(doc(N(cand), p)));
     }
   });

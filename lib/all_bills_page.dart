@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'stream_cache.dart';
+import 'state_views.dart';
 import 'bill_detail_page.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
@@ -13,6 +15,8 @@ class AllBillsPage extends StatefulWidget {
 }
 
 class _AllBillsPageState extends State<AllBillsPage> {
+  final StreamCache _streams = StreamCache();
+
   // Only year/month are used; initialised from the business calendar (IST).
   DateTime _selectedMonth = BusinessTime.wallClock(DateTime.now());
 
@@ -86,26 +90,18 @@ class _AllBillsPageState extends State<AllBillsPage> {
           ),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: _stream,
+              stream: _streams.get('bills', () => _stream,
+                  signature:
+                      '${_selectedMonth.year}-${_selectedMonth.month}|${CanteenProvider.selectedCanteenId}'),
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child:
-                          CircularProgressIndicator(color: AppColors.gradBlue));
+                  return const AppLoading();
                 }
                 if (snap.hasError) {
                   debugPrint('[AllBills] Error: ${snap.error}');
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        'Error loading bills:\n${snap.error}',
-                        style: AppText.style(
-                            color: AppColors.accentRed, fontSize: 13),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  );
+                  return AppErrorState(
+                      error: snap.error,
+                      onRetry: () => setState(_streams.reset));
                 }
 
                 final allDocs = snap.data?.docs ?? [];

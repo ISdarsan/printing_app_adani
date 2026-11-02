@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'report_records.dart' show asDouble;
 import 'money.dart';
 import 'sync_status.dart';
@@ -37,18 +38,23 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
   @override
   void initState() {
     super.initState();
+    _openStreams();
+  }
+
+  /// Opens (or re-opens, for Retry) the three listeners.
+  void _openStreams() {
     // Branch-scoped queries instead of document streams: a cashier cannot read
     // a document that does not exist yet, and a failed stream ends for good, so
     // the screen would never notice the closing being submitted. A query just
     // returns nothing and then the new record. Equality filters only.
-    Stream<Map<String, dynamic>?> today(String collection) => FirebaseFirestore
-        .instance
-        .collection(collection)
-        .where('canteenId', isEqualTo: CanteenProvider.selectedCanteenId)
-        .where('date', isEqualTo: _todayId)
-        .limit(1)
-        .snapshots()
-        .map((s) => s.docs.isEmpty ? null : s.docs.first.data());
+    Stream<Map<String, dynamic>?> today(String collection) =>
+        FirebaseFirestore.instance
+            .collection(collection)
+            .where('canteenId', isEqualTo: CanteenProvider.selectedCanteenId)
+            .where('date', isEqualTo: _todayId)
+            .limit(1)
+            .snapshots()
+            .map((s) => s.docs.isEmpty ? null : s.docs.first.data());
     _todayStatsStream = today('dailyStats');
     _todayReconciliationStream = today('cashReconciliations');
 
@@ -91,45 +97,45 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
         label: 'Cash closing ₹${actual.toStringAsFixed(2)} for $_todayLabel',
         safeToRetry: false,
         run: () async {
-        // Already closed today? Asked with a branch-scoped query (cashiers cannot
-        // read a missing document). If a previous attempt of THIS submission
-        // did commit but its acknowledgement was lost, the record is ours:
-        // report success instead of "already submitted".
-        final prior = await FirebaseFirestore.instance
-            .collection('cashReconciliations')
-            .where('canteenId', isEqualTo: CanteenProvider.selectedCanteenId)
-            .where('date', isEqualTo: _todayId)
-            .limit(1)
-            .get(const GetOptions(source: Source.server));
-        if (prior.docs.isNotEmpty) {
-          final d = prior.docs.first.data();
-          alreadyMine =
-              d['submittedBy'] == FirebaseAuth.instance.currentUser?.email &&
-                  moneyEquals(asDouble(d['actualCash']), actual);
-          if (alreadyMine) return;
-          throw _AlreadyReconciledException();
-        }
-        // Create-only: the record id is fixed per branch and day, so a second
-        // create is an UPDATE to the rules, which cashiers may not do. A
-        // transaction (not a plain set) so that it fails when offline instead
-        // of being queued.
-        await FirebaseFirestore.instance.runTransaction((transaction) async {
-        transaction.set(reconciliationRef, {
-          'date': _todayId,
-          'canteenId': CanteenProvider.selectedCanteenId,
-          'canteenName': CanteenProvider.selectedCanteenName,
-          'systemCash': roundMoney(systemCash),
-          'actualCash': roundMoney(actual),
-          'discrepancy': discrepancy,
-          'note': _noteController.text.trim(),
-          'submittedBy':
-              FirebaseAuth.instance.currentUser?.email ?? 'Unknown Cashier',
-          // Required by the security rules: the closing is signed with the
-          // caller's uid, so it cannot be filed in someone else's name.
-          'submittedByUid': FirebaseAuth.instance.currentUser?.uid,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-        });
+          // Already closed today? Asked with a branch-scoped query (cashiers cannot
+          // read a missing document). If a previous attempt of THIS submission
+          // did commit but its acknowledgement was lost, the record is ours:
+          // report success instead of "already submitted".
+          final prior = await FirebaseFirestore.instance
+              .collection('cashReconciliations')
+              .where('canteenId', isEqualTo: CanteenProvider.selectedCanteenId)
+              .where('date', isEqualTo: _todayId)
+              .limit(1)
+              .get(const GetOptions(source: Source.server));
+          if (prior.docs.isNotEmpty) {
+            final d = prior.docs.first.data();
+            alreadyMine =
+                d['submittedBy'] == FirebaseAuth.instance.currentUser?.email &&
+                    moneyEquals(asDouble(d['actualCash']), actual);
+            if (alreadyMine) return;
+            throw _AlreadyReconciledException();
+          }
+          // Create-only: the record id is fixed per branch and day, so a second
+          // create is an UPDATE to the rules, which cashiers may not do. A
+          // transaction (not a plain set) so that it fails when offline instead
+          // of being queued.
+          await FirebaseFirestore.instance.runTransaction((transaction) async {
+            transaction.set(reconciliationRef, {
+              'date': _todayId,
+              'canteenId': CanteenProvider.selectedCanteenId,
+              'canteenName': CanteenProvider.selectedCanteenName,
+              'systemCash': roundMoney(systemCash),
+              'actualCash': roundMoney(actual),
+              'discrepancy': discrepancy,
+              'note': _noteController.text.trim(),
+              'submittedBy':
+                  FirebaseAuth.instance.currentUser?.email ?? 'Unknown Cashier',
+              // Required by the security rules: the closing is signed with the
+              // caller's uid, so it cannot be filed in someone else's name.
+              'submittedByUid': FirebaseAuth.instance.currentUser?.uid,
+              'timestamp': FieldValue.serverTimestamp(),
+            });
+          });
         },
       );
 
@@ -155,7 +161,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e', style: AppText.style()),
+          content: Text('Could not save the closing. ${friendlyErrorMessage(e, action: 'saving')}', style: AppText.style()),
           backgroundColor: AppColors.accentRed,
         ));
       }
@@ -190,9 +196,12 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
     return StreamBuilder<Map<String, dynamic>?>(
       stream: _todayReconciliationStream,
       builder: (context, reconSnap) {
+        if (reconSnap.hasError) {
+          return AppErrorState(
+              error: reconSnap.error, onRetry: () => setState(_openStreams));
+        }
         if (reconSnap.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator(color: AppColors.accentBlue));
+          return const AppLoading();
         }
 
         // If today is already reconciled, show status and details
@@ -273,6 +282,18 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
         return StreamBuilder<Map<String, dynamic>?>(
           stream: _todayStatsStream,
           builder: (context, statsSnap) {
+            // The expected cash must be KNOWN before a closing can be entered.
+            // Previously an error or a not-yet-arrived value silently counted
+            // as Rs 0, so a closing could be submitted against Rs 0.
+            if (statsSnap.hasError) {
+              return AppErrorState(
+                  error: statsSnap.error,
+                  onRetry: () => setState(_openStreams));
+            }
+            if (statsSnap.connectionState == ConnectionState.waiting) {
+              return const AppLoading(
+                  message: 'Loading the cash total for today...');
+            }
             double systemCash = 0.0;
             final d = statsSnap.data;
             if (d != null) {
@@ -461,9 +482,12 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
     return StreamBuilder<QuerySnapshot>(
       stream: _reconciliationHistoryStream,
       builder: (context, snap) {
+        if (snap.hasError) {
+          return AppErrorState(
+              error: snap.error, onRetry: () => setState(_openStreams));
+        }
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator(color: AppColors.accentBlue));
+          return const AppLoading();
         }
 
         final docs = snap.data?.docs ?? [];

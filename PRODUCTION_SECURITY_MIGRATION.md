@@ -52,7 +52,7 @@ Always required: signed in, a `canteenStaff/{uid}` record exists, `active` is no
 | `repayments` | all | R own; C own, amount > 0, server time; U D denied | all |
 | `cashReconciliations` | all | R own; C own, signed by the caller, server time; U D denied (create-only, one per day by id) | all |
 | `notifications` | all | R own; U only to add own uid to `readBy`; C D denied | all |
-| `monthlyFunds` | all | R (organisation-wide fund, by decision); C U D denied | R C U D |
+| `monthlyFunds` | all | R own canteen's budget only (`<canteenId>_<month>`); C U D denied | R C U D |
 | `counters` | all | get own branch counter (and the legacy `billCounter`); create/update only to +1; list denied; D denied | all |
 | anything else | all | denied | denied |
 

@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'money.dart';
 import 'sync_status.dart';
 import 'canteen_provider.dart';
@@ -40,6 +41,11 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
   @override
   void initState() {
     super.initState();
+    _openStreams();
+  }
+
+  /// Opens (or re-opens, for Retry) the three listeners.
+  void _openStreams() {
     _customerStream = FirebaseFirestore.instance
         .collection('creditCustomers')
         .doc(widget.customerId)
@@ -65,6 +71,11 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
       body: StreamBuilder<DocumentSnapshot>(
         stream: _customerStream,
         builder: (context, customerSnap) {
+          if (customerSnap.hasError) {
+            return AppErrorState(
+                error: customerSnap.error,
+                onRetry: () => setState(_openStreams));
+          }
           double currentTotalPending = 0.0;
           if (customerSnap.hasData && customerSnap.data!.exists) {
             final data = customerSnap.data!.data() as Map<String, dynamic>;
@@ -566,7 +577,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Error: $e'),
+        content: Text('Could not complete this. ${friendlyErrorMessage(e, action: 'saving')}'),
         backgroundColor: AppColors.accentRed,
       ));
     } finally {
@@ -581,13 +592,13 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
       stream: _billsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator(color: AppColors.accentBlue));
+          return const AppLoading();
         }
         if (snapshot.hasError) {
-          return Center(
-              child: Text('Error: ${snapshot.error}',
-                  style: const TextStyle(color: Colors.white)));
+          return AppErrorState(
+              inline: true,
+              error: snapshot.error,
+              onRetry: () => setState(_openStreams));
         }
 
         var docs = snapshot.data?.docs ?? [];
@@ -686,13 +697,13 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
       stream: _repaymentsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator(color: AppColors.accentBlue));
+          return const AppLoading();
         }
         if (snapshot.hasError) {
-          return Center(
-              child: Text('Error: ${snapshot.error}',
-                  style: const TextStyle(color: Colors.white)));
+          return AppErrorState(
+              inline: true,
+              error: snapshot.error,
+              onRetry: () => setState(_openStreams));
         }
 
         var docs = snapshot.data?.docs ?? [];

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'state_views.dart';
+import 'stream_cache.dart';
 import 'daily_sales_report_page.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
@@ -20,6 +22,11 @@ class MonthlySalesBreakdownPage extends StatefulWidget {
 }
 
 class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
+  final StreamCache _streams = StreamCache();
+  Stream<T> _cached<T>(String name, Stream<T> Function() make, String sig) =>
+      _streams.get<T>(name, make,
+          signature: '${CanteenProvider.selectedCanteenId}|$sig');
+
   DateTime _selectedMonth = DateTime(
       BusinessTime.wallClock(DateTime.now()).year,
       BusinessTime.wallClock(DateTime.now()).month);
@@ -127,12 +134,17 @@ class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
           // ── Daily List ────────────────────────────────
           Expanded(
             child: StreamBuilder<List<DailySaleSummary>>(
-              stream: _getDailyBreakdown(),
+              stream: _cached('month', _getDailyBreakdown,
+                  '${_selectedMonth.year}-${_selectedMonth.month}'),
               builder: (context, snap) {
+                if (snap.hasError) {
+                  return AppErrorState(
+                      inline: true,
+                      error: snap.error,
+                      onRetry: () => setState(_streams.reset));
+                }
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child:
-                          CircularProgressIndicator(color: AppColors.gradBlue));
+                  return const AppLoading();
                 }
                 if (!snap.hasData || snap.data!.isEmpty) {
                   return Center(

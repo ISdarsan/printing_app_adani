@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'state_views.dart';
+import 'stream_cache.dart';
 import 'bill_detail_page.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
@@ -15,6 +17,11 @@ class DailySalesReportPage extends StatefulWidget {
 }
 
 class _DailySalesReportPageState extends State<DailySalesReportPage> {
+  final StreamCache _streams = StreamCache();
+  Stream<T> _cached<T>(String name, Stream<T> Function() make, String sig) =>
+      _streams.get<T>(name, make,
+          signature: '${CanteenProvider.selectedCanteenId}|$sig');
+
   late DateTime _selectedDate;
 
   @override
@@ -112,26 +119,17 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
           // ── Bills List ─────────────────────────────────
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: _getBillsStream(),
+              stream: _cached('bills', _getBillsStream,
+                  _selectedDate.toIso8601String().substring(0, 10)),
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child:
-                          CircularProgressIndicator(color: AppColors.gradBlue));
+                  return const AppLoading();
                 }
                 if (snap.hasError) {
                   debugPrint('[DailySalesReport] Error: ${snap.error}');
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        'Error loading report:\n${snap.error}',
-                        style: AppText.style(
-                            color: AppColors.accentRed, fontSize: 13),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  );
+                  return AppErrorState(
+                      error: snap.error,
+                      onRetry: () => setState(_streams.reset));
                 }
 
                 final allDocs = snap.data?.docs ?? [];

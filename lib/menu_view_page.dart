@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'theme.dart';
+import 'stream_cache.dart';
+import 'state_views.dart';
 import 'canteen_provider.dart';
 
 class MenuViewPage extends StatefulWidget {
@@ -10,6 +12,8 @@ class MenuViewPage extends StatefulWidget {
 }
 
 class _MenuViewPageState extends State<MenuViewPage> {
+  final StreamCache _streams = StreamCache();
+
   final _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -47,21 +51,20 @@ class _MenuViewPageState extends State<MenuViewPage> {
           // ── Menu List ──────────────────────────────
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
+              stream: _streams.get('menu', () => FirebaseFirestore.instance
                   .collection('menuItems')
                   .where('canteenId',
                       isEqualTo: CanteenProvider.selectedCanteenId)
-                  .snapshots(),
+                  .snapshots()),
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child:
-                          CircularProgressIndicator(color: AppColors.gradBlue));
+                  return const AppLoading();
                 }
                 if (snap.hasError) {
-                  return Center(
-                      child: Text('Error: ${snap.error}',
-                          style: AppText.style(color: AppColors.accentRed)));
+                  return AppErrorState(
+                      inline: true,
+                      error: snap.error,
+                      onRetry: () => setState(_streams.reset));
                 }
                 if (!snap.hasData || snap.data!.docs.isEmpty) {
                   return Center(

@@ -8,6 +8,8 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'theme.dart';
+import 'fund_budget.dart';
+import 'state_views.dart';
 import 'logout_splash_page.dart';
 import 'admin_master_credit_ledger_page.dart';
 import 'bill_detail_page.dart';
@@ -18,6 +20,7 @@ import 'excel_report_builder.dart';
 import 'export_range.dart';
 import 'paged_fetch.dart';
 import 'report_data_loader.dart';
+import 'stream_cache.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -29,6 +32,14 @@ class AdminDashboardPage extends StatefulWidget {
 class _AdminDashboardPageState extends State<AdminDashboardPage> {
   final User? _currentUser = FirebaseAuth.instance.currentUser;
   String _selectedCanteenFilter = 'all'; // 'all' or canteenId e.g. 'canteen_1'
+
+  /// One listener per dashboard card. Without this, every rebuild created new
+  /// Firestore listeners (including one on the whole month of bills).
+  final StreamCache _streams = StreamCache();
+  String get _streamSignature =>
+      '$_selectedCanteenFilter|${BusinessTime.dateKey(DateTime.now())}';
+  Stream<T> _cached<T>(String name, Stream<T> Function() make) =>
+      _streams.get<T>(name, make, signature: _streamSignature);
 
   @override
   void didChangeDependencies() {
@@ -278,7 +289,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       if (!context.mounted) return;
       Navigator.pop(context);
       await Share.shareXFiles([XFile(file.path)],
-          text: 'Canteen Ledger & Analytics - All Branches (${range.periodLabel})');
+          text:
+              'Canteen Ledger & Analytics - All Branches (${range.periodLabel})');
     } on PagedFetchCancelled {
       if (!context.mounted) return;
       Navigator.pop(context);
@@ -298,12 +310,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               style: AppText.style(
                   color: Colors.white, fontWeight: FontWeight.w700)),
           content: Text(
-              'No file was created. Check the connection and try again.\n\n$e',
-              style: AppText.style(color: AppColors.textSecondary, fontSize: 13)),
+              'No file was created. Check the connection and try again.\n\n${friendlyErrorMessage(e, action: 'exporting')}',
+              style:
+                  AppText.style(color: AppColors.textSecondary, fontSize: 13)),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: Text('Close', style: AppText.style(color: Colors.white70))),
+                child:
+                    Text('Close', style: AppText.style(color: Colors.white70))),
             TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
                 child: Text('Retry',
@@ -501,14 +515,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   Widget _buildWeeklyChartSection() {
     return StreamBuilder<List<MapEntry<String, Map<String, dynamic>>>>(
-      stream: _getWeeklyStatsStream(),
+      stream: _cached('weekly', _getWeeklyStatsStream),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SizedBox(
-            height: 220,
-            child: Center(
-                child: CircularProgressIndicator(color: AppColors.accentBlue)),
-          );
+          return const SizedBox(height: 220, child: AppLoading());
+        }
+        if (snapshot.hasError) {
+          return AppErrorState(
+              inline: true,
+              error: snapshot.error,
+              onRetry: () => setState(_streams.reset));
         }
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return Container(
@@ -978,9 +994,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   children: [
                     // Today's Sales
                     StreamBuilder<Map<String, dynamic>>(
-                      stream: _getDailyStatsStream(),
+                      stream: _cached('daily', _getDailyStatsStream),
                       builder: (context, snap) {
-                        String sales = '₹0';
+                        // A dash until real data arrives (or if it fails), never a
+                        // made-up zero.
+                        String sales = '—';
                         if (snap.hasData) {
                           final d = snap.data!;
                           sales =
@@ -999,12 +1017,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
                     // Monthly Sales
                     StreamBuilder<double>(
-                      stream: _getMonthlySalesStream(),
+                      stream: _cached('monthSales', _getMonthlySalesStream),
                       builder: (context, snap) {
                         return _buildMetricCard(
                           icon: Icons.calendar_month_rounded,
                           label: "Month's Revenue",
-                          value: "₹${snap.data?.toStringAsFixed(0) ?? '0'}",
+                          value: snap.hasData
+                              ? "₹${snap.data!.toStringAsFixed(0)}"
+                              : '—',
                           gradient: AppGradients.blueAccent,
                           onTap: () => Navigator.pushNamed(
                               context, '/monthly_sales_breakdown'),
@@ -1014,12 +1034,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
                     // Total Pending Credit
                     StreamBuilder<double>(
-                      stream: _getTotalPendingCreditStream(),
+                      stream: _cached(
+                          'pendingCredit', _getTotalPendingCreditStream),
                       builder: (context, snap) {
                         return _buildMetricCard(
                           icon: Icons.account_balance_wallet_rounded,
                           label: "Total Credit Due",
-                          value: "₹${snap.data?.toStringAsFixed(0) ?? '0'}",
+                          value: snap.hasData
+                              ? "₹${snap.data!.toStringAsFixed(0)}"
+                              : '—',
                           gradient: AppGradients.orangeAccent,
                           onTap: () => Navigator.push(
                               context,
@@ -1032,12 +1055,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
                     // Monthly Expenses
                     StreamBuilder<double>(
-                      stream: _getMonthlyExpensesStream(),
+                      stream:
+                          _cached('monthExpenses', _getMonthlyExpensesStream),
                       builder: (context, snap) {
                         return _buildMetricCard(
                           icon: Icons.receipt_long_rounded,
                           label: "Month's Expenses",
-                          value: "₹${snap.data?.toStringAsFixed(0) ?? '0'}",
+                          value: snap.hasData
+                              ? "₹${snap.data!.toStringAsFixed(0)}"
+                              : '—',
                           gradient: AppGradients.redAccent,
                           onTap: () => Navigator.pushNamed(
                               context, '/admin_expense_report'),
@@ -1074,16 +1100,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 const SizedBox(height: 12),
 
                 StreamBuilder<List<DocumentSnapshot>>(
-                  stream: _getRecentBillsStream(),
+                  stream: _cached('recent', _getRecentBillsStream),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: CircularProgressIndicator(
-                              color: AppColors.accentBlue),
-                        ),
-                      );
+                      return const AppLoading();
+                    }
+                    if (snapshot.hasError) {
+                      return AppErrorState(
+                          inline: true,
+                          error: snapshot.error,
+                          onRetry: () => setState(_streams.reset));
                     }
                     if (!snapshot.hasData || snapshot.data!.isEmpty) {
                       return Container(
@@ -1218,36 +1244,48 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
+  /// Budgets are per canteen, so each canteen is judged against ITS OWN
+  /// budget for the month (never a pooled total).
   Widget _buildBudgetAlertBanner() {
     final now = DateTime.now();
     final monthId = BusinessTime.monthKey(now);
     final month = BusinessTime.monthRange(now);
 
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('monthlyFunds')
-          .doc(monthId)
-          .snapshots(),
+    return StreamBuilder<QuerySnapshot>(
+      stream: _cached(
+          'budgetFunds',
+          () => FirebaseFirestore.instance
+              .collection('monthlyFunds')
+              .where('monthYear', isEqualTo: monthId)
+              .snapshots()),
       builder: (context, fundSnap) {
         if (fundSnap.hasError) {
           debugPrint("Budget Alert Fund Error: ${fundSnap.error}");
           return const SizedBox.shrink();
         }
-        if (!fundSnap.hasData || !fundSnap.data!.exists) {
-          return const SizedBox.shrink();
-        }
+        if (!fundSnap.hasData) return const SizedBox.shrink();
 
-        final data = fundSnap.data!.data() as Map<String, dynamic>?;
-        if (data == null) return const SizedBox.shrink();
-        final allocated = (data['fundAmount'] as num?)?.toDouble() ?? 0.0;
-        if (allocated == 0) return const SizedBox.shrink();
+        final allocated = <String, double>{};
+        final names = <String, String>{};
+        for (final doc in fundSnap.data!.docs) {
+          final d = doc.data() as Map<String, dynamic>;
+          final id = (d['canteenId'] ?? '').toString();
+          final amount = (d['fundAmount'] as num?)?.toDouble() ?? 0.0;
+          if (id.isNotEmpty && amount > 0) {
+            allocated[id] = amount;
+            names[id] = (d['canteenName'] ?? id).toString();
+          }
+        }
+        if (allocated.isEmpty) return const SizedBox.shrink();
 
         return StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('expenses')
-              .where('timestamp', isGreaterThanOrEqualTo: month.start)
-              .where('timestamp', isLessThan: month.end)
-              .snapshots(),
+          stream: _cached(
+              'budgetExpenses',
+              () => FirebaseFirestore.instance
+                  .collection('expenses')
+                  .where('timestamp', isGreaterThanOrEqualTo: month.start)
+                  .where('timestamp', isLessThan: month.end)
+                  .snapshots()),
           builder: (context, expSnap) {
             if (expSnap.hasError) {
               debugPrint("Budget Alert Expenses Error: ${expSnap.error}");
@@ -1255,23 +1293,18 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             }
             if (!expSnap.hasData) return const SizedBox.shrink();
 
-            double spent = 0;
-            for (var doc in expSnap.data!.docs) {
-              final d = doc.data() as Map<String, dynamic>?;
-              if (d != null) {
-                spent += ((d['amount'] ?? 0.0) as num).toDouble();
-              }
+            final spent = <String, double>{};
+            for (final doc in expSnap.data!.docs) {
+              final d = doc.data() as Map<String, dynamic>;
+              final id = (d['canteenId'] ?? 'main').toString();
+              spent[id] = (spent[id] ?? 0) +
+                  ((d['amount'] ?? 0.0) as num).toDouble();
             }
 
-            double available = allocated - spent;
-            double pctRemaining = available / allocated;
+            final alerts = budgetsNeedingAlert(
+                allocatedByCanteen: allocated, spentByCanteen: spent);
+            if (alerts.isEmpty) return const SizedBox.shrink();
 
-            debugPrint(
-                "Budget Alert values: allocated=$allocated, spent=$spent, available=$available, pctRemaining=$pctRemaining");
-
-            if (pctRemaining >= 0.15) return const SizedBox.shrink();
-
-            final pctStr = (pctRemaining * 100).toStringAsFixed(0);
             return Padding(
               padding: const EdgeInsets.only(bottom: 14),
               child: Container(
@@ -1283,6 +1316,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       color: AppColors.accentRed.withValues(alpha: 0.55)),
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Icon(Icons.warning_amber_rounded,
                         color: AppColors.accentRed, size: 20),
@@ -1292,21 +1326,24 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            available < 0
-                                ? 'Budget Overspent!'
-                                : 'Low Budget Alert ($pctStr% Left)',
+                            alerts.any((b) => b.exceeded)
+                                ? 'Canteen budget exceeded'
+                                : 'Canteen budget running low',
                             style: AppText.style(
                                 color: AppColors.accentRed,
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold),
                           ),
-                          Text(
-                            available < 0
-                                ? 'You have exceeded the allocated budget by ₹${available.abs().toStringAsFixed(0)}.'
-                                : 'Available: ₹${available.toStringAsFixed(0)} left of ₹${allocated.toStringAsFixed(0)} allocated.',
-                            style: AppText.style(
-                                color: AppColors.textSecondary, fontSize: 10),
-                          ),
+                          const SizedBox(height: 2),
+                          for (final b in alerts)
+                            Text(
+                              b.exceeded
+                                  ? '${names[b.canteenId] ?? b.canteenId}: over by ₹${b.available.abs().toStringAsFixed(0)} (budget ₹${b.allocated.toStringAsFixed(0)})'
+                                  : '${names[b.canteenId] ?? b.canteenId}: ₹${b.available.toStringAsFixed(0)} left of ₹${b.allocated.toStringAsFixed(0)} (${b.percentUsed}% used)',
+                              style: AppText.style(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 10),
+                            ),
                         ],
                       ),
                     ),
@@ -1473,9 +1510,14 @@ class _CanteensTabState extends State<_CanteensTab> {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('canteens').snapshots(),
         builder: (context, snap) {
+          if (snap.hasError) {
+            return AppErrorState(
+                inline: true,
+                error: snap.error,
+                onRetry: () => setState(() {}));
+          }
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(
-                child: CircularProgressIndicator(color: AppColors.accentGreen));
+            return const AppLoading();
           }
           final docs = snap.data?.docs ?? [];
           if (docs.isEmpty) {
@@ -1742,13 +1784,11 @@ class _AssignedCanteenStaff extends StatelessWidget {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('canteenStaff').snapshots(),
       builder: (context, snap) {
+        if (snap.hasError) {
+          return AppErrorState(inline: true, error: snap.error);
+        }
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.all(16),
-            child: Center(
-                child: CircularProgressIndicator(
-                    color: AppColors.accentGreen, strokeWidth: 2)),
-          );
+          return const AppLoading();
         }
         if (snap.hasError) {
           return Padding(
@@ -1875,9 +1915,11 @@ class _StaffTab extends StatelessWidget {
             .orderBy('email')
             .snapshots(),
         builder: (context, snap) {
+          if (snap.hasError) {
+            return AppErrorState(inline: true, error: snap.error);
+          }
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(
-                child: CircularProgressIndicator(color: AppColors.accentBlue));
+            return const AppLoading();
           }
           final docs = snap.data?.docs ?? [];
           if (docs.isEmpty) {
@@ -2252,7 +2294,7 @@ class _StaffTab extends StatelessWidget {
                         } catch (e) {
                           setDialogState(() {
                             isLoading = false;
-                            errorMsg = 'Error: $e';
+                            errorMsg = 'Could not create the account. ${friendlyErrorMessage(e, action: 'saving')}';
                           });
                         }
                       },
@@ -2376,7 +2418,7 @@ class _StaffTab extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed: $e', style: AppText.style()),
+          content: Text('Could not complete this. ${friendlyErrorMessage(e, action: 'saving')}', style: AppText.style()),
           backgroundColor: AppColors.accentRed,
         ));
       }

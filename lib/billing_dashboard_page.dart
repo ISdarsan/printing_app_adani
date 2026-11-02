@@ -5,12 +5,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import 'theme.dart';
+import 'fund_budget.dart';
+import 'stream_cache.dart';
 import 'logout_splash_page.dart';
 import 'notifications_page.dart';
 import 'sms_broadcast_helper.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
-import 'money.dart';
 import 'today_summary.dart';
 
 class BillingDashboardPage extends StatefulWidget {
@@ -23,6 +24,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
   final User? _user = FirebaseAuth.instance.currentUser;
   StreamSubscription<QuerySnapshot>? _noticeSub;
   String? _showingNoticeId;
+  // Keeps the bell/banner listeners alive across rebuilds (see StreamCache).
+  final StreamCache _streams = StreamCache();
 
   @override
   void initState() {
@@ -209,7 +212,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
 
   Widget _bellButton() {
     return StreamBuilder<int>(
-      stream: NotificationsPage.unreadCountStream,
+      stream:
+          _streams.get('unreadBell', () => NotificationsPage.unreadCountStream),
       builder: (_, snap) {
         final n = snap.data ?? 0;
         return GestureDetector(
@@ -417,7 +421,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
           _buildBudgetAlertBanner(),
           // ① Notice banner (only when unread)
           StreamBuilder<int>(
-            stream: NotificationsPage.unreadCountStream,
+            stream: _streams.get(
+                'unreadBanner', () => NotificationsPage.unreadCountStream),
             builder: (_, snap) {
               final n = snap.data ?? 0;
               if (n == 0) return const SizedBox.shrink();
@@ -769,10 +774,14 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
     final month = BusinessTime.monthRange(now);
 
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('monthlyFunds')
-          .doc(monthId)
-          .snapshots(),
+      stream: _streams.get(
+          'budgetFund',
+          () => FirebaseFirestore.instance
+              .collection('monthlyFunds')
+              // budgets are per canteen: this canteen's document only
+              .doc(monthlyFundDocId(CanteenProvider.selectedCanteenId, monthId))
+              .snapshots(),
+          signature: '${CanteenProvider.selectedCanteenId}|$monthId'),
       builder: (context, fundSnap) {
         if (fundSnap.hasError) {
           debugPrint("Budget Alert Fund Error: ${fundSnap.error}");
@@ -788,11 +797,14 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
         if (allocated == 0) return const SizedBox.shrink();
 
         return StreamBuilder<QuerySnapshot>(
-          stream: CanteenProvider.scopeQuery(
-                  FirebaseFirestore.instance.collection('expenses'))
-              .where('timestamp', isGreaterThanOrEqualTo: month.start)
-              .where('timestamp', isLessThan: month.end)
-              .snapshots(),
+          stream: _streams.get(
+              'budgetExpenses',
+              () => CanteenProvider.scopeQuery(
+                      FirebaseFirestore.instance.collection('expenses'))
+                  .where('timestamp', isGreaterThanOrEqualTo: month.start)
+                  .where('timestamp', isLessThan: month.end)
+                  .snapshots(),
+              signature: '${CanteenProvider.selectedCanteenId}|$monthId'),
           builder: (context, expSnap) {
             if (expSnap.hasError) {
               debugPrint("Budget Alert Expenses Error: ${expSnap.error}");
@@ -808,15 +820,12 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
               }
             }
 
-            double available = allocated - spent;
-            double pctRemaining = available / allocated;
+            final budget = CanteenBudget.of(
+                canteenId: CanteenProvider.selectedCanteenId,
+                allocated: allocated,
+                spent: spent);
+            if (!budget.needsAlert) return const SizedBox.shrink();
 
-            debugPrint(
-                "Budget Alert values: allocated=$allocated, spent=$spent, available=$available, pctRemaining=$pctRemaining");
-
-            if (pctRemaining >= 0.15) return const SizedBox.shrink();
-
-            final pctStr = (pctRemaining * 100).toStringAsFixed(0);
             return Padding(
               padding: const EdgeInsets.only(bottom: 14),
               child: Container(
@@ -837,18 +846,18 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            available < 0
-                                ? 'Shared fund exceeded by this canteen alone'
-                                : 'Shared fund: this canteen has used ${(100 - double.parse(pctStr)).toStringAsFixed(0)}% of it',
+                            budget.exceeded
+                                ? 'Monthly budget exceeded'
+                                : 'Monthly budget running low (${budget.percentUsed}% used)',
                             style: AppText.style(
                                 color: AppColors.accentRed,
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold),
                           ),
                           Text(
-                            available < 0
-                                ? 'This canteen has spent ₹${available.abs().toStringAsFixed(0)} more than the organisation-wide fund of ₹${allocated.toStringAsFixed(0)}. $kSharedFundNote'
-                                : 'This canteen has spent ₹${spent.toStringAsFixed(0)} of the organisation-wide fund of ₹${allocated.toStringAsFixed(0)}. $kSharedFundNote',
+                            budget.exceeded
+                                ? 'This canteen has spent ₹${budget.available.abs().toStringAsFixed(0)} more than its budget of ₹${budget.allocated.toStringAsFixed(0)} for this month.'
+                                : 'This canteen has spent ₹${budget.spent.toStringAsFixed(0)} of its budget of ₹${budget.allocated.toStringAsFixed(0)}. ₹${budget.available.toStringAsFixed(0)} left.',
                             style: AppText.style(
                                 color: AppColors.textSecondary, fontSize: 10),
                           ),

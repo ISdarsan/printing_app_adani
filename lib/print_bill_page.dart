@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'money.dart';
 import 'sync_status.dart';
 import 'canteen_provider.dart';
@@ -626,7 +627,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
       _snack('Receipt printed successfully.');
     } catch (e) {
       if (mounted) setState(() => _printerStatus = _PrinterStatus.disconnected);
-      final reason = e is PlatformException ? (e.message ?? e.code) : '$e';
+      final reason = e is PlatformException ? (e.message ?? e.code) : friendlyErrorMessage(e, action: 'printing');
       _snack('Print failed: $reason', error: true, onRetry: retry);
     } finally {
       if (mounted) setState(() => _isPrinting = false);
@@ -655,7 +656,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
       }
     } catch (e) {
       if (mounted) setState(() => _menuLoading = false);
-      _snack('Failed to load menu: $e', error: true);
+      _snack('Could not load the menu. ${friendlyErrorMessage(e, action: 'loading')}', error: true);
     }
   }
 
@@ -1400,12 +1401,12 @@ class _PrintBillPageState extends State<PrintBillPage> {
               // ── Scrollable Cart ──
               Expanded(
                 child: _billItems.isEmpty
-                    ? _EmptyCart()
-                    : _CartList(items: _billItems, onRemove: _removeItem),
+                    ? EmptyCart()
+                    : CartList(items: _billItems, onRemove: _removeItem),
               ),
 
               // ── Bottom: Payment + Actions ──
-              _BottomPanel(
+              BillBottomPanel(
                 total: _totalAmount,
                 paymentMethod: _paymentMethod,
                 isSaving: _isSaving || _isPrinting,
@@ -1823,13 +1824,13 @@ class _AddItemPanel extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              _QtyStepper(
+              QtyStepper(
                 value: quantity,
                 onInc: onIncrement,
                 onDec: onDecrement,
               ),
               const SizedBox(width: 10),
-              _PriceToggle(
+              PriceToggle(
                 isFull: isFullPrice,
                 onToggle: onTogglePrice,
               ),
@@ -1987,16 +1988,19 @@ class _SearchField extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  _QtyStepper
+//  QtyStepper
 // ─────────────────────────────────────────────────────────────
 
-class _QtyStepper extends StatelessWidget {
+class QtyStepper extends StatelessWidget {
   final int value;
   final VoidCallback onInc;
   final VoidCallback onDec;
 
-  const _QtyStepper(
-      {required this.value, required this.onInc, required this.onDec});
+  const QtyStepper(
+      {super.key,
+      required this.value,
+      required this.onInc,
+      required this.onDec});
 
   @override
   Widget build(BuildContext context) {
@@ -2010,7 +2014,8 @@ class _QtyStepper extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _StepBtn(icon: Icons.remove, onTap: onDec),
+          _StepBtn(
+              icon: Icons.remove, onTap: onDec, label: 'Decrease quantity'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Text('$value',
@@ -2019,7 +2024,11 @@ class _QtyStepper extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                     fontSize: 16)),
           ),
-          _StepBtn(icon: Icons.add, onTap: onInc, isAdd: true),
+          _StepBtn(
+              icon: Icons.add,
+              onTap: onInc,
+              isAdd: true,
+              label: 'Increase quantity'),
         ],
       ),
     );
@@ -2030,12 +2039,24 @@ class _StepBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final bool isAdd;
+  final String label; // read out by screen readers
 
-  const _StepBtn({required this.icon, required this.onTap, this.isAdd = false});
+  const _StepBtn({
+    required this.icon,
+    required this.onTap,
+    required this.label,
+    this.isAdd = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
         width: 36,
@@ -2053,19 +2074,20 @@ class _StepBtn extends StatelessWidget {
             color: isAdd ? AppColors.accentBlue : AppColors.textSecondary,
             size: 18),
       ),
-    );
+    ));
   }
 }
 
 // ─────────────────────────────────────────────────────────────
-//  _PriceToggle
+//  PriceToggle
 // ─────────────────────────────────────────────────────────────
 
-class _PriceToggle extends StatelessWidget {
+class PriceToggle extends StatelessWidget {
   final bool isFull;
   final ValueChanged<bool> onToggle;
 
-  const _PriceToggle({required this.isFull, required this.onToggle});
+  const PriceToggle(
+      {super.key, required this.isFull, required this.onToggle});
 
   @override
   Widget build(BuildContext context) {
@@ -2102,22 +2124,37 @@ class _ToggleChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    // The visible pill is small, but the tappable area is the full 46 px row
+    // height so the Full/Half choice is easy to hit one-handed.
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$label price',
+      excludeSemantics: true,
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected
-              ? AppColors.accentBlue.withValues(alpha: 0.2)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Text(
-          label,
-          style: AppText.style(
-            color: selected ? AppColors.accentBlue : AppColors.textHint,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          height: 46,
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: selected
+                    ? AppColors.accentBlue.withValues(alpha: 0.2)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                label,
+                style: AppText.style(
+                  color: selected ? AppColors.accentBlue : AppColors.textHint,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -2212,10 +2249,12 @@ class _CartHeader extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  _EmptyCart
+//  EmptyCart
 // ─────────────────────────────────────────────────────────────
 
-class _EmptyCart extends StatelessWidget {
+class EmptyCart extends StatelessWidget {
+  const EmptyCart({super.key});
+
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -2239,14 +2278,14 @@ class _EmptyCart extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  _CartList
+//  CartList
 // ─────────────────────────────────────────────────────────────
 
-class _CartList extends StatelessWidget {
+class CartList extends StatelessWidget {
   final List<BillItem> items;
   final ValueChanged<int> onRemove;
 
-  const _CartList({required this.items, required this.onRemove});
+  const CartList({super.key, required this.items, required this.onRemove});
 
   @override
   Widget build(BuildContext context) {
@@ -2270,11 +2309,17 @@ class _CartList extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(children: [
-                    Text(item.name,
-                        style: AppText.style(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600)),
+                    // Flexible + ellipsis: a long item name used to push the
+                    // row past the screen edge (RenderFlex overflow).
+                    Flexible(
+                      child: Text(item.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.style(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600)),
+                    ),
                     if (item.type == 'Half') ...[
                       const SizedBox(width: 6),
                       Container(
@@ -2311,16 +2356,30 @@ class _CartList extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             // Remove
-            GestureDetector(
+            Semantics(
+              button: true,
+              label: 'Remove ${item.name}',
+              excludeSemantics: true,
               onTap: () => onRemove(i),
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: AppColors.accentRed.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onRemove(i),
+                // 44 x 44 tap area around the same small red icon.
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppColors.accentRed.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.delete_outline_rounded,
+                          color: AppColors.accentRed, size: 16),
+                    ),
+                  ),
                 ),
-                child: const Icon(Icons.delete_outline_rounded,
-                    color: AppColors.accentRed, size: 16),
               ),
             ),
           ]),
@@ -2331,10 +2390,10 @@ class _CartList extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  _BottomPanel
+//  BillBottomPanel
 // ─────────────────────────────────────────────────────────────
 
-class _BottomPanel extends StatelessWidget {
+class BillBottomPanel extends StatelessWidget {
   final double total;
   final String paymentMethod;
   final bool isSaving;
@@ -2344,7 +2403,8 @@ class _BottomPanel extends StatelessWidget {
   final VoidCallback onSave;
   final VoidCallback onClear;
 
-  const _BottomPanel({
+  const BillBottomPanel({
+    super.key,
     required this.total,
     required this.paymentMethod,
     required this.isSaving,
@@ -2381,13 +2441,22 @@ class _BottomPanel extends StatelessWidget {
                       color: AppColors.textSecondary,
                       fontSize: 13,
                       fontWeight: FontWeight.w500)),
-              Text(
-                '₹ ${total.toStringAsFixed(2)}',
-                style: AppText.style(
-                    color: AppColors.accentGreen,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5),
+              const SizedBox(width: 12),
+              // The amount shrinks to fit (large phone text, big totals)
+              // instead of overflowing the row.
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    '₹ ${total.toStringAsFixed(2)}',
+                    style: AppText.style(
+                        color: AppColors.accentGreen,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5),
+                  ),
+                ),
               ),
             ],
           ),

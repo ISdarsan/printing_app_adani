@@ -38,3 +38,73 @@ Pick a new port if one is "taken" (a previous emulator may still be closing). Fo
 - Real Firebase project behaviour (Auth token timing, index build time).
 - The Dart code against the emulator – transaction tests use a port of the logic.
 - `node --test tool/` (directory form) reports a spurious failure; pass the files explicitly as above.
+
+---
+
+# UI modernization and performance branch (`feature/ui-modernization-performance`)
+
+Run on the final code of this branch. Nothing here touched production.
+
+| Check | Result |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **317 passed**, 0 failed (240 existing, unmodified, plus 77 new) |
+| New: `stream_cache_test` | 7 (includes the measured listener count: 11 without the cache, 1 with it, over 1 build + 10 rebuilds, test model) |
+| New: `state_views_test` | 17 (loading/empty/error/retry, overflow at 320×480, 200% text, landscape, tablet) |
+| New: `billing_widgets_test` | 17 (stepper, Full/Half, cart, payment selection, save blocked when empty or already saving) |
+| New: `login_ui_test` | 9 |
+| New: `ui_regression_guards_test` | 4 source guards, each confirmed to fail against the pre-change code |
+| New: `theme_contrast_test` | 23 (WCAG AA for every text token) |
+| Emulator suite, whole `security-tests` folder, repository rules | **203 passed** (unchanged: no rules or queries were changed) |
+| Tool tests | 20 passed; `check_indexes` OK (19 queries, 5 indexes) |
+| Deploy-file verifier | stopgap 16, candidate 18, rollback 14, indexes 11 checks, all pass |
+| Excel workbook validator | 56 passed |
+| `flutter build appbundle --release -t lib/main.dart` | built, 58.9 MB, SHA-256 `9FCFAC9E…212338`. **Not uploaded.** |
+
+Not tested: any real device (printer, Bluetooth reconnect, airplane mode, performance), screenshots / visual QA, widget tests of the admin and cashier dashboards, customer search, repayment dialog and cash-closing page (no injection point for Firestore; see UI_UX_AUDIT.md).
+
+## Loading/error sweep (after first device screenshots)
+
+| Check | Result |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **323 passed** (240 existing unmodified + 83 new) |
+| New guards (mutation-verified against the previous code) | no raw error text anywhere outside debug logs; no Firestore listener opened inside `build()` on any `*_page.dart` except the admin dashboard's documented dialog lists; no made-up ₹0 on admin money cards; chart and recent bills show errors, not "empty" |
+| Release APK rebuilt | 62,351,576 bytes, SHA-256 `FF3F4BB7…973B29`, signer certificate unchanged |
+
+## Second loading sweep (slow connection, spinners, one-shot reads)
+
+| Check | Result |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **326 passed** (240 existing unmodified + 86 new) |
+| Index registry vs code vs `firestore.indexes.json` | agree (every app query is covered by the 5 indexes or by automatic single-field indexes) |
+| Tool tests | 20 passed |
+| New: loading view says "Still loading. Check your internet connection." after 8 s; no leaked timer; guard against bare spinners as loading states | included above |
+| Release APK rebuilt | 62,367,960 bytes, SHA-256 `E2691D35…F6B2D`, signer certificate unchanged |
+
+## First on-device findings (screenshots from a real phone)
+
+| Finding | Result |
+|---|---|
+| Missing Firestore indexes made Bills History, Daily Sales Report, Monthly Budget & Expenses and Manage Menu fail | Indexes deployed 2026-11-02, all 5 Enabled; screens load on the phone |
+| Fund card (Monthly Budget & Expenses, cashier): "RIGHT OVERFLOWED BY 68 PIXELS", labels ran together | Fixed: columns share the width, labels wrap, amounts scale down. Card extracted as `FundSummaryCard` with 14 layout tests |
+| Billing panel total row could overflow at 320 px width with large phone text (found by the corrected tests) | Fixed: amount scales down |
+
+**Correction to earlier test claims.** The small-screen overflow tests added earlier (`state_views`, `billing_widgets`, `login_ui`) passed a size only to `MediaQuery`, which changes the *reported* size but not the width the widgets are laid out in (the test window stayed 800 px wide). Those tests therefore did not really exercise 320 / 360 px. They also drew text with Flutter's placeholder test font, not the app's Inter font. Both are now fixed (`test/support/fonts.dart` loads the real bundled Inter; each test helper constrains the actual layout). Re-run with the corrected method: all earlier layout tests still pass, apart from the billing total row above, which was fixed. A deliberate mutation (fixed-width columns) makes the fund card tests fail in 12 places, so they can fail.
+
+| Check | Result |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **340 passed** |
+| Release APK rebuilt | 62,384,344 bytes, SHA-256 `2AF88935…4FF5E`, signer unchanged |
+
+## Per-canteen monthly budgets (business rule change, 2026-11-02)
+
+| Check | Result |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **359 passed** (includes 14 budget-maths tests, 9 source guards all confirmed to fail on the old shared-fund code, and updated fund-card layout tests) |
+| Emulator, candidate rules suite | **110 passed** (108 + 2 new for per-canteen budgets: own canteen only, other canteens and old shared docs denied, admin write requires id = `<canteenId>_<monthYear>`, old shared-fund payload refused) |
+| Candidate verifier / manifest | regenerated after the intended rule edit; 18 checks pass |
+| Not yet run on a device | admin setting a budget per canteen, cashier view, alerts |

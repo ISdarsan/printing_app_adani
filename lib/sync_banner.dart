@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'sync_status.dart';
 import 'theme.dart';
+import 'state_views.dart';
 
 /// Navigator key shared with MaterialApp so the details sheet can be opened
 /// from the shell, which sits above the Navigator.
@@ -180,8 +181,8 @@ class SyncDetails extends StatelessWidget {
                                 op.status == OpStatus.inFlight
                                     ? 'Waiting for the server to confirm'
                                     : op.safeToRetry
-                                        ? 'Not saved: ${op.error}'
-                                        : 'Not confirmed: ${op.error}\nCheck whether it was recorded before entering it again.',
+                                        ? 'Not saved. ${friendlyErrorMessage(op.error, action: 'saving')}'
+                                        : 'Not confirmed. ${friendlyErrorMessage(op.error, action: 'saving')}\nCheck whether it was recorded before entering it again.',
                                 style: AppText.style(
                                     color: AppColors.textSecondary,
                                     fontSize: 11),

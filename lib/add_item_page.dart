@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'theme.dart';
+import 'stream_cache.dart';
+import 'state_views.dart';
 import 'money.dart';
 import 'canteen_provider.dart';
 
@@ -12,6 +14,8 @@ class AddItemPage extends StatefulWidget {
 
 class _AddItemPageState extends State<AddItemPage>
     with SingleTickerProviderStateMixin {
+  final StreamCache _streams = StreamCache();
+
   late TabController _tabController;
   final _formKey = GlobalKey<FormState>();
   final _codeController = TextEditingController();
@@ -139,7 +143,7 @@ class _AddItemPageState extends State<AddItemPage>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e', style: AppText.style()),
+          content: Text('Could not save the item. ${friendlyErrorMessage(e, action: 'saving')}', style: AppText.style()),
           backgroundColor: AppColors.accentRed,
           behavior: SnackBarBehavior.floating,
         ));
@@ -198,7 +202,7 @@ class _AddItemPageState extends State<AddItemPage>
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error deleting: $e', style: AppText.style()),
+            content: Text('Could not delete the item. ${friendlyErrorMessage(e, action: 'deleting')}', style: AppText.style()),
             backgroundColor: AppColors.accentRed,
             behavior: SnackBarBehavior.floating,
           ));
@@ -252,17 +256,21 @@ class _AddItemPageState extends State<AddItemPage>
               children: [
                 // ── TAB 1: LIST + SEARCH ──────────────────────
                 StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
+                  stream: _streams.get('menu', () => FirebaseFirestore.instance
                       .collection('menuItems')
                       .where('canteenId',
                           isEqualTo: CanteenProvider.selectedCanteenId)
                       .orderBy('name')
-                      .snapshots(),
+                      .snapshots()),
                   builder: (context, snap) {
+                    if (snap.hasError) {
+                      return AppErrorState(
+                          inline: true,
+                          error: snap.error,
+                          onRetry: () => setState(_streams.reset));
+                    }
                     if (snap.connectionState == ConnectionState.waiting) {
-                      return const Center(
-                          child: CircularProgressIndicator(
-                              color: AppColors.accentGreen));
+                      return const AppLoading();
                     }
                     if (!snap.hasData || snap.data!.docs.isEmpty) {
                       return Center(

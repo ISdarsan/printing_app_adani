@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'notification_detail_page.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'canteen_provider.dart';
 
 class NotificationsPage extends StatelessWidget {
@@ -44,276 +45,287 @@ class NotificationsPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: buildGradientAppBar(title: 'Notices from Admin'),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: noticesStream,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-                child: CircularProgressIndicator(color: AppColors.gradBlue));
-          }
-          final docs = (snapshot.data?.docs ?? [])
-              .where((doc) => CanteenProvider.matchesNotificationCanteen(
-                  doc.data() as Map<String, dynamic>))
-              .toList();
-          if (!snapshot.hasData || docs.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: AppColors.bgCard,
-                      shape: BoxShape.circle,
+      body: RetryScope(
+        builder: (context, attempt, retry) => StreamBuilder<QuerySnapshot>(
+          key: ValueKey(attempt),
+          stream: noticesStream,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return AppErrorState(error: snapshot.error, onRetry: retry);
+            }
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const AppLoading();
+            }
+            final docs = (snapshot.data?.docs ?? [])
+                .where((doc) => CanteenProvider.matchesNotificationCanteen(
+                    doc.data() as Map<String, dynamic>))
+                .toList();
+            if (!snapshot.hasData || docs.isEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: AppColors.bgCard,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.notifications_off_rounded,
+                          size: 64, color: AppColors.textHint),
                     ),
-                    child: const Icon(Icons.notifications_off_rounded,
-                        size: 64, color: AppColors.textHint),
-                  ),
-                  const SizedBox(height: 24),
-                  Text('No Notices Yet',
-                      style: AppText.style(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white)),
-                  const SizedBox(height: 8),
-                  Text('Admin messages will appear here.',
-                      style: AppText.style(
-                          fontSize: 14, color: AppColors.textSecondary)),
-                ],
-              ),
-            );
-          }
+                    const SizedBox(height: 24),
+                    Text('No Notices Yet',
+                        style: AppText.style(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white)),
+                    const SizedBox(height: 8),
+                    Text('Admin messages will appear here.',
+                        style: AppText.style(
+                            fontSize: 14, color: AppColors.textSecondary)),
+                  ],
+                ),
+              );
+            }
 
-          final unreadDocs = docs
-              .where((d) =>
-                  !List<String>.from((d.data() as Map)['readBy'] ?? [])
-                      .contains(_uid))
-              .toList();
-          final unreadCount = unreadDocs.length;
+            final unreadDocs = docs
+                .where((d) =>
+                    !List<String>.from((d.data() as Map)['readBy'] ?? [])
+                        .contains(_uid))
+                .toList();
+            final unreadCount = unreadDocs.length;
 
-          return Column(
-            children: [
-              // ââ Unread summary banner ââââââââââââââ
-              if (unreadCount > 0)
-                Container(
-                  margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.accentRed.withValues(alpha: 0.15),
-                        AppColors.accentOrange.withValues(alpha: 0.1)
+            return Column(
+              children: [
+                // ââ Unread summary banner ââââââââââââââ
+                if (unreadCount > 0)
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.accentRed.withValues(alpha: 0.15),
+                          AppColors.accentOrange.withValues(alpha: 0.1)
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                          color: AppColors.accentRed.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppColors.accentRed.withValues(alpha: 0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.mark_email_unread_rounded,
+                              color: AppColors.accentRed, size: 18),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          '$unreadCount unread notice${unreadCount > 1 ? "s" : ""}',
+                          style: AppText.style(
+                              color: AppColors.accentRed,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700),
+                        ),
                       ],
                     ),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                        color: AppColors.accentRed.withValues(alpha: 0.3)),
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppColors.accentRed.withValues(alpha: 0.2),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.mark_email_unread_rounded,
-                            color: AppColors.accentRed, size: 18),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        '$unreadCount unread notice${unreadCount > 1 ? "s" : ""}',
-                        style: AppText.style(
-                            color: AppColors.accentRed,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700),
-                      ),
-                    ],
-                  ),
-                ),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    final doc = docs[index];
-                    final data = doc.data() as Map<String, dynamic>? ?? {};
-                    final date =
-                        (data['timestamp'] as Timestamp? ?? Timestamp.now())
-                            .toDate();
-                    final titleRaw = data['title']?.toString().trim() ?? '';
-                    final title =
-                        titleRaw.isEmpty ? 'Notice from Admin' : titleRaw;
-                    final messageRaw = data['message']?.toString().trim() ?? '';
-                    final message =
-                        messageRaw.isEmpty ? 'No message content' : messageRaw;
-                    final sentBy = data['sentBy']?.toString().trim() ?? 'Admin';
-                    final readBy = List<String>.from(data['readBy'] ?? []);
-                    final isUnread = !readBy.contains(_uid);
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                    itemCount: docs.length,
+                    itemBuilder: (context, index) {
+                      final doc = docs[index];
+                      final data = doc.data() as Map<String, dynamic>? ?? {};
+                      final date =
+                          (data['timestamp'] as Timestamp? ?? Timestamp.now())
+                              .toDate();
+                      final titleRaw = data['title']?.toString().trim() ?? '';
+                      final title =
+                          titleRaw.isEmpty ? 'Notice from Admin' : titleRaw;
+                      final messageRaw =
+                          data['message']?.toString().trim() ?? '';
+                      final message = messageRaw.isEmpty
+                          ? 'No message content'
+                          : messageRaw;
+                      final sentBy =
+                          data['sentBy']?.toString().trim() ?? 'Admin';
+                      final readBy = List<String>.from(data['readBy'] ?? []);
+                      final isUnread = !readBy.contains(_uid);
 
-                    return GestureDetector(
-                      onTap: () async {
-                        if (isUnread) await _markAsRead(doc.id);
-                        if (context.mounted) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => NotificationDetailPage(
-                                title: title,
-                                message: message,
-                                sentBy: sentBy,
-                                timestamp: date,
+                      return GestureDetector(
+                        onTap: () async {
+                          if (isUnread) await _markAsRead(doc.id);
+                          if (context.mounted) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => NotificationDetailPage(
+                                  title: title,
+                                  message: message,
+                                  sentBy: sentBy,
+                                  timestamp: date,
+                                ),
                               ),
-                            ),
-                          );
-                        }
-                      },
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          color: isUnread
-                              ? const Color(0xFF1A1500)
-                              : AppColors.bgCard,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
+                            );
+                          }
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
                             color: isUnread
-                                ? AppColors.accentOrange
-                                : AppColors.bgDivider,
-                            width: isUnread ? 1.5 : 1,
+                                ? const Color(0xFF1A1500)
+                                : AppColors.bgCard,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isUnread
+                                  ? AppColors.accentOrange
+                                  : AppColors.bgDivider,
+                              width: isUnread ? 1.5 : 1,
+                            ),
                           ),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Left icon
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: isUnread
-                                      ? AppColors.accentOrange
-                                          .withValues(alpha: 0.2)
-                                      : AppColors.bgDivider,
-                                  shape: BoxShape.circle,
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Left icon
+                                Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: isUnread
+                                        ? AppColors.accentOrange
+                                            .withValues(alpha: 0.2)
+                                        : AppColors.bgDivider,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    isUnread
+                                        ? Icons.campaign_rounded
+                                        : Icons.notifications_none_rounded,
+                                    color: isUnread
+                                        ? AppColors.accentOrange
+                                        : AppColors.textHint,
+                                    size: 22,
+                                  ),
                                 ),
-                                child: Icon(
-                                  isUnread
-                                      ? Icons.campaign_rounded
-                                      : Icons.notifications_none_rounded,
-                                  color: isUnread
-                                      ? AppColors.accentOrange
-                                      : AppColors.textHint,
-                                  size: 22,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              // Main content
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    // Title row + badge
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.center,
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            title,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontFamily: 'Poppins',
-                                              fontWeight: isUnread
-                                                  ? FontWeight.w700
-                                                  : FontWeight.w500,
-                                              fontSize: 15,
-                                              color: isUnread
-                                                  ? AppColors.textPrimary
-                                                  : AppColors.textSecondary,
-                                            ),
-                                          ),
-                                        ),
-                                        if (isUnread) ...[
-                                          const SizedBox(width: 8),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 7, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.accentRed,
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                            ),
-                                            child: const Text(
-                                              'NEW',
+                                const SizedBox(width: 12),
+                                // Main content
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      // Title row + badge
+                                      Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.center,
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              title,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
                                                 fontFamily: 'Poppins',
-                                                color: Color(0xFFFFFFFF),
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w800,
-                                                letterSpacing: 0.5,
+                                                fontWeight: isUnread
+                                                    ? FontWeight.w700
+                                                    : FontWeight.w500,
+                                                fontSize: 15,
+                                                color: isUnread
+                                                    ? AppColors.textPrimary
+                                                    : AppColors.textSecondary,
                                               ),
                                             ),
                                           ),
+                                          if (isUnread) ...[
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 7,
+                                                      vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: AppColors.accentRed,
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                              ),
+                                              child: const Text(
+                                                'NEW',
+                                                style: TextStyle(
+                                                  fontFamily: 'Poppins',
+                                                  color: Color(0xFFFFFFFF),
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w800,
+                                                  letterSpacing: 0.5,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ],
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    // Message snippet
-                                    Text(
-                                      message,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontFamily: 'Poppins',
-                                        fontSize: 13,
-                                        height: 1.4,
-                                        color: isUnread
-                                            ? const Color(0xFFD0D8E8)
-                                            : AppColors.textHint,
                                       ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    // Timestamp row
-                                    Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.access_time_rounded,
-                                          size: 12,
-                                          color: AppColors.textHint,
+                                      const SizedBox(height: 6),
+                                      // Message snippet
+                                      Text(
+                                        message,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontFamily: 'Poppins',
+                                          fontSize: 13,
+                                          height: 1.4,
+                                          color: isUnread
+                                              ? const Color(0xFFD0D8E8)
+                                              : AppColors.textHint,
                                         ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          DateFormat('dd MMM yyyy, hh:mm a')
-                                              .format(date),
-                                          style: const TextStyle(
-                                            fontFamily: 'Poppins',
+                                      ),
+                                      const SizedBox(height: 8),
+                                      // Timestamp row
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.access_time_rounded,
+                                            size: 12,
                                             color: AppColors.textHint,
-                                            fontSize: 11,
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            DateFormat('dd MMM yyyy, hh:mm a')
+                                                .format(date),
+                                            style: const TextStyle(
+                                              fontFamily: 'Poppins',
+                                              color: AppColors.textHint,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Icon(Icons.chevron_right,
-                                  color: AppColors.textHint, size: 18),
-                            ],
+                                const SizedBox(width: 8),
+                                const Icon(Icons.chevron_right,
+                                    color: AppColors.textHint, size: 18),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }
