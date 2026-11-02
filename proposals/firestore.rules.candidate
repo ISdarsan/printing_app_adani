@@ -39,8 +39,12 @@ service cloud.firestore {
       return activeStaff() && staffData().get('role', '') == 'admin';
     }
 
+    // [CANDIDATE] No implicit 'main'. A staff record that has no canteenId has
+    // no branch, so the (error-valued) comparison below denies every branch
+    // rule for that user. Admins do not need a branch. The production staff
+    // audit found 0 staff records without a canteenId.
     function staffCanteenId() {
-      return staffData().get('canteenId', 'main');
+      return staffData().canteenId;
     }
 
     // Branch isolation: admins see everything, others only their own canteen.
@@ -90,8 +94,7 @@ service cloud.firestore {
       // backfill); the field read is null-safe for legacy items.
       allow update: if isAdmin() || (
         canWriteBranch(resource.data) &&
-        request.resource.data.get('canteenId', 'main') ==
-          resource.data.get('canteenId', 'main')
+        request.resource.data.canteenId == resource.data.canteenId
       );
       // [CANDIDATE] business decision: menu items are deleted by admins only.
       allow delete: if isAdmin();
@@ -101,7 +104,8 @@ service cloud.firestore {
       allow read: if canReadBranch(resource.data);
       allow create: if canWriteBranch(request.resource.data) &&
         request.resource.data.get('createdBy', '') == request.auth.uid &&
-        request.resource.data.get('items', []) is list &&
+        // [CANDIDATE] the item list is required (a missing one used to pass as [])
+        request.resource.data.items is list &&
         request.resource.data.get('totalAmount', -1) is number &&
         request.resource.data.totalAmount >= 0 &&
         // [CANDIDATE] only the three real payment modes
@@ -119,8 +123,7 @@ service cloud.firestore {
       allow update: if isAdmin() || (
         canReadBranch(resource.data) &&
         resource.data.get('paymentMode', '') == 'Credit' &&
-        request.resource.data.get('canteenId', 'main') ==
-          resource.data.get('canteenId', 'main') &&
+        request.resource.data.canteenId == resource.data.canteenId &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['pendingAmount', 'creditStatus']) &&
         request.resource.data.get('pendingAmount', -1) is number &&
@@ -145,7 +148,7 @@ service cloud.firestore {
         ]);
       allow update: if isAdmin() || (
         canReadBranch(resource.data) &&
-        request.resource.data.canteenId == resource.data.get('canteenId', 'main') &&
+        request.resource.data.canteenId == resource.data.canteenId &&
         request.resource.data.date == resource.data.date &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'canteenName', 'totalSales', 'totalBills', 'totalCash', 'totalUpi',
@@ -178,8 +181,7 @@ service cloud.firestore {
         request.resource.data.totalPending >= 0;
       allow update: if isAdmin() || (
         canReadBranch(resource.data) &&
-        request.resource.data.get('canteenId', 'main') ==
-          resource.data.get('canteenId', 'main') &&
+        request.resource.data.canteenId == resource.data.canteenId &&
         // [CANDIDATE] null-safe for legacy customers without a phone field
         request.resource.data.get('phone', '') == resource.data.get('phone', '') &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -204,13 +206,11 @@ service cloud.firestore {
     match /cashReconciliations/{reconciliationId} {
       allow read: if canReadBranch(resource.data);
       allow create: if canWriteBranch(request.resource.data) &&
-        // [CANDIDATE] identity: the closing must be signed by the caller, either
-        // with their uid (current app) or, TRANSITIONALLY, with their own
-        // verified token e-mail (app builds already in the field send only
-        // submittedBy = e-mail). Neither lets a user sign as someone else.
-        (request.resource.data.get('submittedByUid', '') == request.auth.uid ||
-          (request.auth.token.get('email', '') != '' &&
-            request.resource.data.get('submittedBy', '') == request.auth.token.email)) &&
+        // [CANDIDATE] identity: the closing must be signed with the caller's
+        // uid. The e-mail-only fallback that older app builds needed has been
+        // REMOVED: this file is deployed only after every cashier device runs a
+        // build that sends submittedByUid (see docs/SECURITY_MIGRATION_PLAN.md).
+        request.resource.data.get('submittedByUid', '') == request.auth.uid &&
         request.resource.data.get('actualCash', -1) is number &&
         request.resource.data.actualCash >= 0 &&
         // [CANDIDATE] server time

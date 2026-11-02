@@ -1,0 +1,22 @@
+{
+  "note": "SHA-256 of LF-normalised file contents. Regenerate ONLY after an intended edit: node tool/verify_deploy_files.mjs --update-manifest",
+  "project": "canteen-app-adani",
+  "files": {
+    "stopgap": {
+      "path": "proposals/firestore.rules.stopgap",
+      "sha256": "d8ef0f4b1e13e44683e695aa3f4902b97a18ded11d8dafad83f1372113a7c728"
+    },
+    "candidate": {
+      "path": "proposals/firestore.rules.candidate",
+      "sha256": "977c29af285a74f5dfd71d2111b6f7a2dcdca8c359ee89bdcd60562e1364af99"
+    },
+    "originalOpenRules": {
+      "path": "backups/deployed.rules.2026-11-02.ORIGINAL",
+      "sha256": "1561f5d00d5e35b3fd9a125e70be2e6aad1032cee44062299b8b4a850cb7acb8"
+    },
+    "indexes": {
+      "path": "firestore.indexes.json",
+      "sha256": "681ad6dd5f72955016f9a353797e04a83f6da6f1833c49956294f1936fff1a6e"
+    }
+  }
+}

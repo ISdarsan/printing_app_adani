@@ -132,6 +132,12 @@ test('audit of the synthetic legacy dataset: counts, evidence and samples', asyn
 
   // bills 6 + customers 2 + repayments 2 + dailyStats 1 + closings 1 + expenses 1 + notices 1 + menu 1 + staff 1
   assert.equal(r.totals.missingCanteenId, 16);
+  // plain-language classes: identifiable + uncertain + unknown covers every missing canteenId
+  const cls = r.totals.classification;
+  assert.equal(cls.identifiable + cls.uncertain + cls.unknown, 16);
+  assert.ok(cls.identifiable > 0 && cls.uncertain > 0 && cls.unknown > 0);
+  assert.deepEqual(c.bills.classification, { identifiable: 1, uncertain: 3, unknown: 2 });
+  assert.deepEqual(c.dailyStats.classification, { identifiable: 0, uncertain: 0, unknown: 1 });
   assert.equal(r.totals.missingDate, 3);
   assert.equal(r.totals.dateRecoverable, 2);
   assert.equal(r.totals.dateUnrecoverable, 1);

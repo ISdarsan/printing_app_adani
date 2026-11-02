@@ -118,6 +118,7 @@ describe('B. Authentication and active-staff boundary (candidate)', () => {
     'deactivated cashier (active:false)': (e) => as(e, 'cashier-off', 'off@x.com'),
     'role written as "Admin" (wrong case)': (e) => as(e, 'user-badrole', 'bad@x.com'),
     'staff record without role': (e) => as(e, 'user-norole', 'nr@x.com'),
+    'cashier whose staff record has NO canteenId (no implicit main)': (e) => as(e, 'cashier-main', 'cashier-main@x.com'),
   };
   const reads = ['bills', 'expenses', 'creditCustomers', 'repayments', 'cashReconciliations', 'dailyStats', 'notifications', 'menuItems'];
   for (const [who, db] of Object.entries(identities)) {
@@ -126,7 +127,10 @@ describe('B. Authentication and active-staff boundary (candidate)', () => {
         await no(getDocs(query(collection(db(cand), c), where('canteenId', '==', 'north'))));
         await no(getDocs(collection(db(cand), c)));
       }
-      await no(getDoc(doc(db(cand), 'monthlyFunds/2026-11')));
+      // The organisation-wide fund is readable by ANY active staff member (by decision),
+      // so a branch-less cashier may read it; everyone else listed here may not.
+      const fund = getDoc(doc(db(cand), 'monthlyFunds/2026-11'));
+      if (who.startsWith('cashier whose staff record has NO canteenId')) await ok(fund); else await no(fund);
       await no(getDoc(doc(db(cand), 'counters/billCounter_north')));
     });
     test(`${who}: cannot write business data`, async () => {
@@ -227,8 +231,16 @@ describe('D. Canteen isolation, collection by collection (candidate)', () => {
     await no(updateDoc(doc(N(cand), 'creditCustomers/north_900'), { canteenId: 'south' }));
     await no(updateDoc(doc(N(cand), 'bills/n-credit'), { canteenId: 'south' }));
   });
-  test('branch "main" (staff record with OR without canteenId): scoped queries work, legacy untagged records are admin-only', async () => {
-    for (const uid of ['cashier-main', 'cashier-main-explicit']) {
+  test('a staff record WITHOUT canteenId has no branch at all: no implicit main, nothing readable or writable', async () => {
+    const m = as(cand, 'cashier-main', 'cashier-main@x.com');
+    await no(getDocs(query(collection(m, 'bills'), where('canteenId', '==', 'main'))));
+    await no(getDoc(doc(m, 'bills/m1')));
+    await no(getDoc(doc(m, 'bills/legacy1')));
+    await no(setDoc(doc(m, 'expenses/z'), { canteenId: 'main', userId: 'cashier-main', amount: 5, timestamp: ago(0) }));
+    await no(getDoc(doc(m, 'counters/billCounter_main')));
+  });
+  test('branch "main" (explicit canteenId): scoped queries work, legacy untagged records are admin-only', async () => {
+    for (const uid of ['cashier-main-explicit']) {
       const m = as(cand, uid, `${uid}@x.com`);
       const own = await assertSucceeds(getDocs(query(collection(m, 'bills'), where('canteenId', '==', 'main'))));
       assert.ok(own.docs.every((d) => d.data().canteenId === 'main'));
@@ -479,8 +491,8 @@ describe('F. Financial protections (bills, repayments, expenses, closings, count
 });
 
 // ===========================================================================
-describe('E2. Branch "main" works end to end (staff record with and without canteenId)', () => {
-  for (const [uid, label] of [['cashier-main', 'implicit main (no canteenId on the staff record)'], ['cashier-main-explicit', 'explicit main']]) {
+describe('E2. Branch "main" works end to end (staff record with canteenId: "main")', () => {
+  for (const [uid, label] of [['cashier-main-explicit', 'explicit main']]) {
     test(`${label}: bill (cash, UPI, credit), repayment, expense, closing, menu, queries`, async () => {
       const email = `${uid}@x.com`;
       const db = as(cand, uid, email);
@@ -606,12 +618,13 @@ describe('I. B-32: reading a document that does not exist', () => {
 
 // ===========================================================================
 describe('J. App builds already in the field (compatibility and known breakage)', () => {
-  test('older closing payload (e-mail only, no uid) is still accepted when the e-mail is the caller\'s own', async () => {
+  test('the older e-mail-only closing payload is REFUSED (no fallback): builds without submittedByUid must be gone before phase 2', async () => {
     const db = N(cand);
     const old = { date: '2027-02-01', canteenId: 'north', canteenName: 'North', systemCash: 5, actualCash: 5, discrepancy: 0, note: '', submittedBy: 'n@x.com', timestamp: serverTimestamp() };
-    await ok(runTransaction(db, async (tx) => tx.set(doc(db, 'cashReconciliations/north_2027-02-01'), old)));
-    await no(runTransaction(db, async (tx) => tx.set(doc(db, 'cashReconciliations/north_2027-02-02'), { ...old, date: '2027-02-02', submittedBy: 's@x.com' }))); // someone else's e-mail
-    await no(runTransaction(db, async (tx) => tx.set(doc(db, 'cashReconciliations/north_2027-02-03'), { ...old, date: '2027-02-03', submittedBy: 'Unknown Cashier' })));
+    await no(runTransaction(db, async (tx) => tx.set(doc(db, 'cashReconciliations/north_2027-02-01'), old)));
+    await no(runTransaction(db, async (tx) => tx.set(doc(db, 'cashReconciliations/north_2027-02-02'), { ...old, date: '2027-02-02', submittedBy: 's@x.com' })));
+    // the current payload (with the caller's uid) is accepted
+    await ok(runTransaction(db, async (tx) => tx.set(doc(db, 'cashReconciliations/north_2027-02-04'), { ...old, date: '2027-02-04', submittedByUid: 'cashier-north' })));
   });
   test('the repository rules (without the compatibility clause) would reject that older payload', async () => {
     const repoEnv = await mk('demo-sec-repo', read('firestore.rules'));
@@ -650,5 +663,80 @@ describe('K. Residual risks that rules alone cannot close (documented, asserted)
   test('the closing amounts (systemCash, discrepancy) are client-supplied and not cross-checked by the rules', async () => {
     const db = N(cand);
     await ok(runTransaction(db, async (tx) => tx.set(doc(db, 'cashReconciliations/north_2027-03-01'), { date: '2027-03-01', canteenId: 'north', systemCash: 1, actualCash: 1, discrepancy: 0, submittedBy: 'n@x.com', submittedByUid: 'cashier-north', timestamp: serverTimestamp() })));
+  });
+});
+
+// ===========================================================================
+describe('L. Staff lifecycle and invalid payloads (candidate)', () => {
+  test('admin deactivates a cashier: access stops at once; reactivation restores it; the cashier cannot undo it', async () => {
+    const a = A(cand);
+    const n = () => getDocs(query(collection(N(cand), 'bills'), where('canteenId', '==', 'north')));
+    await ok(n());
+    await ok(updateDoc(doc(a, 'canteenStaff/cashier-north'), { active: false }));       // deactivation (Console or admin tool)
+    await no(n());
+    await no(updateDoc(doc(N(cand), 'canteenStaff/cashier-north'), { active: true }));   // cannot reactivate themselves
+    await ok(getDoc(doc(N(cand), 'canteenStaff/cashier-north')));                        // can still read their own record to be told why
+    await ok(updateDoc(doc(a, 'canteenStaff/cashier-north'), { active: true }));
+    await ok(n());
+  });
+  test('admin changes a cashier\'s branch: access follows the trusted staff record immediately', async () => {
+    const a = A(cand);
+    await ok(updateDoc(doc(a, 'canteenStaff/cashier-north'), { canteenId: 'south', canteenName: 'South' }));
+    await no(getDocs(query(collection(N(cand), 'bills'), where('canteenId', '==', 'north'))));
+    await ok(getDocs(query(collection(N(cand), 'bills'), where('canteenId', '==', 'south'))));
+  });
+  test('admin removes the staff record: the user is locked out; the Auth login alone grants nothing', async () => {
+    await ok(deleteDoc(doc(A(cand), 'canteenStaff/cashier-north')));
+    await no(getDocs(query(collection(N(cand), 'bills'), where('canteenId', '==', 'north'))));
+    await no(getDocs(collection(N(cand), 'bills')));
+  });
+  test('bills: wrong types and missing parts are rejected', async () => {
+    const db = N(cand);
+    const base = { canteenId: 'north', createdBy: 'cashier-north', items: [], totalAmount: 10, paymentMode: 'Cash', timestamp: serverTimestamp() };
+    await ok(setDoc(doc(db, 'bills/inv-ok'), base));
+    await no(setDoc(doc(db, 'bills/inv-1'), { ...base, totalAmount: '10' }));            // text, not a number
+    await no(setDoc(doc(db, 'bills/inv-2'), { ...base, items: 'x' }));                    // not a list
+  });
+  test('bills: a bill missing any required field (mode, branch, time, creator, total, items) is rejected', async () => {
+    const db = N(cand);
+    const full = { canteenId: 'north', createdBy: 'cashier-north', items: [], totalAmount: 10, paymentMode: 'Cash', timestamp: serverTimestamp() };
+    for (const drop of ['paymentMode', 'canteenId', 'timestamp', 'createdBy', 'totalAmount', 'items']) {
+      const d = { ...full }; delete d[drop];
+      await no(setDoc(doc(db, `bills/inv-drop-${drop}`), d));
+    }
+  });
+  test('expenses, repayments, customers, menu items: invalid payloads are rejected', async () => {
+    const db = N(cand);
+    await no(setDoc(doc(db, 'expenses/i1'), { canteenId: 'north', userId: 'cashier-north' }));                                   // no amount
+    await no(setDoc(doc(db, 'expenses/i2'), { userId: 'cashier-north', amount: 5 }));                                           // no canteenId
+    await no(setDoc(doc(db, 'repayments/i3'), { canteenId: 'north', timestamp: serverTimestamp() }));                           // no amount
+    await no(setDoc(doc(db, 'repayments/i4'), { canteenId: 'north', amount: 5 }));                                              // no server time
+    await no(setDoc(doc(db, 'creditCustomers/north_i5'), { canteenId: 'north', phone: 12345, totalPending: 0 }));               // phone not text
+    await no(setDoc(doc(db, 'creditCustomers/north_i6'), { canteenId: 'north', phone: '1', totalPending: '5' }));               // balance not a number
+    await no(setDoc(doc(db, 'menuItems/i7'), { name: 'x', fullPrice: 1 }));                                                     // no canteenId
+    await no(setDoc(doc(db, 'menuItems/i8'), { canteenId: 5, name: 'x' }));                                                     // canteenId not text
+  });
+  test('daily stats: an unknown key or a missing date/canteen is rejected on create', async () => {
+    const db = N(cand);
+    await no(setDoc(doc(db, 'dailyStats/north_2027-05-01'), { canteenId: 'north', date: '2027-05-01', totalSales: 1, evil: 1 }));
+    await no(setDoc(doc(db, 'dailyStats/north_2027-05-02'), { canteenId: 'north', totalSales: 1 }));
+    await no(setDoc(doc(db, 'dailyStats/x_2027-05-03'), { date: '2027-05-03', totalSales: 1 }));
+    await ok(setDoc(doc(db, 'dailyStats/north_2027-05-04'), { canteenId: 'north', canteenName: 'North', date: '2027-05-04', totalSales: 1, totalBills: 1, totalCash: 1, lastUpdated: serverTimestamp() }));
+  });
+  test('counters: extra fields, non-integer or zero numbers are rejected', async () => {
+    const db = as(cand, 'cashier-south', 's@x.com');
+    await no(setDoc(doc(db, 'counters/billCounter_south'), { canteenId: 'south', lastNumber: 1, extra: true }));
+    await no(setDoc(doc(db, 'counters/billCounter_south'), { canteenId: 'south', lastNumber: 1.5 }));
+    await no(setDoc(doc(db, 'counters/billCounter_south'), { canteenId: 'south', lastNumber: 0 }));
+    await ok(setDoc(doc(db, 'counters/billCounter_south'), { canteenId: 'south', lastNumber: 1 }));
+  });
+  test('duplicate request ids: a second create of the same bill or repayment is refused for cashiers', async () => {
+    const db = N(cand);
+    const bill = { canteenId: 'north', createdBy: 'cashier-north', items: [], totalAmount: 10, paymentMode: 'Cash', timestamp: serverTimestamp() };
+    await ok(setDoc(doc(db, 'bills/req_dup'), bill));
+    await no(setDoc(doc(db, 'bills/req_dup'), bill));
+    const rep = { canteenId: 'north', amount: 5, timestamp: serverTimestamp() };
+    await ok(setDoc(doc(db, 'repayments/req_dup'), rep));
+    await no(setDoc(doc(db, 'repayments/req_dup'), rep));
   });
 });

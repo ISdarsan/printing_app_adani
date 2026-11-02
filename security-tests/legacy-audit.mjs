@@ -240,6 +240,15 @@ export async function runAudit(db, { sampleSize = 10 } = {}) {
         }
       }
     }
+    // Plain-language classes for the owner. NOTHING is ever assigned automatically:
+    //   identifiable = strong evidence (id prefix / unique canteen name)
+    //   uncertain    = indirect evidence (creator, customer phone) - needs a human decision
+    //   unknown      = no evidence - stays untouched; the new rules make it admin-only
+    c.classification = {
+      identifiable: c.recoverable.high,
+      uncertain: c.recoverable.medium + c.recoverable.low,
+      unknown: c.unrecoverableDefaultMain,
+    };
     report.collections[name] = c;
   }
   const sum = (f) => Object.values(report.collections).reduce((t, c) => t + f(c), 0);
@@ -249,7 +258,12 @@ export async function runAudit(db, { sampleSize = 10 } = {}) {
     recoverableHigh: sum((c) => c.recoverable.high),
     recoverableMedium: sum((c) => c.recoverable.medium),
     recoverableLow: sum((c) => c.recoverable.low),
-    unrecoverableDefaultMain: sum((c) => c.unrecoverableDefaultMain),
+    unrecoverableDefaultMain: sum((c) => c.unrecoverableDefaultMain), // legacy name; same number as classification.unknown
+    classification: {
+      identifiable: sum((c) => c.classification.identifiable),
+      uncertain: sum((c) => c.classification.uncertain),
+      unknown: sum((c) => c.classification.unknown),
+    },
     missingDate: sum((c) => c.missingDate),
     dateRecoverable: sum((c) => c.dateRecoverable.high + c.dateRecoverable.medium),
     dateUnrecoverable: sum((c) => c.dateUnrecoverable),
