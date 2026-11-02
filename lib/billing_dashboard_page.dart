@@ -10,6 +10,7 @@ import 'notifications_page.dart';
 import 'sms_broadcast_helper.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
+import 'today_summary.dart';
 
 class BillingDashboardPage extends StatefulWidget {
   const BillingDashboardPage({super.key});
@@ -134,30 +135,25 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
     );
   }
 
-  Stream<Map<String, String>> get _statsStream {
-    final day = BusinessTime.dayRange(DateTime.now());
+  Stream<TodaySummary>? _statsStreamCache;
+  String? _statsStreamDocId;
 
-    // Branch-scoped (required by firestore.rules for cashiers); half-open
-    // business-day range. Needs index bills(canteenId, timestamp).
-    return CanteenProvider.scopeQuery(
-            FirebaseFirestore.instance.collection('bills'))
-        .where('timestamp', isGreaterThanOrEqualTo: day.start)
-        .where('timestamp', isLessThan: day.end)
-        .snapshots()
-        .map((snap) {
-      double sales = 0.0;
-      int billsCount = 0;
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        if (!CanteenProvider.matchesSelectedCanteen(d)) continue;
-        sales += ((d['totalAmount'] ?? 0) as num).toDouble();
-        billsCount++;
-      }
-      return {
-        'sales': '₹${sales.toStringAsFixed(0)}',
-        'bills': '$billsCount',
-      };
-    });
+  /// Today's sales and bill count come from ONE small `dailyStats` document
+  /// (id = `<branch>_<IST date>`, so it is branch-scoped by construction and
+  /// needs no index) instead of a listener on every bill of the day. Its
+  /// `totalSales` / `totalBills` are written in the same transaction as each
+  /// bill, with the same definitions as the old query-based sums.
+  Stream<TodaySummary> get _statsStream {
+    final docId = CanteenProvider.dailyStatsDocumentId(DateTime.now());
+    if (_statsStreamCache == null || _statsStreamDocId != docId) {
+      _statsStreamDocId = docId; // also rolls over at IST midnight
+      _statsStreamCache = FirebaseFirestore.instance
+          .collection('dailyStats')
+          .doc(docId)
+          .snapshots()
+          .map((snap) => TodaySummary.fromDailyStats(snap.data()));
+    }
+    return _statsStreamCache!;
   }
 
   String get _greeting {
@@ -320,10 +316,16 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
               ),
               const SizedBox(height: 8),
               // Stat pills
-              StreamBuilder<Map<String, String>>(
+              StreamBuilder<TodaySummary>(
                 stream: _statsStream,
                 builder: (_, snap) {
-                  final s = snap.data ?? {'sales': '₹0', 'bills': '0'};
+                  // Until the server/cache answers (or on error) show a dash,
+                  // never a made-up zero.
+                  final t = snap.hasError ? null : snap.data;
+                  final s = {
+                    'sales': t?.salesLabel ?? '—',
+                    'bills': t?.billsLabel ?? '—',
+                  };
                   return Row(children: [
                     _heroPill(
                       icon: Icons.currency_rupee_rounded,

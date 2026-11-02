@@ -9,6 +9,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'theme.dart';
+import 'money.dart';
+import 'sync_status.dart';
 import 'canteen_provider.dart';
 import 'financial_metrics.dart';
 import 'business_time.dart';
@@ -32,8 +34,9 @@ class BillItem {
     required this.price,
     this.costPrice = 0.0,
   });
-  double get subtotal => price * quantity;
-  double get estimatedProfit => (price - costPrice) * quantity;
+  // Rounded to the paisa so stored totals never carry 0.44999999999999996.
+  double get subtotal => roundMoney(price * quantity);
+  double get estimatedProfit => roundMoney((price - costPrice) * quantity);
 }
 
 class MenuItem {
@@ -285,6 +288,26 @@ class _PrintBillPageState extends State<PrintBillPage> {
   double _totalAmount = 0.0;
   bool _isSaving = false;
   bool _saveFlowActive = false;
+
+  /// Stable request id for the bill being saved. If a save ends with an unknown
+  /// outcome, the next tap asks the server whether a bill with this id exists
+  /// before creating anything, so a lost acknowledgement cannot double-book.
+  final AttemptTracker _billAttempts = AttemptTracker();
+
+  String _billAttemptKey(String? customerPhone) {
+    final user = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final items = _billItems
+        .map((i) => '${i.code}:${i.type}:${i.quantity}:${toPaise(i.price)}')
+        .join(',');
+    return [
+      user,
+      CanteenProvider.selectedCanteenId,
+      _paymentMethod,
+      toPaise(_totalAmount),
+      customerPhone ?? '',
+      items,
+    ].join('|');
+  }
   bool _isAdding = false;
   bool _menuLoading = true;
 
@@ -712,7 +735,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
       });
 
   void _recalcTotal() =>
-      _totalAmount = _billItems.fold(0.0, (s, i) => s + i.subtotal);
+      _totalAmount = roundMoney(_billItems.fold(0.0, (s, i) => s + i.subtotal));
 
   // ─────────────────────────────────────────────────────────────
   //  Save + Print Bill
@@ -770,6 +793,28 @@ class _PrintBillPageState extends State<PrintBillPage> {
     final db = FirebaseFirestore.instance;
     String? generatedBillId;
     try {
+      final branchForCheck = CanteenProvider.selectedCanteenId;
+      final requestId = _billAttempts.idFor(_billAttemptKey(customerPhone));
+      generatedBillId = await SyncTracker.instance.track<String?>(
+        key: 'bill:$requestId',
+        label: 'Bill ₹${_totalAmount.toStringAsFixed(2)} ($_paymentMethod)',
+        // Not retryable from the banner: the cashier re-taps Save, which runs
+        // the server check first.
+        safeToRetry: false,
+        run: () => createOnce<String?>(
+          attempts: _billAttempts,
+          findExisting: () async {
+            final q = await db
+                .collection('bills')
+                .where('canteenId', isEqualTo: branchForCheck)
+                .where('clientRequestId', isEqualTo: requestId)
+                .limit(1)
+                .get(const GetOptions(source: Source.server));
+            if (q.docs.isEmpty) return null;
+            final d = q.docs.first.data();
+            return (d['billId'] ?? q.docs.first.id).toString();
+          },
+          create: () async {
       await db.runTransaction((tx) async {
         // Each canteen has its own bill counter so branches never share or
         // contend on numbering.
@@ -810,6 +855,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
         final billData = <String, dynamic>{
           'billId': generatedBillId,
           'billNumber': newBillNum,
+          'clientRequestId': requestId,
           'canteenId': selectedCanteenId,
           'canteenName': CanteenProvider.selectedCanteenName,
           'totalAmount': _totalAmount,
@@ -876,6 +922,10 @@ class _PrintBillPageState extends State<PrintBillPage> {
         );
         tx.set(counterRef, {'canteenId': branchId, 'lastNumber': newBillNum});
       });
+            return generatedBillId;
+          },
+        ),
+      );
 
       if (!mounted) return generatedBillId;
       _snack(
@@ -891,7 +941,11 @@ class _PrintBillPageState extends State<PrintBillPage> {
       });
       return generatedBillId;
     } catch (e) {
-      if (mounted) _snack('Error saving bill: $e', error: true);
+      if (mounted) {
+        _snack(
+            'Bill not confirmed: $e\nIf unsure, tap Save again: the app first checks whether this bill was already recorded.',
+            error: true);
+      }
       return null;
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -1090,8 +1144,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
                               final double currentPending =
                                   (customer['totalPending'] ?? 0.0).toDouble();
                               const double maxCreditLimit = 2000.0;
-                              if (currentPending + _totalAmount >
-                                  maxCreditLimit) {
+                              if (moneyGreater(
+                                  currentPending + _totalAmount, maxCreditLimit)) {
                                 showDialog(
                                   context: context,
                                   builder: (dCtx) => AlertDialog(
@@ -1890,7 +1944,7 @@ class _SearchField extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '₹${item.fullPrice.toStringAsFixed(0)}',
+                          '₹${formatRupees(item.fullPrice)}',
                           style: AppText.style(
                               color: AppColors.accentGreen,
                               fontWeight: FontWeight.w700,

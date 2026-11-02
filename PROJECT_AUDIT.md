@@ -28,3 +28,11 @@ Stack: Flutter, Firebase Auth, Cloud Firestore, ~16k lines in `lib/` (largest: `
 - New findings: B-19 (production has no composite indexes; three existing cashier queries need them), B-20 (menu delete allowed for cashiers), B-21/B-22 (legacy documents without `canteenId` / `date`).
 - Architecture note: report logic is now separated from UI and Firestore (records -> pure builders -> thin adapters), which is what made the independent validation possible.
 - Still not audited line by line: expenses entry, notifications, menu/add item, printing, theme.
+
+## Phase 4 additions (release preparation, cashier reliability, sync)
+- New modules: `money.dart` (paise logic), `today_summary.dart` (dashboard card from `dailyStats`), `role_routing.dart` (authorization decision), `sync_status.dart` / `sync_banner.dart` / `connection_probe.dart` / `tracked_write.dart` (status strip, create-once, idempotent writes).
+- Behavioural changes: login has no fixed wait; staff lookup reads the server; bills and repayments carry `clientRequestId` and are checked against the server before any repeat; expenses and notices are written with `set` on a pre-chosen id; money comparisons are in whole paise; the cashier dashboard card reads one `dailyStats` document; every bills query is descending (index count 6 -> 5).
+- Tools: `tool/check_indexes.mjs` (index registry vs source vs file), `tool/rules_diff.mjs` + `tool/compare_rules.mjs` (rule-by-rule diff, 7 tests).
+- Tests: 232 Dart + 27 emulator + 7 rules-diff + 56 workbook checks (TEST_RESULTS.md).
+- Still unverified: production rules vs repository (PRODUCTION_RULES_COMPARISON.md), anything on a physical device (CASHIER_DEVICE_TEST_PLAN.md), deployed index state.
+- Architecture note: decisions that must be right (authorization, money comparison, create-once, sync state) now live in small pure functions with direct tests; screens only call them.

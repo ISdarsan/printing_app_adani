@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'tracked_write.dart';
 import 'canteen_provider.dart';
 
 class ExpensesPage extends StatefulWidget {
@@ -112,6 +113,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
   }
 
   Future<void> _submitExpense() async {
+    if (_isLoading) return; // duplicate tap while saving
     if (!_formKey.currentState!.validate()) return;
     if (_imageFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -131,7 +133,10 @@ class _ExpensesPageState extends State<ExpensesPage> {
       final imageBytes = await _imageFile!.readAsBytes();
       final base64Image = base64Encode(imageBytes);
 
-      await FirebaseFirestore.instance.collection('expenses').add({
+      // The record id is chosen once, so a repeat of this write (retry, lost
+      // acknowledgement) can never create a second expense.
+      final ref = FirebaseFirestore.instance.collection('expenses').doc();
+      final confirmed = await saveTracked(ref, {
         'category': _selectedCategory,
         'description': desc,
         'amount': amount,
@@ -140,12 +145,19 @@ class _ExpensesPageState extends State<ExpensesPage> {
         'userId': user.uid,
         'canteenId': CanteenProvider.selectedCanteenId,
         'canteenName': CanteenProvider.selectedCanteenName,
-      });
+      }, label: 'Expense ₹${amount.toStringAsFixed(2)} ($desc)');
 
       if (mounted) {
+        // "Logged" only once the server has confirmed it.
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Expense logged!', style: AppText.style()),
-            backgroundColor: const Color(0xFF1B4332)));
+            content: Text(
+                confirmed
+                    ? 'Expense logged!'
+                    : 'Saved on this device, not confirmed yet. It will sync when you are online.',
+                style: AppText.style()),
+            backgroundColor: confirmed
+                ? const Color(0xFF1B4332)
+                : AppColors.accentOrange));
       }
 
       _formKey.currentState!.reset();

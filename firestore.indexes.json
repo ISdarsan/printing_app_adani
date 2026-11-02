@@ -5,14 +5,6 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "canteenId", "order": "ASCENDING" },
-        { "fieldPath": "timestamp", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "bills",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "canteenId", "order": "ASCENDING" },
         { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
     },

@@ -1,5 +1,7 @@
 # Firestore Index Audit
 
+> **Update (phase 4): the required set is 5 composite indexes, not 6.** Sections 3 and 7 below describe the earlier 6-entry file; "Phase 4: index count resolved" at the end is authoritative and is checked by `node tool/check_indexes.mjs`.
+
 Project `canteen-app-adani`, database `(default)`. Nothing in this document was deployed.
 
 ## 1. Deployed state (read-only check)
@@ -101,3 +103,70 @@ Tested offline on local files only. The live fetch path has not been run (no tok
 
 ## 10. Repository rule worth a look (not changed)
 `firestore.rules` allows `delete` on `menuItems` for any staff member who can read that branch (`allow delete: if canReadBranch(resource.data)`), i.e. a cashier can delete a menu item of their own branch. Every other collection restricts delete to admins. This may be intentional (the Add Item screen has a delete button); flagged for your decision, not modified.
+
+---
+
+# Phase 4: index count resolved (6 became 5), with proof
+
+## Why "six indexes vs nine screens" looked inconsistent
+Nine cashier screens (six scoped in B-14 plus three from B-19) issue more than nine queries, but a composite index depends only on the query's **shape**: `collection + equality fields + the one ordered/ranged field with its direction`. Queries with the same shape share one index. I re-derived the requirement mechanically instead of by hand: `tool/check_indexes.mjs` holds a registry of every distinct query call site (file, collection, equality fields, range/order field and direction), derives the index each needs with the documented rule below, asserts that each query still exists in its source file (so the registry cannot go stale), and compares the derived set with `firestore.indexes.json`.
+
+Rule used: equality filters on some fields plus a range or `orderBy` on one other field need a composite index on `[equality fields ASC..., that field in the query's direction]`. A range filter with no explicit `orderBy` orders by that field ascending. Equality-only queries (even on several fields) and single-field range/order queries need no composite index.
+
+Result of `node tool/check_indexes.mjs`: **15 registered queries -> 5 required composite indexes; the file declares 5; OK.**
+
+## Why 6 became 5 (a code change, not a guess)
+The previous file contained `bills (canteenId ASC, timestamp ASC)` as well as `... DESC`. The ASC variant existed only because two bills queries ordered ascending:
+- **Cashier dashboard "today" card**: no longer queries bills at all. It reads one `dailyStats` document by id (Part D).
+- **Monthly Breakdown**: ordered ascending, but the page groups bills by day and sorts afterwards, so order is irrelevant. It now orders descending like every other bills query.
+
+I deliberately did **not** rely on "a DESC index can be read backwards for an ASC query": the emulator cannot confirm index behaviour, so that claim cannot be proven here. Removing the only ascending bills query makes the question moot. `expenses` stays ascending because its consumers (Funds Received list, budget banner, analytics) rely on or tolerate ascending order, and changing the Funds list order would change what users see.
+
+## Query -> required index -> screen -> role
+| # | Query / screen | Role | Required composite index |
+|---|---|---|---|
+| 1 | Cashier dashboard: budget banner (month expenses) (`lib/billing_dashboard_page.dart`) | cashier | expenses(canteenId ASC, timestamp ASC) |
+| 2 | Today's Sales (`lib/today_sales_page.dart`) | cashier | bills(canteenId ASC, timestamp DESC) |
+| 3 | Daily Sales Report (`lib/daily_sales_report_page.dart`) | cashier | bills(canteenId ASC, timestamp DESC) |
+| 4 | Bills History (`lib/all_bills_page.dart`) | cashier | bills(canteenId ASC, timestamp DESC) |
+| 5 | Monthly Breakdown (`lib/monthly_sales_breakdown_page.dart`) | cashier | bills(canteenId ASC, timestamp DESC) |
+| 6 | Funds Received (month expenses) (`lib/funds_received_page.dart`) | cashier | expenses(canteenId ASC, timestamp ASC) |
+| 7 | Daily Cash Closing history (`lib/cash_reconciliation_page.dart`) | cashier | cashReconciliations(canteenId ASC, timestamp DESC) |
+| 8 | Notices list (`lib/notifications_page.dart`) | cashier + admin (selected branch) | notifications(canteenId ASC, timestamp DESC) |
+| 9 | Cashier dashboard: new-notice alert (limit 1) (`lib/billing_dashboard_page.dart`) | cashier | notifications(canteenId ASC, timestamp DESC) |
+| 10 | Menu list (Add Item) (`lib/add_item_page.dart`) | cashier + admin (selected branch) | menuItems(canteenId ASC, name ASC) |
+| 11 | Analytics bills (concrete branch) (`lib/analytics_loader.dart`) | admin | bills(canteenId ASC, timestamp DESC) |
+| 12 | Analytics expenses (concrete branch) (`lib/analytics_loader.dart`) | admin | expenses(canteenId ASC, timestamp ASC) |
+| 13 | Cashier dashboard: today card (document get) (`lib/billing_dashboard_page.dart`) | cashier | none (single-field / document get) |
+| 14 | Export: bills (unscoped, admin) (`lib/report_data_loader.dart`) | admin | none (single-field / document get) |
+| 15 | Credit detail: pending bills (3 equality filters) (`lib/credit_detail_page.dart`) | cashier | none (single-field / document get) |
+
+| Index | Serves |
+|---|---|
+| `expenses(canteenId ASC, timestamp ASC)` | 3 queries: Cashier dashboard: budget banner (month expenses); Funds Received (month expenses); Analytics expenses (concrete branch) |
+| `bills(canteenId ASC, timestamp DESC)` | 5 queries: Today's Sales; Daily Sales Report; Bills History; Monthly Breakdown; Analytics bills (concrete branch) |
+| `cashReconciliations(canteenId ASC, timestamp DESC)` | 1 queries: Daily Cash Closing history |
+| `notifications(canteenId ASC, timestamp DESC)` | 2 queries: Notices list; Cashier dashboard: new-notice alert (limit 1) |
+| `menuItems(canteenId ASC, name ASC)` | 1 queries: Menu list (Add Item) |
+
+(`tool/check_indexes.mjs --markdown` regenerates this table; the three rows at the end of the first table need no composite index.)
+
+## The nine screens
+| # | Screen | Role | Query rows above | Index |
+|---|---|---|---|---|
+| 1 | Cashier dashboard (budget banner) | cashier | 1 | expenses ASC |
+| 2 | Today's Sales | cashier | 2 | bills DESC |
+| 3 | Daily Sales Report | cashier | 3 | bills DESC |
+| 4 | Bills History | cashier | 4 | bills DESC |
+| 5 | Monthly Breakdown | cashier | 5 | bills DESC |
+| 6 | Funds Received | cashier | 6 | expenses ASC |
+| 7 | Daily Cash Closing | cashier | 7 | cashReconciliations DESC |
+| 8 | Notices (list + dashboard alert) | cashier | 8, 9 | notifications DESC |
+| 9 | Menu list | cashier | 10 | menuItems ASC |
+
+Admin analytics (rows 11, 12) reuse the bills DESC and expenses ASC indexes. Admin screens that read unscoped collections need none.
+
+## What was not and cannot be proven offline
+- That Firestore accepts these five definitions and builds them: only a deploy shows `READY`. JSON structure is valid and the emulator starts with the file configured.
+- That production currently lacks the three B-19 indexes in some other form: the CLI listing is empty (checked 2 Nov 2026).
+- The registry is a model of the code. The checker guards it with source substring checks, but a brand-new query added later must be added to the registry (the checker cannot discover it).

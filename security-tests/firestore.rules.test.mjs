@@ -224,6 +224,45 @@ test('B-19 query shapes: cash-closing history, notices, menu list', async () => 
   await assertFails(getDocs(menu(north, 'south')));
 });
 
+// Phase 4: create-once protocol. The request id is stored on the record and the
+// "does it already exist?" check is an equality-only query scoped to the branch.
+test('clientRequestId: cashiers can store it and verify with a scoped equality query', async () => {
+  const north = testEnvironment.authenticatedContext('cashier-north').firestore();
+  await assertSucceeds(setDoc(doc(north, 'bills/new-bill'), {
+    canteenId: 'north', createdBy: 'cashier-north', items: [], totalAmount: 120.5,
+    clientRequestId: 'req_abc', billId: 'BILL-1', billNumber: 1,
+  }));
+  await assertSucceeds(setDoc(doc(north, 'repayments/new-rep'), {
+    canteenId: 'north', amount: 50, customerPhone: '900', clientRequestId: 'req_rep',
+  }));
+  const found = await assertSucceeds(getDocs(query(collection(north, 'bills'),
+    where('canteenId', '==', 'north'), where('clientRequestId', '==', 'req_abc'), limit(1))));
+  assert.equal(found.size, 1);
+  assert.equal(found.docs[0].data().billId, 'BILL-1');
+  const none = await assertSucceeds(getDocs(query(collection(north, 'bills'),
+    where('canteenId', '==', 'north'), where('clientRequestId', '==', 'req_other'), limit(1))));
+  assert.equal(none.size, 0);
+  const rep = await assertSucceeds(getDocs(query(collection(north, 'repayments'),
+    where('canteenId', '==', 'north'), where('clientRequestId', '==', 'req_rep'), limit(1))));
+  assert.equal(rep.size, 1);
+  // The check cannot be run without the branch filter, nor against another branch.
+  await assertFails(getDocs(query(collection(north, 'bills'), where('clientRequestId', '==', 'req_abc'))));
+  await assertFails(getDocs(query(collection(north, 'bills'),
+    where('canteenId', '==', 'south'), where('clientRequestId', '==', 'req_abc'))));
+});
+
+test('idempotent expense write: a repeat of a committed create is denied as an update, the read confirms it', async () => {
+  const north = testEnvironment.authenticatedContext('cashier-north').firestore();
+  const ref = doc(north, 'expenses/exp-1');
+  const data = { canteenId: 'north', userId: 'cashier-north', amount: 80, description: 'Gas' };
+  await assertSucceeds(setDoc(ref, data));
+  // same id again = update, which the rules reserve for admins: this is exactly
+  // why the app confirms by reading the document from the server.
+  await assertFails(setDoc(ref, data));
+  const snap = await assertSucceeds(getDoc(ref));
+  assert.ok(snap.exists());
+});
+
 test('cashier can read exactly their own dailyStats doc by id (no index needed)', async () => {
   await testEnvironment.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), 'dailyStats/north_2026-11-02'), {

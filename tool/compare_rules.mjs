@@ -15,10 +15,9 @@
 // Exit code: 0 identical (ignoring line endings / trailing spaces), 1 different,
 // 2 usage or network error.
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { compareRules, renderMarkdown } from './rules_diff.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRules = path.join(here, '..', 'firestore.rules');
@@ -28,9 +27,6 @@ const arg = (name) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
-
-const normalize = (t) =>
-  t.replace(/\r\n/g, '\n').split('\n').map((l) => l.replace(/\s+$/, '')).join('\n').replace(/\n+$/, '') + '\n';
 
 async function fetchDeployed(project) {
   const token = process.env.FIREBASE_ACCESS_TOKEN;
@@ -68,20 +64,15 @@ if (dFile) {
   process.exit(2);
 }
 
-const repo = normalize(fs.readFileSync(arg('--repo-file') || repoRules, 'utf8'));
-const dep = normalize(deployed);
-if (repo === dep) {
-  console.log('IDENTICAL: deployed rules match firestore.rules.');
+const repoText = fs.readFileSync(arg('--repo-file') || repoRules, 'utf8');
+const result = compareRules(deployed, repoText);
+const changed = result.rows.filter((r) => r.status !== 'IDENTICAL').length;
+console.log(renderMarkdown(result));
+console.log(`
+${result.rows.length} rule elements compared (functions + collections): ${changed} differ.`);
+if (result.identical) {
+  console.log('IDENTICAL: deployed rules match firestore.rules rule by rule.');
   process.exit(0);
 }
-
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rules-'));
-const a = path.join(tmp, 'deployed.rules');
-const b = path.join(tmp, 'repository.rules');
-fs.writeFileSync(a, dep);
-fs.writeFileSync(b, repo);
-const d = spawnSync('git', ['diff', '--no-index', '--no-color', '--unified=2', a, b], { encoding: 'utf8' });
-console.log('DIFFERENT (- deployed, + repository):\n');
-console.log(d.stdout || '(diff unavailable)');
-fs.rmSync(tmp, { recursive: true, force: true });
+console.log('DIFFERENT: see the differences above (- deployed, + repository).');
 process.exit(1);

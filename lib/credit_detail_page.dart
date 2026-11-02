@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'money.dart';
+import 'sync_status.dart';
 import 'canteen_provider.dart';
 import 'financial_metrics.dart';
 import 'business_time.dart';
@@ -394,7 +396,10 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
                           onPressed: () {
                             final amount =
                                 double.tryParse(amountCtrl.text) ?? 0.0;
-                            if (amount > 0 && amount <= _totalPending) {
+                            // whole-paise comparison: typing the exact balance
+                            // must never be rejected by floating point noise
+                            if (toPaise(amount) > 0 &&
+                                moneyLessOrEqual(amount, _totalPending)) {
                               Navigator.pop(context);
                               _processRepayment(amount, paymentMode);
                             } else {
@@ -419,11 +424,40 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
     );
   }
 
+  /// Same create-once protocol as bills: a repayment moves money, so after an
+  /// outcome-unknown failure the next attempt first asks the server whether a
+  /// repayment with this request id already exists.
+  final AttemptTracker _repaymentAttempts = AttemptTracker();
+
   Future<void> _processRepayment(double amount, String paymentMode) async {
+    if (_isProcessing) return; // duplicate tap
     setState(() => _isProcessing = true);
     final db = FirebaseFirestore.instance;
 
     try {
+      final requestId = _repaymentAttempts.idFor([
+        FirebaseAuth.instance.currentUser?.uid ?? '',
+        widget.canteenId,
+        widget.customerId,
+        toPaise(amount),
+        paymentMode,
+      ].join('|'));
+      await SyncTracker.instance.track<bool>(
+        key: 'repayment:$requestId',
+        label: 'Repayment ₹${amount.toStringAsFixed(2)} ($paymentMode) from ${widget.customerName}',
+        safeToRetry: false,
+        run: () => createOnce<bool>(
+          attempts: _repaymentAttempts,
+          findExisting: () async {
+            final q = await db
+                .collection('repayments')
+                .where('canteenId', isEqualTo: widget.canteenId)
+                .where('clientRequestId', isEqualTo: requestId)
+                .limit(1)
+                .get(const GetOptions(source: Source.server));
+            return q.docs.isEmpty ? null : true;
+          },
+          create: () async {
       await db.runTransaction((tx) async {
         // 1. Fetch pending bills
         final billsSnap = await db
@@ -464,27 +498,20 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
             );
 
         // 2. Distribute payment
-        double remainingAmount = amount;
-        for (var doc in billDocs) {
-          if (remainingAmount <= 0) break;
-
-          final data = doc.data() as Map<String, dynamic>;
-          double billPending =
-              (data['pendingAmount'] ?? data['totalAmount'] ?? 0.0).toDouble();
-
-          if (remainingAmount >= billPending) {
-            // Bill fully paid
-            remainingAmount -= billPending;
-            tx.update(doc.reference, {
-              'pendingAmount': 0.0,
-              'creditStatus': 'Paid',
-            });
+        // Same oldest-first rule as before, computed in whole paise (money.dart)
+        final plan = planRepayment([
+          for (final doc in billDocs)
+            ((doc.data() as Map<String, dynamic>)['pendingAmount'] ??
+                    (doc.data() as Map<String, dynamic>)['totalAmount'] ??
+                    0.0)
+                .toDouble() as double,
+        ], amount);
+        for (final a in plan.allocations) {
+          final ref = billDocs[a.index].reference;
+          if (a.paid) {
+            tx.update(ref, {'pendingAmount': 0.0, 'creditStatus': 'Paid'});
           } else {
-            // Bill partially paid
-            tx.update(doc.reference, {
-              'pendingAmount': billPending - remainingAmount,
-            });
-            remainingAmount = 0;
+            tx.update(ref, {'pendingAmount': a.newPending});
           }
         }
 
@@ -506,6 +533,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
           'amount': amount,
           'paymentMode': paymentMode,
           'timestamp': FieldValue.serverTimestamp(),
+          'clientRequestId': requestId,
           'processedBy': FirebaseAuth.instance.currentUser?.email ?? 'Unknown',
         });
 
@@ -523,6 +551,10 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
           SetOptions(merge: true),
         );
       });
+            return true;
+          },
+        ),
+      );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

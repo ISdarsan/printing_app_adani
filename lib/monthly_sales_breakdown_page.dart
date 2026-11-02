@@ -52,12 +52,14 @@ class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
   Stream<List<DailySaleSummary>> _getDailyBreakdown() {
     final month = BusinessTime.monthRangeForMonth(
         _selectedMonth.year, _selectedMonth.month);
-    // Branch-scoped + half-open month range. Index: bills(canteenId, timestamp).
+    // Branch-scoped + half-open month range. Index: bills(canteenId, timestamp DESC).
     return CanteenProvider.scopeQuery(
             FirebaseFirestore.instance.collection('bills'))
         .where('timestamp', isGreaterThanOrEqualTo: month.start)
         .where('timestamp', isLessThan: month.end)
-        .orderBy('timestamp')
+        // Descending: the page groups by day and sorts afterwards, so order is
+        // irrelevant here, and it lets one bills index serve every bills query.
+        .orderBy('timestamp', descending: true)
         .snapshots()
         .map((snap) {
       final Map<String, double> dailyTotals = {};

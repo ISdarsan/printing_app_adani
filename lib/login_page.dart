@@ -4,7 +4,11 @@ import 'role_splash_page.dart';
 import 'theme.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  /// Injectable for tests; defaults to Firebase email/password sign-in and
+  /// returns the signed-in user's uid.
+  final Future<String?> Function(String email, String password)? signIn;
+  final Widget Function(String uid)? nextPage;
+  const LoginPage({super.key, this.signIn, this.nextPage});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -44,28 +48,43 @@ class _LoginPageState extends State<LoginPage>
     super.dispose();
   }
 
+  Future<String?> _defaultSignIn(String email, String password) async {
+    final cred = await FirebaseAuth.instance
+        .signInWithEmailAndPassword(email: email, password: password);
+    return cred.user?.uid;
+  }
+
   Future<void> _handleLogin() async {
+    if (_isLoading) return; // a second tap while signing in is ignored
     setState(() {
       _isLoading = true;
       _errorMessage = '';
     });
     try {
-      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
+      final uid = await (widget.signIn ?? _defaultSignIn)(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
       );
-      if (mounted && cred.user != null) {
+      if (mounted && uid != null) {
+        // Authorisation (staff document, role, active flag) happens in
+        // RoleSplashPage; signing in alone never opens a dashboard.
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => RoleSplashPage(role: cred.user!.uid),
+            builder: (_) =>
+                widget.nextPage?.call(uid) ?? RoleSplashPage(role: uid),
           ),
         );
+        return;
       }
     } on FirebaseAuthException {
-      setState(() => _errorMessage = 'Invalid email or password. Try again.');
+      if (mounted) {
+        setState(() => _errorMessage = 'Invalid email or password. Try again.');
+      }
     } catch (_) {
-      setState(() => _errorMessage = 'An error occurred. Please try again.');
+      if (mounted) {
+        setState(() => _errorMessage = 'An error occurred. Please try again.');
+      }
     }
     if (mounted) setState(() => _isLoading = false);
   }

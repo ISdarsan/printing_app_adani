@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'theme.dart';
+import 'money.dart';
 import 'canteen_provider.dart';
 
 class AddItemPage extends StatefulWidget {
@@ -473,17 +474,17 @@ class _AddItemPageState extends State<AddItemPage>
                                                   const SizedBox(height: 4),
                                                   Row(children: [
                                                     _priceBadge(
-                                                        'Cost ₹${costPrice.toStringAsFixed(0)}',
+                                                        'Cost ₹${formatRupees(costPrice)}',
                                                         AppColors.accentBlue),
                                                     const SizedBox(width: 6),
                                                     _priceBadge(
-                                                        'Full ₹${fullPrice.toStringAsFixed(0)}',
+                                                        'Full ₹${formatRupees(fullPrice)}',
                                                         AppColors.accentGreen),
                                                     if (halfPrice != null &&
                                                         halfPrice > 0) ...[
                                                       const SizedBox(width: 6),
                                                       _priceBadge(
-                                                          'Half ₹${halfPrice.toStringAsFixed(0)}',
+                                                          'Half ₹${formatRupees(halfPrice)}',
                                                           AppColors
                                                               .accentOrange),
                                                     ],

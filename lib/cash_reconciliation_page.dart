@@ -3,6 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'report_records.dart' show asDouble;
+import 'money.dart';
+import 'sync_status.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
 
@@ -57,6 +60,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
   }
 
   Future<void> _submitReconciliation(double systemCash) async {
+    if (_isSubmitting) return; // duplicate tap
     if (!_formKey.currentState!.validate()) return;
     final actual = double.tryParse(_cashController.text);
     if (actual == null || actual < 0) {
@@ -70,27 +74,45 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
 
     setState(() => _isSubmitting = true);
     try {
-      final discrepancy = actual - systemCash;
+      // Rounded to the paisa: floating point noise must not turn an exact
+      // count into a 0.0000000000001 "shortage" in the audit log.
+      final discrepancy = roundMoney(actual - systemCash);
       final reconciliationRef = FirebaseFirestore.instance
           .collection('cashReconciliations')
           .doc(_todayRecordId);
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
+      var alreadyMine = false;
+      await SyncTracker.instance.track<void>(
+        key: 'closing:$_todayRecordId',
+        label: 'Cash closing ₹${actual.toStringAsFixed(2)} for $_todayLabel',
+        safeToRetry: false,
+        run: () => FirebaseFirestore.instance.runTransaction((transaction) async {
         final existing = await transaction.get(reconciliationRef);
-        if (existing.exists) throw _AlreadyReconciledException();
+        if (existing.exists) {
+          // If a previous attempt of THIS submission did commit but its
+          // acknowledgement was lost, the record is ours: report success
+          // instead of "already submitted".
+          final d = existing.data();
+          alreadyMine = d != null &&
+              d['submittedBy'] == FirebaseAuth.instance.currentUser?.email &&
+              moneyEquals(asDouble(d['actualCash']), actual);
+          if (alreadyMine) return;
+          throw _AlreadyReconciledException();
+        }
 
         transaction.set(reconciliationRef, {
           'date': _todayId,
           'canteenId': CanteenProvider.selectedCanteenId,
           'canteenName': CanteenProvider.selectedCanteenName,
-          'systemCash': systemCash,
-          'actualCash': actual,
+          'systemCash': roundMoney(systemCash),
+          'actualCash': roundMoney(actual),
           'discrepancy': discrepancy,
           'note': _noteController.text.trim(),
           'submittedBy':
               FirebaseAuth.instance.currentUser?.email ?? 'Unknown Cashier',
           'timestamp': FieldValue.serverTimestamp(),
         });
-      });
+      }),
+      );
 
       _cashController.clear();
       _noteController.clear();
@@ -157,9 +179,9 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
         // If today is already reconciled, show status and details
         if (reconSnap.hasData && reconSnap.data!.exists) {
           final data = reconSnap.data!.data() as Map<String, dynamic>;
-          final system = (data['systemCash'] ?? 0.0) as double;
-          final actual = (data['actualCash'] ?? 0.0) as double;
-          final discrepancy = (data['discrepancy'] ?? 0.0) as double;
+          final system = asDouble(data['systemCash']);
+          final actual = asDouble(data['actualCash']);
+          final discrepancy = asDouble(data['discrepancy']);
           final note = data['note'] ?? '';
           final user = data['submittedBy'] ?? '';
           final ts = data['timestamp'] as Timestamp?;
@@ -210,9 +232,9 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
                       _rowDetail(
                         'Discrepancy',
                         '₹${discrepancy.toStringAsFixed(2)}',
-                        valueColor: discrepancy == 0
+                        valueColor: toPaise(discrepancy) == 0
                             ? AppColors.accentGreen
-                            : discrepancy < 0
+                            : toPaise(discrepancy) < 0
                                 ? AppColors.accentRed
                                 : AppColors.accentOrange,
                       ),
@@ -359,9 +381,9 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
     final actual = double.tryParse(_cashController.text) ?? 0.0;
     if (_cashController.text.isEmpty) return const SizedBox();
 
-    final discrepancy = actual - systemCash;
-    final isMatched = discrepancy == 0;
-    final isNegative = discrepancy < 0;
+    final discrepancy = roundMoney(actual - systemCash);
+    final isMatched = toPaise(discrepancy) == 0;
+    final isNegative = toPaise(discrepancy) < 0;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -440,14 +462,16 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
             final data = docs[i].data() as Map<String, dynamic>;
             final dateStr = data['date'] ?? docs[i].id;
             final date = DateFormat('yyyy-MM-dd').parse(dateStr);
-            final system = (data['systemCash'] ?? 0.0) as double;
-            final actual = (data['actualCash'] ?? 0.0) as double;
-            final discrepancy = (data['discrepancy'] ?? 0.0) as double;
+            final system = asDouble(data['systemCash']);
+            final actual = asDouble(data['actualCash']);
+            final discrepancy = asDouble(data['discrepancy']);
             final note = data['note'] ?? '';
             final user = data['submittedBy'] ?? '';
 
-            final isBalanced = discrepancy == 0;
-            final isShortage = discrepancy < 0;
+            // Read-time paise comparison also fixes old records that were
+            // stored with floating point dust (no data is rewritten).
+            final isBalanced = toPaise(discrepancy) == 0;
+            final isShortage = toPaise(discrepancy) < 0;
 
             return Container(
               margin: const EdgeInsets.only(bottom: 12),

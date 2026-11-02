@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'theme.dart';
+import 'connection_probe.dart';
 
 class LogoutSplashPage extends StatefulWidget {
   const LogoutSplashPage({super.key});
@@ -28,6 +29,7 @@ class _LogoutSplashPageState extends State<LogoutSplashPage>
     // End the Firebase session only once the dashboard (and its live
     // Firestore listeners) is gone, otherwise those listeners briefly error.
     _navTimer = Timer(const Duration(seconds: 2), () async {
+      ConnectionProbe.stop(); // also clears sync state of the signed-out user
       try {
         await FirebaseAuth.instance.signOut();
       } catch (_) {}

@@ -25,6 +25,8 @@ import 'monthly_sales_breakdown_page.dart';
 import 'send_notification_page.dart';
 import 'credit_customers_page.dart';
 import 'cash_reconciliation_page.dart';
+import 'sync_banner.dart';
+import 'sync_status.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,6 +59,10 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      navigatorKey: appNavigatorKey,
+      // Slim sync/offline strip above every screen; invisible when all is saved.
+      builder: (context, child) =>
+          SyncShell(tracker: SyncTracker.instance, child: child!),
       title: 'FoodPrint',
       theme: buildAppTheme(),
       initialRoute: '/',

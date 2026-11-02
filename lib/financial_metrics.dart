@@ -12,6 +12,8 @@
 ///   creditReceived                       -> repayments only (any mode)
 library;
 
+import 'money.dart';
+
 class SaleRecord {
   final double amount;
   final String mode; // 'Cash' | 'UPI' | 'Credit'
@@ -26,7 +28,10 @@ class RepaymentRecord {
 
 /// Increments applied to `dailyStats` (as plain numbers, before wrapping in
 /// FieldValue.increment). Single source of truth for both writers.
-Map<String, num> dailyStatsDeltaForSale(double amount, String mode) => {
+Map<String, num> dailyStatsDeltaForSale(double rawAmount, String mode) =>
+    _saleDelta(roundMoney(rawAmount), mode);
+
+Map<String, num> _saleDelta(double amount, String mode) => {
       'totalSales': amount,
       'totalBills': 1,
       if (mode == 'Cash') 'totalCash': amount,
@@ -36,7 +41,10 @@ Map<String, num> dailyStatsDeltaForSale(double amount, String mode) => {
 
 /// A repayment is NOT a sale: it never touches totalSales/totalBills/
 /// totalCredit. It adds to the cash/UPI collected and to creditReceived.
-Map<String, num> dailyStatsDeltaForRepayment(double amount, String mode) => {
+Map<String, num> dailyStatsDeltaForRepayment(double rawAmount, String mode) =>
+    _repaymentDelta(roundMoney(rawAmount), mode);
+
+Map<String, num> _repaymentDelta(double amount, String mode) => {
       if (mode == 'Cash') 'totalCash': amount,
       if (mode == 'UPI') 'totalUpi': amount,
       'creditReceived': amount,
