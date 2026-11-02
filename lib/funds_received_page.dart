@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'stream_cache.dart';
+import 'state_views.dart';
 import 'expense_detail_page.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
@@ -21,6 +23,11 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
   bool _isUpdating = false;
   // Only year/month are used; initialised from the business calendar (IST).
   DateTime _selectedMonth = BusinessTime.wallClock(DateTime.now());
+
+  final StreamCache _streams = StreamCache();
+  Stream<T> _cached<T>(String name, Stream<T> Function() make) =>
+      _streams.get<T>(name, make,
+          signature: '${CanteenProvider.selectedCanteenId}|$_monthId');
 
   String get _monthId => DateFormat('yyyy-MM').format(_selectedMonth);
   String get _monthLabel => DateFormat('MMMM yyyy').format(_selectedMonth);
@@ -199,8 +206,13 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
           // Scrollable Budget Details
           Expanded(
             child: StreamBuilder<DocumentSnapshot>(
-              stream: _fundStream,
+              stream: _cached('fund', () => _fundStream),
               builder: (context, fundSnap) {
+                if (fundSnap.hasError) {
+                  return AppErrorState(
+                      error: fundSnap.error,
+                      onRetry: () => setState(_streams.reset));
+                }
                 double allocatedFund = 0;
                 String lastUpdated = 'Not set yet';
                 if (fundSnap.hasData && fundSnap.data!.exists) {
@@ -213,8 +225,13 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                 }
 
                 return StreamBuilder<QuerySnapshot>(
-                  stream: _monthExpensesStream,
+                  stream: _cached('expenses', () => _monthExpensesStream),
                   builder: (context, expensesSnap) {
+                    if (expensesSnap.hasError) {
+                      return AppErrorState(
+                          error: expensesSnap.error,
+                          onRetry: () => setState(_streams.reset));
+                    }
                     double totalSpent = 0;
                     List<QueryDocumentSnapshot> currentExpenses = [];
                     if (expensesSnap.hasData) {

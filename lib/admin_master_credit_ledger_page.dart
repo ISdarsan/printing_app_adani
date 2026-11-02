@@ -15,6 +15,12 @@ class AdminMasterCreditLedgerPage extends StatefulWidget {
 class _AdminMasterCreditLedgerPageState
     extends State<AdminMasterCreditLedgerPage> {
   final TextEditingController _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
   String _searchQuery = '';
   String _filterStatus = 'All'; // All, Paid, Pending
 

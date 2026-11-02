@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'money.dart';
 import 'canteen_provider.dart';
 
@@ -259,6 +260,12 @@ class _AddItemPageState extends State<AddItemPage>
                       .orderBy('name')
                       .snapshots(),
                   builder: (context, snap) {
+                    if (snap.hasError) {
+                      return AppErrorState(
+                          inline: true,
+                          error: snap.error,
+                          onRetry: () => setState(() {}));
+                    }
                     if (snap.connectionState == ConnectionState.waiting) {
                       return const Center(
                           child: CircularProgressIndicator(

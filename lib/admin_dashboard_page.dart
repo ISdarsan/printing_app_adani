@@ -18,6 +18,7 @@ import 'excel_report_builder.dart';
 import 'export_range.dart';
 import 'paged_fetch.dart';
 import 'report_data_loader.dart';
+import 'stream_cache.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -29,6 +30,14 @@ class AdminDashboardPage extends StatefulWidget {
 class _AdminDashboardPageState extends State<AdminDashboardPage> {
   final User? _currentUser = FirebaseAuth.instance.currentUser;
   String _selectedCanteenFilter = 'all'; // 'all' or canteenId e.g. 'canteen_1'
+
+  /// One listener per dashboard card. Without this, every rebuild created new
+  /// Firestore listeners (including one on the whole month of bills).
+  final StreamCache _streams = StreamCache();
+  String get _streamSignature =>
+      '$_selectedCanteenFilter|${BusinessTime.dateKey(DateTime.now())}';
+  Stream<T> _cached<T>(String name, Stream<T> Function() make) =>
+      _streams.get<T>(name, make, signature: _streamSignature);
 
   @override
   void didChangeDependencies() {
@@ -278,7 +287,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       if (!context.mounted) return;
       Navigator.pop(context);
       await Share.shareXFiles([XFile(file.path)],
-          text: 'Canteen Ledger & Analytics - All Branches (${range.periodLabel})');
+          text:
+              'Canteen Ledger & Analytics - All Branches (${range.periodLabel})');
     } on PagedFetchCancelled {
       if (!context.mounted) return;
       Navigator.pop(context);
@@ -299,11 +309,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   color: Colors.white, fontWeight: FontWeight.w700)),
           content: Text(
               'No file was created. Check the connection and try again.\n\n$e',
-              style: AppText.style(color: AppColors.textSecondary, fontSize: 13)),
+              style:
+                  AppText.style(color: AppColors.textSecondary, fontSize: 13)),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: Text('Close', style: AppText.style(color: Colors.white70))),
+                child:
+                    Text('Close', style: AppText.style(color: Colors.white70))),
             TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
                 child: Text('Retry',
@@ -501,7 +513,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   Widget _buildWeeklyChartSection() {
     return StreamBuilder<List<MapEntry<String, Map<String, dynamic>>>>(
-      stream: _getWeeklyStatsStream(),
+      stream: _cached('weekly', _getWeeklyStatsStream),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const SizedBox(
@@ -978,7 +990,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   children: [
                     // Today's Sales
                     StreamBuilder<Map<String, dynamic>>(
-                      stream: _getDailyStatsStream(),
+                      stream: _cached('daily', _getDailyStatsStream),
                       builder: (context, snap) {
                         String sales = '₹0';
                         if (snap.hasData) {
@@ -999,7 +1011,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
                     // Monthly Sales
                     StreamBuilder<double>(
-                      stream: _getMonthlySalesStream(),
+                      stream: _cached('monthSales', _getMonthlySalesStream),
                       builder: (context, snap) {
                         return _buildMetricCard(
                           icon: Icons.calendar_month_rounded,
@@ -1014,7 +1026,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
                     // Total Pending Credit
                     StreamBuilder<double>(
-                      stream: _getTotalPendingCreditStream(),
+                      stream: _cached(
+                          'pendingCredit', _getTotalPendingCreditStream),
                       builder: (context, snap) {
                         return _buildMetricCard(
                           icon: Icons.account_balance_wallet_rounded,
@@ -1032,7 +1045,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
                     // Monthly Expenses
                     StreamBuilder<double>(
-                      stream: _getMonthlyExpensesStream(),
+                      stream:
+                          _cached('monthExpenses', _getMonthlyExpensesStream),
                       builder: (context, snap) {
                         return _buildMetricCard(
                           icon: Icons.receipt_long_rounded,
@@ -1074,7 +1088,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 const SizedBox(height: 12),
 
                 StreamBuilder<List<DocumentSnapshot>>(
-                  stream: _getRecentBillsStream(),
+                  stream: _cached('recent', _getRecentBillsStream),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(

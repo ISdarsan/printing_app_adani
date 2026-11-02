@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'theme.dart';
+import 'stream_cache.dart';
+import 'state_views.dart';
 import 'business_time.dart';
 import 'expense_detail_page.dart';
 
@@ -14,6 +16,7 @@ class AdminExpenseReportPage extends StatefulWidget {
 }
 
 class _AdminExpenseReportPageState extends State<AdminExpenseReportPage> {
+  final StreamCache _streams = StreamCache();
   final _fundController = TextEditingController();
   bool _isUpdating = false;
 
@@ -138,15 +141,25 @@ class _AdminExpenseReportPageState extends State<AdminExpenseReportPage> {
       backgroundColor: AppColors.bgDark,
       appBar: buildGradientAppBar(title: 'Monthly Cashflow & Expenses'),
       body: StreamBuilder<QuerySnapshot>(
-        stream:
-            FirebaseFirestore.instance.collection('monthlyFunds').snapshots(),
+        stream: _streams.get(
+            'funds',
+            () => FirebaseFirestore.instance
+                .collection('monthlyFunds')
+                .snapshots()),
         builder: (context, fundsSnapshot) {
           return StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('expenses')
-                .orderBy('timestamp', descending: true)
-                .snapshots(),
+            stream: _streams.get(
+                'expenses',
+                () => FirebaseFirestore.instance
+                    .collection('expenses')
+                    .orderBy('timestamp', descending: true)
+                    .snapshots()),
             builder: (context, expensesSnapshot) {
+              if (fundsSnapshot.hasError || expensesSnapshot.hasError) {
+                return AppErrorState(
+                    error: fundsSnapshot.error ?? expensesSnapshot.error,
+                    onRetry: () => setState(_streams.reset));
+              }
               if (fundsSnapshot.connectionState == ConnectionState.waiting ||
                   expensesSnapshot.connectionState == ConnectionState.waiting) {
                 return const Center(

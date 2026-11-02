@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import 'theme.dart';
+import 'stream_cache.dart';
 import 'logout_splash_page.dart';
 import 'notifications_page.dart';
 import 'sms_broadcast_helper.dart';
@@ -23,6 +24,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
   final User? _user = FirebaseAuth.instance.currentUser;
   StreamSubscription<QuerySnapshot>? _noticeSub;
   String? _showingNoticeId;
+  // Keeps the bell/banner listeners alive across rebuilds (see StreamCache).
+  final StreamCache _streams = StreamCache();
 
   @override
   void initState() {
@@ -209,7 +212,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
 
   Widget _bellButton() {
     return StreamBuilder<int>(
-      stream: NotificationsPage.unreadCountStream,
+      stream:
+          _streams.get('unreadBell', () => NotificationsPage.unreadCountStream),
       builder: (_, snap) {
         final n = snap.data ?? 0;
         return GestureDetector(
@@ -417,7 +421,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
           _buildBudgetAlertBanner(),
           // ① Notice banner (only when unread)
           StreamBuilder<int>(
-            stream: NotificationsPage.unreadCountStream,
+            stream: _streams.get(
+                'unreadBanner', () => NotificationsPage.unreadCountStream),
             builder: (_, snap) {
               final n = snap.data ?? 0;
               if (n == 0) return const SizedBox.shrink();

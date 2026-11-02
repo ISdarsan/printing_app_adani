@@ -13,6 +13,12 @@ class CreditCustomersPage extends StatefulWidget {
 
 class _CreditCustomersPageState extends State<CreditCustomersPage> {
   final TextEditingController _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
   String _searchQuery = '';
 
   @override

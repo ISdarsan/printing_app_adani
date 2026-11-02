@@ -2,12 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'stream_cache.dart';
+import 'state_views.dart';
 import 'bill_detail_page.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
 
-class TodaySalesPage extends StatelessWidget {
+class TodaySalesPage extends StatefulWidget {
   const TodaySalesPage({super.key});
+
+  @override
+  State<TodaySalesPage> createState() => _TodaySalesPageState();
+}
+
+class _TodaySalesPageState extends State<TodaySalesPage> {
+  final StreamCache _streams = StreamCache();
+  Stream<T> _cached<T>(String name, Stream<T> Function() make, String sig) =>
+      _streams.get<T>(name, make,
+          signature: '${CanteenProvider.selectedCanteenId}|$sig');
 
   // Branch-scoped (required by firestore.rules for cashiers) and half-open
   // business-day range. Index: bills(canteenId, timestamp).
@@ -27,21 +39,15 @@ class TodaySalesPage extends StatelessWidget {
       backgroundColor: AppColors.bgDark,
       appBar: buildGradientAppBar(title: "Today's Sales"),
       body: StreamBuilder<QuerySnapshot>(
-        stream: _getBillsStream(),
+        stream: _cached(
+            'bills', _getBillsStream, BusinessTime.dateKey(DateTime.now())),
         builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(
-                child: CircularProgressIndicator(color: AppColors.gradBlue));
-          }
           if (snap.hasError) {
             debugPrint('[TodaySales] Error: ${snap.error}');
-            return Center(
-                child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text('Error: ${snap.error}',
-                  style: AppText.style(color: AppColors.accentRed)),
-            ));
+            return AppErrorState(
+                error: snap.error, onRetry: () => setState(_streams.reset));
           }
+          if (!snap.hasData) return const AppLoading();
 
           final allDocs = snap.data?.docs ?? [];
           final bills = allDocs.where((doc) {

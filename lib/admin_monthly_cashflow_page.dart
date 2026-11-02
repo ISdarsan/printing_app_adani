@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'state_views.dart';
+import 'stream_cache.dart';
 import 'business_time.dart';
 import 'expense_detail_page.dart';
 
@@ -14,8 +16,18 @@ class AdminMonthlyCashflowPage extends StatefulWidget {
 }
 
 class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
+  final StreamCache _streams = StreamCache();
+  Stream<T> _cached<T>(String name, Stream<T> Function() make, String sig) =>
+      _streams.get<T>(name, make, signature: sig);
+
   final _amountController = TextEditingController();
   bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    super.dispose();
+  }
 
   Future<void> _saveMonthlyFund() async {
     if (_amountController.text.isEmpty) {
@@ -129,8 +141,15 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
 
             // ── Live Summary Card ─────────────────────
             StreamBuilder<DocumentSnapshot>(
-              stream: _getMonthlyFundStream(),
+              stream: _cached('fund', _getMonthlyFundStream,
+                  BusinessTime.monthKey(DateTime.now())),
               builder: (context, fundSnapshot) {
+                if (fundSnapshot.hasError) {
+                  return AppErrorState(
+                      inline: true,
+                      error: fundSnapshot.error,
+                      onRetry: () => setState(_streams.reset));
+                }
                 double totalFund = 0.0;
                 if (fundSnapshot.hasData && fundSnapshot.data!.exists) {
                   var fundData =
@@ -141,8 +160,15 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
                 }
 
                 return StreamBuilder<QuerySnapshot>(
-                  stream: _getExpensesStream(),
+                  stream: _cached('expensesA', _getExpensesStream,
+                      BusinessTime.monthKey(DateTime.now())),
                   builder: (context, expenseSnapshot) {
+                    if (expenseSnapshot.hasError) {
+                      return AppErrorState(
+                          inline: true,
+                          error: expenseSnapshot.error,
+                          onRetry: () => setState(_streams.reset));
+                    }
                     double totalSpent = 0.0;
                     if (expenseSnapshot.hasData) {
                       for (var doc in expenseSnapshot.data!.docs) {
@@ -231,8 +257,15 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
 
   Widget _buildExpenseList() {
     return StreamBuilder<QuerySnapshot>(
-      stream: _getExpensesStream(),
+      stream: _cached('expensesB', _getExpensesStream,
+          BusinessTime.monthKey(DateTime.now())),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return AppErrorState(
+              inline: true,
+              error: snapshot.error,
+              onRetry: () => setState(_streams.reset));
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
               child: CircularProgressIndicator(color: AppColors.gradBlue));
