@@ -3,7 +3,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'theme.dart';
-import 'canteen_provider.dart';
+import 'state_views.dart';
+import 'business_time.dart';
+import 'analytics_calc.dart';
+import 'analytics_loader.dart';
+import 'paged_fetch.dart';
 
 class AdminAnalyticsPage extends StatefulWidget {
   const AdminAnalyticsPage({super.key});
@@ -15,6 +19,12 @@ class AdminAnalyticsPage extends StatefulWidget {
 class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  AnalyticsRange _range = AnalyticsRange.defaultRange;
+  AnalyticsResult? _result;
+  Object? _error;
+  bool _loading = false;
+  String _progress = '';
+  int _generation = 0;
 
   @override
   void initState() {
@@ -25,10 +35,12 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
         setState(() {});
       }
     });
+    _load();
   }
 
   @override
   void dispose() {
+    _generation++; // cancels any load still running
     _tabController.dispose();
     super.dispose();
   }
@@ -36,428 +48,205 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
   String _formatCurrency(double value) =>
       '₹${value.toStringAsFixed(0).replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',')}';
 
-  List<Map<String, dynamic>> _buildItemPerformance(
-      List<QueryDocumentSnapshot> billDocs) {
-    final itemData = <String, Map<String, dynamic>>{};
-
-    for (final doc in billDocs) {
-      final data = doc.data() as Map<String, dynamic>;
-      final items = List<Map<String, dynamic>>.from(data['items'] ?? const []);
-      for (final item in items) {
-        final name = (item['name'] ?? 'Unknown').toString();
-        final qty = (item['quantity'] is int)
-            ? item['quantity'] as int
-            : int.tryParse(item['quantity']?.toString() ?? '') ?? 0;
-        final unitPrice =
-            ((item['price'] ?? item['fullPrice'] ?? 0.0) as num).toDouble();
-        final rawUnitCost = item['costPrice'];
-        final unitCost = rawUnitCost is num ? rawUnitCost.toDouble() : null;
-        final revenue = qty * unitPrice;
-        final current = itemData.putIfAbsent(
-          name,
-          () => {
-            'qty': 0,
-            'revenue': 0.0,
-            'cost': 0.0,
-            'profit': 0.0,
-            'knownCostQty': 0,
-            'unknownCostQty': 0,
-            'orders': 0,
-          },
-        );
-
-        current['qty'] = (current['qty'] as int) + qty;
-        current['revenue'] = (current['revenue'] as double) + revenue;
-        if (unitCost == null) {
-          current['unknownCostQty'] = (current['unknownCostQty'] as int) + qty;
-        } else {
-          final cost = qty * unitCost;
-          current['cost'] = (current['cost'] as double) + cost;
-          current['profit'] = (current['profit'] as double) + (revenue - cost);
-          current['knownCostQty'] = (current['knownCostQty'] as int) + qty;
-        }
-        current['orders'] = (current['orders'] as int) + 1;
-      }
-    }
-
-    final list = itemData.entries
-        .map((entry) => {
-              'name': entry.key,
-              'qty': entry.value['qty'] as int,
-              'revenue': entry.value['revenue'] as double,
-              'cost': entry.value['cost'] as double,
-              'profit': entry.value['profit'] as double,
-              'knownCostQty': entry.value['knownCostQty'] as int,
-              'unknownCostQty': entry.value['unknownCostQty'] as int,
-              'orders': entry.value['orders'] as int,
-            })
-        .toList();
-
-    list.sort((a, b) {
-      final diff = (b['profit'] as double).compareTo(a['profit'] as double);
-      if (diff != 0) return diff;
-      return (b['qty'] as int).compareTo(a['qty'] as int);
+  Future<void> _load() async {
+    final gen = ++_generation;
+    setState(() {
+      _loading = true;
+      _error = null;
+      _progress = 'Starting...';
     });
-    return list;
-  }
-
-  List<Map<String, dynamic>> _buildStaffPerformance(
-      List<QueryDocumentSnapshot> billDocs) {
-    final staffData = <String, Map<String, dynamic>>{};
-
-    for (final doc in billDocs) {
-      final data = doc.data() as Map<String, dynamic>;
-      final staffKey =
-          (data['createdByEmail'] ?? data['createdBy'] ?? 'Unknown').toString();
-      final amount = ((data['totalAmount'] ?? 0.0) as num).toDouble();
-      final current = staffData.putIfAbsent(
-        staffKey,
-        () => {
-          'name': staffKey,
-          'sales': 0.0,
-          'bills': 0,
+    try {
+      final r = await AnalyticsLoader(FirebaseFirestore.instance).load(
+        _range,
+        isCancelled: () => !mounted || gen != _generation,
+        onProgress: (stage, n) {
+          if (mounted && gen == _generation) {
+            setState(() => _progress = 'Reading $stage: $n');
+          }
         },
       );
-      current['sales'] = (current['sales'] as double) + amount;
-      current['bills'] = (current['bills'] as int) + 1;
-    }
-
-    final list = staffData.entries
-        .map((entry) => {
-              'name': entry.key,
-              'sales': entry.value['sales'] as double,
-              'bills': entry.value['bills'] as int,
-            })
-        .toList();
-
-    list.sort((a, b) => (b['sales'] as double).compareTo(a['sales'] as double));
-    return list;
-  }
-
-  List<Map<String, dynamic>> _buildTimeSlotData(
-      List<QueryDocumentSnapshot> billDocs) {
-    final slotMap = <String, Map<String, dynamic>>{};
-
-    for (final doc in billDocs) {
-      final data = doc.data() as Map<String, dynamic>;
-      final ts = data['timestamp'] as Timestamp?;
-      if (ts == null) continue;
-
-      final hour = ts.toDate().hour;
-      final bucket = '${hour.toString().padLeft(2, '0')}:00';
-      final amount = ((data['totalAmount'] ?? 0.0) as num).toDouble();
-      final mode = (data['paymentMode'] ?? 'Cash').toString();
-
-      final slot = slotMap.putIfAbsent(
-        bucket,
-        () => {
-          'cash': 0.0,
-          'upi': 0.0,
-          'credit': 0.0,
-          'total': 0.0,
-        },
-      );
-
-      slot['total'] = (slot['total'] as double) + amount;
-      if (mode == 'Cash') {
-        slot['cash'] = (slot['cash'] as double) + amount;
-      } else if (mode == 'UPI') {
-        slot['upi'] = (slot['upi'] as double) + amount;
-      } else if (mode == 'Credit') {
-        slot['credit'] = (slot['credit'] as double) + amount;
-      }
-    }
-
-    final list = slotMap.entries
-        .map((entry) => {
-              'slot': entry.key,
-              'cash': entry.value['cash'] as double,
-              'upi': entry.value['upi'] as double,
-              'credit': entry.value['credit'] as double,
-              'total': entry.value['total'] as double,
-            })
-        .toList();
-
-    list.sort((a, b) => (a['slot'] as String).compareTo(b['slot'] as String));
-    return list;
-  }
-
-  List<Map<String, dynamic>> _buildAnomalyList(
-      Map<String, Map<String, dynamic>> dailyTotalsByDate) {
-    final sortedDates = dailyTotalsByDate.keys.toList()..sort();
-    if (sortedDates.length < 2) return const [];
-
-    final anomalies = <Map<String, dynamic>>[];
-    final window = sortedDates.length >= 7 ? 7 : sortedDates.length;
-
-    for (int i = window; i < sortedDates.length; i++) {
-      final date = sortedDates[i];
-      final currentSales =
-          (dailyTotalsByDate[date]!['totalSales'] ?? 0.0) as double;
-      final priorSales = <double>[];
-      for (int j = i - window; j < i; j++) {
-        priorSales.add((dailyTotalsByDate[sortedDates[j]]!['totalSales'] ?? 0.0)
-            as double);
-      }
-      final avgPrior = priorSales.isEmpty
-          ? 0.0
-          : priorSales.reduce((a, b) => a + b) / priorSales.length;
-      if (avgPrior <= 0) continue;
-      final changePct = ((currentSales - avgPrior) / avgPrior) * 100;
-      if (changePct.abs() > 25) {
-        anomalies.add({
-          'date': date,
-          'currentSales': currentSales,
-          'averageSales': avgPrior,
-          'changePct': changePct,
-          'trend': changePct >= 0 ? 'spike' : 'drop',
-        });
-      }
-    }
-
-    anomalies.sort((a, b) =>
-        (b['changePct'] as double).compareTo(a['changePct'] as double));
-    return anomalies;
-  }
-
-  List<Map<String, dynamic>> _buildForecastList(
-      List<QueryDocumentSnapshot> billDocs) {
-    final now = DateTime.now();
-    final forecastStart = now.subtract(const Duration(days: 30));
-    final priorWeekStart = now.subtract(const Duration(days: 14));
-    final recentWeekStart = now.subtract(const Duration(days: 7));
-    final itemMetrics = <String, Map<String, int>>{};
-
-    for (final doc in billDocs) {
-      final data = doc.data() as Map<String, dynamic>;
-      final timestamp = data['timestamp'] as Timestamp?;
-      if (timestamp == null) continue;
-      final billDate = timestamp.toDate();
-      if (billDate.isBefore(forecastStart)) continue;
-
-      final items = List<Map<String, dynamic>>.from(data['items'] ?? const []);
-      for (final item in items) {
-        final name = (item['name'] ?? 'Unknown').toString();
-        final quantity = item['quantity'] is int
-            ? item['quantity'] as int
-            : int.tryParse(item['quantity']?.toString() ?? '') ?? 0;
-        final metrics = itemMetrics.putIfAbsent(
-          name,
-          () => {'qty': 0, 'priorWeekQty': 0, 'recentWeekQty': 0},
-        );
-        metrics['qty'] = metrics['qty']! + quantity;
-        if (!billDate.isBefore(priorWeekStart) &&
-            billDate.isBefore(recentWeekStart)) {
-          metrics['priorWeekQty'] = metrics['priorWeekQty']! + quantity;
-        } else if (!billDate.isBefore(recentWeekStart)) {
-          metrics['recentWeekQty'] = metrics['recentWeekQty']! + quantity;
-        }
-      }
-    }
-
-    final items = itemMetrics.entries
-        .map((entry) => {'name': entry.key, ...entry.value})
-        .toList()
-      ..sort((a, b) => (b['qty'] as int).compareTo(a['qty'] as int));
-    final forecast = <Map<String, dynamic>>[];
-
-    for (int i = 0; i < items.length && i < 5; i++) {
-      final item = items[i];
-      final avgDailyQty = (item['qty'] as int) / 30.0;
-      final stockTarget = (avgDailyQty * 2.5).ceil();
-      final priorWeekQty = item['priorWeekQty'] as int;
-      final recentWeekQty = item['recentWeekQty'] as int;
-      final trend = recentWeekQty > priorWeekQty
-          ? 'Upward'
-          : recentWeekQty < priorWeekQty
-              ? 'Downward'
-              : 'Stable';
-      forecast.add({
-        'name': item['name'],
-        'avgDailyQty': avgDailyQty,
-        'recommendedStock': stockTarget,
-        'trend': trend,
+      if (!mounted || gen != _generation) return;
+      setState(() {
+        _result = r;
+        _loading = false;
+      });
+    } on PagedFetchCancelled {
+      // Superseded by a newer load or the page was closed.
+    } catch (e) {
+      if (!mounted || gen != _generation) return;
+      setState(() {
+        _error = e;
+        _loading = false;
       });
     }
-    return forecast;
+  }
+
+  Widget _rangeBar() {
+    final r = _result;
+    String status;
+    if (_loading) {
+      status = _progress;
+    } else if (r != null) {
+      status = '${r.billsUsed} bills · ${r.dailyStatsRead} daily records · '
+          'updated ${DateFormat('hh:mm a').format(BusinessTime.wallClock(r.loadedAt))}'
+          '${r.truncated ? ' · INCOMPLETE (row limit reached)' : ''}';
+    } else {
+      status = '';
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final p in AnalyticsRange.presets)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(p.label,
+                          style: AppText.style(
+                              fontSize: 12,
+                              color: p.id == _range.id
+                                  ? Colors.white
+                                  : AppColors.textSecondary)),
+                      selected: p.id == _range.id,
+                      selectedColor: AppColors.accentBlue,
+                      backgroundColor: AppColors.bgCard,
+                      onSelected: _loading
+                          ? null
+                          : (_) {
+                              setState(() => _range = p);
+                              _load();
+                            },
+                    ),
+                  ),
+                IconButton(
+                  tooltip: 'Refresh',
+                  icon: const Icon(Icons.refresh_rounded,
+                      color: AppColors.textSecondary),
+                  onPressed: _loading ? null : _load,
+                ),
+              ],
+            ),
+          ),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: LinearProgressIndicator(
+                  minHeight: 2, color: AppColors.accentBlue),
+            ),
+          if (status.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(status,
+                  style: AppText.style(
+                      color: AppColors.textSecondary, fontSize: 11)),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
-    final startDateStr = DateFormat('yyyy-MM-dd').format(sevenDaysAgo);
-
+    final r = _result;
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: buildGradientAppBar(
         title: 'Analytics Insights',
         centerTitle: true,
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('bills').snapshots(),
-        builder: (context, billsSnapshot) {
-          return StreamBuilder<QuerySnapshot>(
-            stream:
-                FirebaseFirestore.instance.collection('dailyStats').snapshots(),
-            builder: (context, statsSnapshot) {
-              return StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('expenses')
-                    .snapshots(),
-                builder: (context, expensesSnapshot) {
-                  if (billsSnapshot.connectionState ==
-                          ConnectionState.waiting ||
-                      statsSnapshot.connectionState ==
-                          ConnectionState.waiting ||
-                      expensesSnapshot.connectionState ==
-                          ConnectionState.waiting) {
-                    return const Center(
-                        child: CircularProgressIndicator(
-                            color: AppColors.accentBlue));
-                  }
-
-                  final billDocs = (billsSnapshot.data?.docs ?? [])
-                      .where((doc) => CanteenProvider.matchesSelectedCanteen(
-                          doc.data() as Map<String, dynamic>))
-                      .toList();
-                  final dailyStatsDocs = (statsSnapshot.data?.docs ?? [])
-                      .where((doc) => CanteenProvider.matchesSelectedCanteen(
-                          doc.data() as Map<String, dynamic>))
-                      .toList();
-                  final expenseDocs = (expensesSnapshot.data?.docs ?? [])
-                      .where((doc) => CanteenProvider.matchesSelectedCanteen(
-                          doc.data() as Map<String, dynamic>))
-                      .toList();
-
-                  final dailyTotalsByDate = <String, Map<String, dynamic>>{};
-                  for (final doc in dailyStatsDocs) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final date = (data['date'] ??
-                            CanteenProvider.dateFromDailyStatsDocumentId(
-                                doc.id))
-                        .toString();
-                    if (DateTime.tryParse(date) == null) continue;
-                    dailyTotalsByDate.putIfAbsent(
-                        date,
-                        () => {
-                              'totalSales': 0.0,
-                              'totalCash': 0.0,
-                              'totalUpi': 0.0,
-                              'totalCredit': 0.0,
-                            });
-                    final totals = dailyTotalsByDate[date]!;
-                    for (final field in [
-                      'totalSales',
-                      'totalCash',
-                      'totalUpi',
-                      'totalCredit'
-                    ]) {
-                      totals[field] = (totals[field] as double) +
-                          ((data[field] ?? 0.0) as num).toDouble();
-                    }
-                  }
-
-                  final itemPerformance = _buildItemPerformance(billDocs);
-                  final staffPerformance = _buildStaffPerformance(billDocs);
-                  final timeSlotData = _buildTimeSlotData(billDocs);
-                  final anomalyList = _buildAnomalyList(dailyTotalsByDate);
-                  final forecastList = _buildForecastList(billDocs);
-
-                  final dailyDates = dailyTotalsByDate.keys.toList()..sort();
-                  final weeklyStats = dailyDates
-                      .where((date) => date.compareTo(startDateStr) >= 0)
-                      .map((date) => MapEntry(date, dailyTotalsByDate[date]!))
-                      .toList();
-
-                  Map<String, double> monthlySalesMap = {};
-                  Map<String, double> monthlyExpensesMap = {};
-                  for (final date in dailyDates) {
-                    final data = dailyTotalsByDate[date]!;
-                    final monthKey = date.substring(0, 7);
-                    monthlySalesMap[monthKey] =
-                        (monthlySalesMap[monthKey] ?? 0.0) +
-                            ((data['totalSales'] ?? 0.0) as num).toDouble();
-                  }
-
-                  for (var doc in expenseDocs) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final ts = data['timestamp'] as Timestamp?;
-                    if (ts == null) continue;
-                    final monthKey = DateFormat('yyyy-MM').format(ts.toDate());
-                    monthlyExpensesMap[monthKey] =
-                        (monthlyExpensesMap[monthKey] ?? 0.0) +
-                            ((data['amount'] ?? 0.0) as num).toDouble();
-                  }
-
-                  final sortedMonthKeys = {
-                    ...monthlySalesMap.keys,
-                    ...monthlyExpensesMap.keys
-                  }.toList()
-                    ..sort();
-                  final last6MonthKeys = sortedMonthKeys.length > 6
-                      ? sortedMonthKeys.sublist(sortedMonthKeys.length - 6)
-                      : sortedMonthKeys;
-
-                  return SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 16),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: AppColors.bgCard,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: AppColors.glassBorder),
-                            ),
-                            child: TabBar(
-                              controller: _tabController,
-                              indicator: BoxDecoration(
-                                gradient: AppGradients.blueAccent,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              labelColor: Colors.white,
-                              unselectedLabelColor: AppColors.textSecondary,
-                              labelStyle: AppText.style(
-                                  fontSize: 11, fontWeight: FontWeight.bold),
-                              tabs: const [
-                                Tab(text: 'Weekly'),
-                                Tab(text: 'Monthly'),
-                                Tab(text: 'Payments'),
-                                Tab(text: 'Profit'),
-                                Tab(text: 'Ops'),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          height: 420,
-                          child: TabBarView(
-                            controller: _tabController,
-                            physics: const NeverScrollableScrollPhysics(),
+      body: r == null
+          ? Column(children: [
+              _rangeBar(),
+              Expanded(
+                child: Center(
+                  child: _error != null
+                      ? Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              _buildWeeklyPage(weeklyStats),
-                              _buildMonthlyPage(
-                                  last6MonthKeys, monthlySalesMap),
-                              _buildPaymentAndTimePage(timeSlotData),
-                              _buildProfitPage(itemPerformance),
-                              _buildOpsPage(
-                                  staffPerformance, anomalyList, forecastList),
+                              Text('Could not load analytics.\n${friendlyErrorMessage(_error)}',
+                                  textAlign: TextAlign.center,
+                                  style: AppText.style(
+                                      color: AppColors.accentRed,
+                                      fontSize: 13)),
+                              const SizedBox(height: 12),
+                              TextButton(
+                                  onPressed: _load, child: const Text('Retry')),
                             ],
                           ),
+                        )
+                      : const CircularProgressIndicator(
+                          color: AppColors.accentBlue),
+                ),
+              ),
+            ])
+          : SingleChildScrollView(
+              child: Column(
+                children: [
+                  _rangeBar(),
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                      child: Text('Refresh failed, showing the earlier figures. ${friendlyErrorMessage(_error)}',
+                          style: AppText.style(
+                              color: AppColors.accentRed, fontSize: 11)),
+                    ),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: AppColors.bgCard,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.glassBorder),
+                      ),
+                      child: TabBar(
+                        controller: _tabController,
+                        indicator: BoxDecoration(
+                          gradient: AppGradients.blueAccent,
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        const SizedBox(height: 24),
+                        labelColor: Colors.white,
+                        unselectedLabelColor: AppColors.textSecondary,
+                        labelStyle: AppText.style(
+                            fontSize: 11, fontWeight: FontWeight.bold),
+                        tabs: const [
+                          Tab(text: 'Weekly'),
+                          Tab(text: 'Monthly'),
+                          Tab(text: 'Payments'),
+                          Tab(text: 'Profit'),
+                          Tab(text: 'Ops'),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    height: 420,
+                    child: TabBarView(
+                      controller: _tabController,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        _buildWeeklyPage(r.weekly),
+                        _buildMonthlyPage(r.last6MonthKeys, r.monthlySales),
+                        _buildPaymentAndTimePage(r.timeSlots),
+                        _buildProfitPage(r.itemPerformance),
+                        _buildOpsPage(
+                            r.staffPerformance, r.anomalies, r.forecast),
                       ],
                     ),
-                  );
-                },
-              );
-            },
-          );
-        },
-      ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              ),
+            ),
     );
   }
 

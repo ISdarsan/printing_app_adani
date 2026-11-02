@@ -5,10 +5,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import 'theme.dart';
+import 'fund_budget.dart';
+import 'stream_cache.dart';
 import 'logout_splash_page.dart';
 import 'notifications_page.dart';
 import 'sms_broadcast_helper.dart';
 import 'canteen_provider.dart';
+import 'business_time.dart';
+import 'today_summary.dart';
 
 class BillingDashboardPage extends StatefulWidget {
   const BillingDashboardPage({super.key});
@@ -20,6 +24,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
   final User? _user = FirebaseAuth.instance.currentUser;
   StreamSubscription<QuerySnapshot>? _noticeSub;
   String? _showingNoticeId;
+  // Keeps the bell/banner listeners alive across rebuilds (see StreamCache).
+  final StreamCache _streams = StreamCache();
 
   @override
   void initState() {
@@ -133,30 +139,31 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
     );
   }
 
-  Stream<Map<String, String>> get _statsStream {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day, 0, 0, 0);
-    final end = DateTime(now.year, now.month, now.day, 23, 59, 59);
+  Stream<TodaySummary>? _statsStreamCache;
+  String? _statsStreamDocId;
 
-    return FirebaseFirestore.instance
-        .collection('bills')
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThanOrEqualTo: end)
-        .snapshots()
-        .map((snap) {
-      double sales = 0.0;
-      int billsCount = 0;
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        if (!CanteenProvider.matchesSelectedCanteen(d)) continue;
-        sales += ((d['totalAmount'] ?? 0) as num).toDouble();
-        billsCount++;
-      }
-      return {
-        'sales': '₹${sales.toStringAsFixed(0)}',
-        'bills': '$billsCount',
-      };
-    });
+  /// Today's sales and bill count come from ONE small `dailyStats` document
+  /// (id = `<branch>_<IST date>`, so it is branch-scoped by construction and
+  /// needs no index) instead of a listener on every bill of the day. Its
+  /// `totalSales` / `totalBills` are written in the same transaction as each
+  /// bill, with the same definitions as the old query-based sums.
+  Stream<TodaySummary> get _statsStream {
+    final docId = CanteenProvider.dailyStatsDocumentId(DateTime.now());
+    if (_statsStreamCache == null || _statsStreamDocId != docId) {
+      _statsStreamDocId = docId; // also rolls over at IST midnight
+      // A query, not a document get: cashiers cannot read a document that does
+      // not exist yet (before the day's first sale), but an own-branch query
+      // simply returns nothing. Equality filters only, so no index.
+      _statsStreamCache = FirebaseFirestore.instance
+          .collection('dailyStats')
+          .where('canteenId', isEqualTo: CanteenProvider.selectedCanteenId)
+          .where('date', isEqualTo: BusinessTime.dateKey(DateTime.now()))
+          .limit(1)
+          .snapshots()
+          .map((snap) => TodaySummary.fromDailyStats(
+              snap.docs.isEmpty ? null : snap.docs.first.data()));
+    }
+    return _statsStreamCache!;
   }
 
   String get _greeting {
@@ -205,7 +212,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
 
   Widget _bellButton() {
     return StreamBuilder<int>(
-      stream: NotificationsPage.unreadCountStream,
+      stream:
+          _streams.get('unreadBell', () => NotificationsPage.unreadCountStream),
       builder: (_, snap) {
         final n = snap.data ?? 0;
         return GestureDetector(
@@ -319,10 +327,16 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
               ),
               const SizedBox(height: 8),
               // Stat pills
-              StreamBuilder<Map<String, String>>(
+              StreamBuilder<TodaySummary>(
                 stream: _statsStream,
                 builder: (_, snap) {
-                  final s = snap.data ?? {'sales': '₹0', 'bills': '0'};
+                  // Until the server/cache answers (or on error) show a dash,
+                  // never a made-up zero.
+                  final t = snap.hasError ? null : snap.data;
+                  final s = {
+                    'sales': t?.salesLabel ?? '—',
+                    'bills': t?.billsLabel ?? '—',
+                  };
                   return Row(children: [
                     _heroPill(
                       icon: Icons.currency_rupee_rounded,
@@ -407,7 +421,8 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
           _buildBudgetAlertBanner(),
           // ① Notice banner (only when unread)
           StreamBuilder<int>(
-            stream: NotificationsPage.unreadCountStream,
+            stream: _streams.get(
+                'unreadBanner', () => NotificationsPage.unreadCountStream),
             builder: (_, snap) {
               final n = snap.data ?? 0;
               if (n == 0) return const SizedBox.shrink();
@@ -755,15 +770,18 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
 
   Widget _buildBudgetAlertBanner() {
     final now = DateTime.now();
-    final monthId = DateFormat('yyyy-MM').format(now);
-    final start = DateTime(now.year, now.month, 1);
-    final end = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+    final monthId = BusinessTime.monthKey(now);
+    final month = BusinessTime.monthRange(now);
 
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('monthlyFunds')
-          .doc(monthId)
-          .snapshots(),
+      stream: _streams.get(
+          'budgetFund',
+          () => FirebaseFirestore.instance
+              .collection('monthlyFunds')
+              // budgets are per canteen: this canteen's document only
+              .doc(monthlyFundDocId(CanteenProvider.selectedCanteenId, monthId))
+              .snapshots(),
+          signature: '${CanteenProvider.selectedCanteenId}|$monthId'),
       builder: (context, fundSnap) {
         if (fundSnap.hasError) {
           debugPrint("Budget Alert Fund Error: ${fundSnap.error}");
@@ -779,11 +797,14 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
         if (allocated == 0) return const SizedBox.shrink();
 
         return StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('expenses')
-              .where('timestamp', isGreaterThanOrEqualTo: start)
-              .where('timestamp', isLessThanOrEqualTo: end)
-              .snapshots(),
+          stream: _streams.get(
+              'budgetExpenses',
+              () => CanteenProvider.scopeQuery(
+                      FirebaseFirestore.instance.collection('expenses'))
+                  .where('timestamp', isGreaterThanOrEqualTo: month.start)
+                  .where('timestamp', isLessThan: month.end)
+                  .snapshots(),
+              signature: '${CanteenProvider.selectedCanteenId}|$monthId'),
           builder: (context, expSnap) {
             if (expSnap.hasError) {
               debugPrint("Budget Alert Expenses Error: ${expSnap.error}");
@@ -799,15 +820,12 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
               }
             }
 
-            double available = allocated - spent;
-            double pctRemaining = available / allocated;
+            final budget = CanteenBudget.of(
+                canteenId: CanteenProvider.selectedCanteenId,
+                allocated: allocated,
+                spent: spent);
+            if (!budget.needsAlert) return const SizedBox.shrink();
 
-            debugPrint(
-                "Budget Alert values: allocated=$allocated, spent=$spent, available=$available, pctRemaining=$pctRemaining");
-
-            if (pctRemaining >= 0.15) return const SizedBox.shrink();
-
-            final pctStr = (pctRemaining * 100).toStringAsFixed(0);
             return Padding(
               padding: const EdgeInsets.only(bottom: 14),
               child: Container(
@@ -828,18 +846,18 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            available < 0
-                                ? 'Budget Overspent!'
-                                : 'Low Budget Alert ($pctStr% Left)',
+                            budget.exceeded
+                                ? 'Monthly budget exceeded'
+                                : 'Monthly budget running low (${budget.percentUsed}% used)',
                             style: AppText.style(
                                 color: AppColors.accentRed,
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold),
                           ),
                           Text(
-                            available < 0
-                                ? 'You have exceeded the allocated budget by ₹${available.abs().toStringAsFixed(0)}.'
-                                : 'Available: ₹${available.toStringAsFixed(0)} left of ₹${allocated.toStringAsFixed(0)} allocated.',
+                            budget.exceeded
+                                ? 'This canteen has spent ₹${budget.available.abs().toStringAsFixed(0)} more than its budget of ₹${budget.allocated.toStringAsFixed(0)} for this month.'
+                                : 'This canteen has spent ₹${budget.spent.toStringAsFixed(0)} of its budget of ₹${budget.allocated.toStringAsFixed(0)}. ₹${budget.available.toStringAsFixed(0)} left.',
                             style: AppText.style(
                                 color: AppColors.textSecondary, fontSize: 10),
                           ),

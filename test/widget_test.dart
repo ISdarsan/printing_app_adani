@@ -9,7 +9,9 @@ import 'package:canteen_adani/canteen_provider.dart';
 void main() {
   group('Canteen-scoped document IDs', () {
     test('creates separate daily stats and closing IDs per canteen', () {
-      final date = DateTime(2026, 10, 4);
+      // Fixed instant (11:30 IST on 4 Oct) so the test does not depend on the
+      // timezone of the machine running it.
+      final date = DateTime.utc(2026, 10, 4, 6, 0);
 
       expect(
         CanteenProvider.dailyStatsDocumentId(date, canteenId: 'main'),

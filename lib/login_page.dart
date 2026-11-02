@@ -4,7 +4,11 @@ import 'role_splash_page.dart';
 import 'theme.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  /// Injectable for tests; defaults to Firebase email/password sign-in and
+  /// returns the signed-in user's uid.
+  final Future<String?> Function(String email, String password)? signIn;
+  final Widget Function(String uid)? nextPage;
+  const LoginPage({super.key, this.signIn, this.nextPage});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -44,28 +48,48 @@ class _LoginPageState extends State<LoginPage>
     super.dispose();
   }
 
+  Future<String?> _defaultSignIn(String email, String password) async {
+    final cred = await FirebaseAuth.instance
+        .signInWithEmailAndPassword(email: email, password: password);
+    return cred.user?.uid;
+  }
+
   Future<void> _handleLogin() async {
+    if (_isLoading) return; // a second tap while signing in is ignored
+    if (_emailController.text.trim().isEmpty ||
+        _passwordController.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Please enter your email and password.');
+      return;
+    }
     setState(() {
       _isLoading = true;
       _errorMessage = '';
     });
     try {
-      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
+      final uid = await (widget.signIn ?? _defaultSignIn)(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
       );
-      if (mounted && cred.user != null) {
+      if (mounted && uid != null) {
+        // Authorisation (staff document, role, active flag) happens in
+        // RoleSplashPage; signing in alone never opens a dashboard.
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => RoleSplashPage(role: cred.user!.uid),
+            builder: (_) =>
+                widget.nextPage?.call(uid) ?? RoleSplashPage(role: uid),
           ),
         );
+        return;
       }
     } on FirebaseAuthException {
-      setState(() => _errorMessage = 'Invalid email or password. Try again.');
+      if (mounted) {
+        setState(() => _errorMessage = 'Invalid email or password. Try again.');
+      }
     } catch (_) {
-      setState(() => _errorMessage = 'An error occurred. Please try again.');
+      if (mounted) {
+        setState(() => _errorMessage = 'An error occurred. Please try again.');
+      }
     }
     if (mounted) setState(() => _isLoading = false);
   }
@@ -93,8 +117,9 @@ class _LoginPageState extends State<LoginPage>
       );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
-      setState(
-          () => _errorMessage = e.message ?? 'Unable to send reset email.');
+      setState(() => _errorMessage = e.code == 'invalid-email'
+          ? 'That email address does not look right. Please check it.'
+          : 'Unable to send the reset email. Please try again.');
     } catch (_) {
       if (!mounted) return;
       setState(() =>
@@ -156,6 +181,10 @@ class _LoginPageState extends State<LoginPage>
                             TextField(
                               controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
+                              textInputAction: TextInputAction.next,
+                              autofillHints: const [AutofillHints.username],
+                              autocorrect: false,
+                              enableSuggestions: false,
                               style:
                                   AppText.style(color: AppColors.textPrimary),
                               decoration: darkInput(
@@ -169,12 +198,18 @@ class _LoginPageState extends State<LoginPage>
                             TextField(
                               controller: _passwordController,
                               obscureText: _obscurePassword,
+                              textInputAction: TextInputAction.done,
+                              autofillHints: const [AutofillHints.password],
+                              onSubmitted: (_) => _handleLogin(),
                               style:
                                   AppText.style(color: AppColors.textPrimary),
                               decoration: darkInput(
                                 label: 'Password',
                                 prefixIcon: Icons.lock_outline,
                                 suffixIconWidget: IconButton(
+                                  tooltip: _obscurePassword
+                                      ? 'Show password'
+                                      : 'Hide password',
                                   icon: Icon(
                                     _obscurePassword
                                         ? Icons.visibility_off_outlined

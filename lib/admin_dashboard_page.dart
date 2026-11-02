@@ -5,15 +5,22 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:excel/excel.dart' hide Border;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'theme.dart';
+import 'fund_budget.dart';
+import 'state_views.dart';
 import 'logout_splash_page.dart';
 import 'admin_master_credit_ledger_page.dart';
 import 'bill_detail_page.dart';
 import 'sms_broadcast_helper.dart';
 import 'canteen_provider.dart';
+import 'business_time.dart';
+import 'excel_report_builder.dart';
+import 'export_range.dart';
+import 'paged_fetch.dart';
+import 'report_data_loader.dart';
+import 'stream_cache.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -26,6 +33,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   final User? _currentUser = FirebaseAuth.instance.currentUser;
   String _selectedCanteenFilter = 'all'; // 'all' or canteenId e.g. 'canteen_1'
 
+  /// One listener per dashboard card. Without this, every rebuild created new
+  /// Firestore listeners (including one on the whole month of bills).
+  final StreamCache _streams = StreamCache();
+  String get _streamSignature =>
+      '$_selectedCanteenFilter|${BusinessTime.dateKey(DateTime.now())}';
+  Stream<T> _cached<T>(String name, Stream<T> Function() make) =>
+      _streams.get<T>(name, make, signature: _streamSignature);
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -34,14 +49,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Stream<Map<String, dynamic>> _getDailyStatsStream() {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day);
-    final end = start.add(const Duration(days: 1));
+    final day = BusinessTime.dayRange(DateTime.now());
 
     return FirebaseFirestore.instance
         .collection('bills')
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThan: end)
+        .where('timestamp', isGreaterThanOrEqualTo: day.start)
+        .where('timestamp', isLessThan: day.end)
         .snapshots()
         .map((s) {
       double sales = 0.0;
@@ -81,13 +94,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Stream<double> _getMonthlySalesStream() {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, 1);
-    final end = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+    final month = BusinessTime.monthRange(DateTime.now());
     return FirebaseFirestore.instance
         .collection('bills')
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThanOrEqualTo: end)
+        .where('timestamp', isGreaterThanOrEqualTo: month.start)
+        .where('timestamp', isLessThan: month.end)
         .snapshots()
         .map((s) => s.docs.fold(0.0, (acc, d) {
               final data = d.data();
@@ -120,13 +131,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Stream<double> _getMonthlyExpensesStream() {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, 1);
-    final end = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+    final month = BusinessTime.monthRange(DateTime.now());
     return FirebaseFirestore.instance
         .collection('expenses')
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThanOrEqualTo: end)
+        .where('timestamp', isGreaterThanOrEqualTo: month.start)
+        .where('timestamp', isLessThan: month.end)
         .snapshots()
         .map((s) => s.docs.fold(0.0, (acc, d) {
               final data = d.data();
@@ -145,6 +154,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     return FirebaseFirestore.instance
         .collection('bills')
         .orderBy('timestamp', descending: true)
+        // Only the latest few bills are shown; never stream the whole
+        // collection. A wider window is used when filtering by branch because
+        // the filter is applied client-side (avoids a new composite index).
+        .limit(_selectedCanteenFilter == 'all' ? 4 : 100)
         .snapshots()
         .map((s) {
       if (_selectedCanteenFilter == 'all') {
@@ -162,11 +175,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Stream<List<MapEntry<String, Map<String, dynamic>>>> _getWeeklyStatsStream() {
-    final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
-    final startDateStr = DateFormat('yyyy-MM-dd').format(sevenDaysAgo);
+    final startDateStr = BusinessTime.dateKeyDaysAgo(DateTime.now(), 7);
     return FirebaseFirestore.instance
         .collection('dailyStats')
-        .where(FieldPath.documentId, isGreaterThanOrEqualTo: startDateStr)
+        // Filter on the 'date' field (set on every dailyStats doc). Doc IDs are
+        // "<canteenId>_<date>", so a documentId range matched all history.
+        .where('date', isGreaterThanOrEqualTo: startDateStr)
         .snapshots()
         .map((s) {
       final totalsByDate = <String, Map<String, dynamic>>{};
@@ -193,489 +207,126 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     });
   }
 
+  /// Excel export entry point: choose a period, then read and build in pages.
   Future<void> _exportExcelReport(BuildContext context) async {
+    final range = await _pickExportRange(context);
+    if (range == null || !context.mounted) return;
+    await _runExport(context, range);
+  }
+
+  Future<ExportRange?> _pickExportRange(BuildContext context) {
+    final presets = ExportRange.presets(DateTime.now());
+    return showDialog<ExportRange>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        backgroundColor: AppColors.bgCard,
+        title: Text('Export period',
+            style: AppText.style(
+                color: Colors.white, fontWeight: FontWeight.w700)),
+        children: [
+          for (final p in presets)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, p),
+              child: Text(
+                p.isAllTime ? '${p.label} (large, can be slow)' : p.label,
+                style: AppText.style(color: AppColors.textPrimary),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _runExport(BuildContext context, ExportRange range) async {
+    var cancelled = false;
+    final progress = ValueNotifier<String>('Starting...');
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: AppColors.accentBlue),
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        content: Row(children: [
+          const CircularProgressIndicator(color: AppColors.accentBlue),
+          const SizedBox(width: 20),
+          Expanded(
+            child: ValueListenableBuilder<String>(
+              valueListenable: progress,
+              builder: (_, text, __) => Text(text,
+                  style: AppText.style(
+                      color: AppColors.textPrimary, fontSize: 13)),
+            ),
+          ),
+        ]),
+        actions: [
+          TextButton(
+            onPressed: () {
+              cancelled = true;
+              progress.value = 'Cancelling...';
+            },
+            child: Text('Cancel', style: AppText.style(color: Colors.white70)),
+          ),
+        ],
       ),
     );
 
     try {
-      final db = FirebaseFirestore.instance;
+      final data = await ReportDataLoader(FirebaseFirestore.instance).load(
+        range: range,
+        isCancelled: () => cancelled,
+        onProgress: (stage, n) => progress.value = 'Reading $stage: $n records',
+      );
+      progress.value = 'Building workbook...';
+      await Future<void>.delayed(Duration.zero); // let the dialog repaint
+      final bytes = ExcelReportBuilder.build(data).encode();
+      if (bytes == null) throw StateError('The workbook could not be encoded.');
 
-      // Fetch all data
-      final billsSnap = await db
-          .collection('bills')
-          .orderBy('timestamp', descending: true)
-          .get();
-      final expensesSnap = await db
-          .collection('expenses')
-          .orderBy('timestamp', descending: true)
-          .get();
-      final creditSnap = await db
-          .collection('creditCustomers')
-          .orderBy('totalPending', descending: true)
-          .get();
-      final repaymentsSnap = await db
-          .collection('repayments')
-          .orderBy('timestamp', descending: true)
-          .get();
-      final reconSnap = await db
-          .collection('cashReconciliations')
-          .orderBy('timestamp', descending: true)
-          .get();
-      final canteensSnap = await db.collection('canteens').get();
-
-      // Build canteen name map: id -> name
-      final Map<String, String> canteenNames = {'main': 'Main Canteen'};
-      for (final doc in canteensSnap.docs) {
-        final d = doc.data();
-        canteenNames[doc.id] = d['name'] ?? doc.id;
-      }
-
-      String resolveCanteenName(String? cId) {
-        if (cId == null || cId.isEmpty || cId == 'main') return 'Main Canteen';
-        return canteenNames[cId] ?? cId;
-      }
-
-      // Collect unique canteen IDs present in bills/expenses
-      final Set<String> branchIds = {'main'};
-      for (final doc in billsSnap.docs) {
-        final cId = (doc.data()['canteenId'] ?? 'main').toString();
-        branchIds.add(cId.isEmpty ? 'main' : cId);
-      }
-      for (final doc in expensesSnap.docs) {
-        final cId = (doc.data()['canteenId'] ?? 'main').toString();
-        branchIds.add(cId.isEmpty ? 'main' : cId);
-      }
-
-      var excel = Excel.createExcel();
-      String defaultSheet = excel.getDefaultSheet() ?? 'Sheet1';
-      excel.rename(defaultSheet, 'Dashboard Summary');
-      Sheet dashboardSheet = excel['Dashboard Summary'];
-
-      void writeHeader(Sheet s, List<String> cols) {
-        for (int c = 0; c < cols.length; c++) {
-          s
-              .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 0))
-              .value = TextCellValue(cols[c]);
-        }
-      }
-
-      // SHEET 1: Dashboard Summary
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0))
-          .value = TextCellValue('CANTEEN MANAGEMENT SUMMARY - ALL BRANCHES');
-      dashboardSheet
-              .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1))
-              .value =
-          TextCellValue(
-              'Report Generated: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}');
-
-      double totalSales = 0, cashSales = 0, upiSales = 0, creditSales = 0;
-      for (var doc in billsSnap.docs) {
-        final d = doc.data();
-        final amt = ((d['totalAmount'] ?? 0.0) as num).toDouble();
-        totalSales += amt;
-        final mode = d['paymentMode'] ?? '';
-        if (mode == 'Cash') {
-          cashSales += amt;
-        } else if (mode == 'UPI') {
-          upiSales += amt;
-        } else if (mode == 'Credit') {
-          creditSales += amt;
-        }
-      }
-      double totalExpenses = expensesSnap.docs.fold(
-          0.0, (s, d) => s + ((d.data()['amount'] ?? 0.0) as num).toDouble());
-      double totalOutstandingCredit = creditSnap.docs.fold(0.0,
-          (s, d) => s + ((d.data()['totalPending'] ?? 0.0) as num).toDouble());
-      double totalRepayments = repaymentsSnap.docs.fold(
-          0.0, (s, d) => s + ((d.data()['amount'] ?? 0.0) as num).toDouble());
-      double totalDiscrepancy = reconSnap.docs.fold(0.0,
-          (s, d) => s + ((d.data()['discrepancy'] ?? 0.0) as num).toDouble());
-
-      final List<List<dynamic>> summaryData = [
-        ['Overall Revenue (All Branches)', totalSales],
-        ['Cash Collected', cashSales],
-        ['UPI Collected', upiSales],
-        ['Credit Issued', creditSales],
-        ['Total Credits Still Due', totalOutstandingCredit],
-        ['Total Credit Repayments Received', totalRepayments],
-        ['Overall Expenses', totalExpenses],
-        ['Cumulative Cash Discrepancy', totalDiscrepancy],
-        [
-          'Net Position (Sales + Repayments - Expenses)',
-          totalSales + totalRepayments - totalExpenses
-        ],
-      ];
-
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 3))
-          .value = TextCellValue('Metric');
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 3))
-          .value = TextCellValue('Total Value (INR)');
-      for (int i = 0; i < summaryData.length; i++) {
-        dashboardSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 4 + i))
-            .value = TextCellValue(summaryData[i][0] as String);
-        dashboardSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 4 + i))
-            .value = DoubleCellValue(summaryData[i][1] as double);
-      }
-
-      // Per-branch summary in the dashboard sheet
-      int bRow = 4 + summaryData.length + 2;
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: bRow++))
-          .value = TextCellValue('BRANCH-WISE BREAKDOWN');
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: bRow))
-          .value = TextCellValue('Branch');
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: bRow))
-          .value = TextCellValue('Sales (INR)');
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: bRow))
-          .value = TextCellValue('Bills Count');
-      dashboardSheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: bRow))
-          .value = TextCellValue('Expenses (INR)');
-      bRow++;
-      for (final bId in branchIds) {
-        double bSales = 0;
-        int bCount = 0;
-        double bExp = 0;
-        for (final doc in billsSnap.docs) {
-          final d = doc.data();
-          final cId = ((d['canteenId'] ?? 'main') as String);
-          if ((cId.isEmpty ? 'main' : cId) == bId) {
-            bSales += ((d['totalAmount'] ?? 0.0) as num).toDouble();
-            bCount++;
-          }
-        }
-        for (final doc in expensesSnap.docs) {
-          final d = doc.data();
-          final cId = ((d['canteenId'] ?? 'main') as String);
-          if ((cId.isEmpty ? 'main' : cId) == bId) {
-            bExp += ((d['amount'] ?? 0.0) as num).toDouble();
-          }
-        }
-        dashboardSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: bRow))
-            .value = TextCellValue(resolveCanteenName(bId));
-        dashboardSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: bRow))
-            .value = DoubleCellValue(bSales);
-        dashboardSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: bRow))
-            .value = IntCellValue(bCount);
-        dashboardSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: bRow))
-            .value = DoubleCellValue(bExp);
-        bRow++;
-      }
-
-      // SHEET: All Bills (combined with canteen column)
-      Sheet billsSheet = excel['All Bills'];
-      writeHeader(billsSheet, [
-        'Date & Time',
-        'Bill Number',
-        'Canteen Branch',
-        'Customer Name',
-        'Customer Phone',
-        'Payment Mode',
-        'Total Amount (INR)'
-      ]);
-      for (int i = 0; i < billsSnap.docs.length; i++) {
-        final d = billsSnap.docs[i].data();
-        final ts = d['timestamp'] as Timestamp?;
-        final dateStr = ts != null
-            ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
-            : 'N/A';
-        final cId = (d['canteenId'] ?? 'main').toString();
-        billsSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
-            .value = TextCellValue(dateStr);
-        billsSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
-            .value = IntCellValue((d['billNumber'] ?? 0) as int);
-        billsSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1))
-            .value = TextCellValue(resolveCanteenName(cId));
-        billsSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: i + 1))
-            .value = TextCellValue((d['customerName'] ?? 'Walk-in').toString());
-        billsSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: i + 1))
-            .value = TextCellValue((d['customerPhone'] ?? '-').toString());
-        billsSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: i + 1))
-            .value = TextCellValue((d['paymentMode'] ?? '').toString());
-        billsSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: i + 1))
-            .value = DoubleCellValue(((d['totalAmount'] ?? 0.0)
-                as num)
-            .toDouble());
-      }
-
-      // Per-branch Bills sheets
-      for (final bId in branchIds) {
-        final bName = resolveCanteenName(bId);
-        final sheetName =
-            '${bName.length > 22 ? bName.substring(0, 22) : bName} Bills';
-        Sheet branchSheet = excel[sheetName];
-        writeHeader(branchSheet, [
-          'Date & Time',
-          'Bill Number',
-          'Customer Name',
-          'Customer Phone',
-          'Payment Mode',
-          'Total Amount (INR)'
-        ]);
-        int row = 1;
-        for (final doc in billsSnap.docs) {
-          final d = doc.data();
-          final cId = (d['canteenId'] ?? 'main').toString();
-          if ((cId.isEmpty ? 'main' : cId) != bId) continue;
-          final ts = d['timestamp'] as Timestamp?;
-          final dateStr = ts != null
-              ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
-              : 'N/A';
-          branchSheet
-              .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row))
-              .value = TextCellValue(dateStr);
-          branchSheet
-              .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row))
-              .value = IntCellValue((d['billNumber'] ?? 0) as int);
-          branchSheet
-              .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row))
-              .value = TextCellValue((d['customerName'] ??
-                  'Walk-in')
-              .toString());
-          branchSheet
-              .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: row))
-              .value = TextCellValue((d['customerPhone'] ?? '-').toString());
-          branchSheet
-              .cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: row))
-              .value = TextCellValue((d['paymentMode'] ?? '').toString());
-          branchSheet
-              .cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: row))
-              .value = DoubleCellValue(((d['totalAmount'] ?? 0.0)
-                  as num)
-              .toDouble());
-          row++;
-        }
-      }
-
-      // SHEET: All Expenses (combined with canteen column)
-      Sheet expSheet = excel['All Expenses'];
-      writeHeader(expSheet,
-          ['Date & Time', 'Canteen Branch', 'Description', 'Amount (INR)']);
-      for (int i = 0; i < expensesSnap.docs.length; i++) {
-        final d = expensesSnap.docs[i].data();
-        final ts = d['timestamp'] as Timestamp?;
-        final dateStr = ts != null
-            ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
-            : 'N/A';
-        final cId = (d['canteenId'] ?? 'main').toString();
-        expSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
-            .value = TextCellValue(dateStr);
-        expSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
-            .value = TextCellValue(resolveCanteenName(cId));
-        expSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1))
-            .value = TextCellValue((d['description'] ?? '').toString());
-        expSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: i + 1))
-            .value = DoubleCellValue(((d['amount'] ?? 0.0) as num).toDouble());
-      }
-
-      // Per-branch Expenses sheets
-      for (final bId in branchIds) {
-        final bName = resolveCanteenName(bId);
-        final sheetName =
-            '${bName.length > 19 ? bName.substring(0, 19) : bName} Expenses';
-        Sheet branchExp = excel[sheetName];
-        writeHeader(branchExp, ['Date & Time', 'Description', 'Amount (INR)']);
-        int row = 1;
-        for (final doc in expensesSnap.docs) {
-          final d = doc.data();
-          final cId = (d['canteenId'] ?? 'main').toString();
-          if ((cId.isEmpty ? 'main' : cId) != bId) continue;
-          final ts = d['timestamp'] as Timestamp?;
-          final dateStr = ts != null
-              ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
-              : 'N/A';
-          branchExp
-              .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row))
-              .value = TextCellValue(dateStr);
-          branchExp
-              .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row))
-              .value = TextCellValue((d['description'] ?? '').toString());
-          branchExp
-              .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row))
-              .value = DoubleCellValue(((d['amount'] ?? 0.0)
-                  as num)
-              .toDouble());
-          row++;
-        }
-      }
-
-      // Credit Accounts
-      Sheet creditSheet = excel['Credit Accounts'];
-      writeHeader(creditSheet,
-          ['Customer Name', 'Phone Number', 'Total Pending Due (INR)']);
-      for (int i = 0; i < creditSnap.docs.length; i++) {
-        final d = creditSnap.docs[i].data();
-        creditSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
-            .value = TextCellValue((d['name'] ?? 'Unknown').toString());
-        creditSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
-            .value = TextCellValue((d['phone'] ?? '').toString());
-        creditSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1))
-            .value = DoubleCellValue(((d['totalPending'] ?? 0.0)
-                as num)
-            .toDouble());
-      }
-
-      // Repayment Logs
-      Sheet repSheet = excel['Repayment Logs'];
-      writeHeader(repSheet, [
-        'Date & Time',
-        'Customer Name',
-        'Customer Phone',
-        'Cleared Mode',
-        'Repayment Amount (INR)',
-        'Processed By'
-      ]);
-      for (int i = 0; i < repaymentsSnap.docs.length; i++) {
-        final d = repaymentsSnap.docs[i].data();
-        final ts = d['timestamp'] as Timestamp?;
-        final dateStr = ts != null
-            ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
-            : 'N/A';
-        repSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
-            .value = TextCellValue(dateStr);
-        repSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
-            .value = TextCellValue((d['customerName'] ?? 'Unknown').toString());
-        repSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1))
-            .value = TextCellValue((d['customerPhone'] ?? '-').toString());
-        repSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: i + 1))
-            .value = TextCellValue((d['paymentMode'] ?? '').toString());
-        repSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: i + 1))
-            .value = DoubleCellValue(((d['amount'] ?? 0.0) as num).toDouble());
-        repSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: i + 1))
-            .value = TextCellValue((d['processedBy'] ?? '').toString());
-      }
-
-      // Cash Reconciliations
-      Sheet reconSheet = excel['Cash Reconciliations'];
-      writeHeader(reconSheet, [
-        'Reconciled Date',
-        'System Cash (INR)',
-        'Actual Cash (INR)',
-        'Discrepancy (INR)',
-        'Audited By',
-        'Notes',
-        'Timestamp'
-      ]);
-      for (int i = 0; i < reconSnap.docs.length; i++) {
-        final d = reconSnap.docs[i].data();
-        final ts = d['timestamp'] as Timestamp?;
-        final dateStr = ts != null
-            ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate())
-            : 'N/A';
-        reconSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
-            .value = TextCellValue((d['date'] ?? '').toString());
-        reconSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
-            .value = DoubleCellValue(((d['systemCash'] ?? 0.0)
-                as num)
-            .toDouble());
-        reconSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: i + 1))
-            .value = DoubleCellValue(((d['actualCash'] ?? 0.0)
-                as num)
-            .toDouble());
-        reconSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: i + 1))
-            .value = DoubleCellValue(((d['discrepancy'] ?? 0.0)
-                as num)
-            .toDouble());
-        reconSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: i + 1))
-            .value = TextCellValue((d['submittedBy'] ?? '').toString());
-        reconSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: i + 1))
-            .value = TextCellValue((d['note'] ?? '').toString());
-        reconSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: i + 1))
-            .value = TextCellValue(dateStr);
-      }
-
-      // Top Selling Items
-      Sheet topSheet = excel['Top Selling Items'];
-      writeHeader(topSheet, ['Menu Item Name', 'Portions Sold (Total)']);
-      Map<String, int> topItemsMap = {};
-      for (var doc in billsSnap.docs) {
-        final items =
-            List<Map<String, dynamic>>.from(doc.data()['items'] ?? []);
-        for (var item in items) {
-          final name = item['name']?.toString() ?? 'Unknown';
-          final qty = (item['quantity'] ?? 0) as int;
-          topItemsMap[name] = (topItemsMap[name] ?? 0) + qty;
-        }
-      }
-      final sortedTopItems = topItemsMap.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
-      for (int i = 0; i < sortedTopItems.length; i++) {
-        topSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
-            .value = TextCellValue(sortedTopItems[i].key);
-        topSheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: i + 1))
-            .value = IntCellValue(sortedTopItems[i].value);
-      }
-
-      // Save & Share
-      final bytes = excel.encode();
-      if (bytes != null) {
-        final tempDir = await getTemporaryDirectory();
-        final file = await File(
-                '${tempDir.path}/Canteen_Report_${DateFormat('yyyyMMdd').format(DateTime.now())}.xlsx')
-            .create();
-        await file.writeAsBytes(bytes);
-        if (context.mounted) {
-          Navigator.pop(context);
-          final xFile = XFile(file.path);
-          await Share.shareXFiles([xFile],
-              text: 'Canteen Full Ledger & Analytics - All Branches');
-        }
-      }
+      final tempDir = await getTemporaryDirectory();
+      final stamp = BusinessTime.dateKey(DateTime.now()).replaceAll('-', '');
+      final file =
+          await File('${tempDir.path}/Canteen_Report_${stamp}_${range.id}.xlsx')
+              .create();
+      await file.writeAsBytes(bytes);
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      await Share.shareXFiles([XFile(file.path)],
+          text:
+              'Canteen Ledger & Analytics - All Branches (${range.periodLabel})');
+    } on PagedFetchCancelled {
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Export cancelled.', style: AppText.style()),
+        backgroundColor: AppColors.accentOrange,
+      ));
     } catch (e) {
-      if (context.mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to export Excel: $e', style: AppText.style()),
-            backgroundColor: AppColors.accentRed,
-          ),
-        );
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      // No partial file is shared: an interrupted export must not look complete.
+      final retry = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.bgCard,
+          title: Text('Export failed',
+              style: AppText.style(
+                  color: Colors.white, fontWeight: FontWeight.w700)),
+          content: Text(
+              'No file was created. Check the connection and try again.\n\n${friendlyErrorMessage(e, action: 'exporting')}',
+              style:
+                  AppText.style(color: AppColors.textSecondary, fontSize: 13)),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child:
+                    Text('Close', style: AppText.style(color: Colors.white70))),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text('Retry',
+                    style: AppText.style(color: AppColors.accentBlue))),
+          ],
+        ),
+      );
+      if (retry == true && context.mounted) {
+        await _runExport(context, range);
       }
     }
   }
@@ -864,14 +515,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   Widget _buildWeeklyChartSection() {
     return StreamBuilder<List<MapEntry<String, Map<String, dynamic>>>>(
-      stream: _getWeeklyStatsStream(),
+      stream: _cached('weekly', _getWeeklyStatsStream),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SizedBox(
-            height: 220,
-            child: Center(
-                child: CircularProgressIndicator(color: AppColors.accentBlue)),
-          );
+          return const SizedBox(height: 220, child: AppLoading());
+        }
+        if (snapshot.hasError) {
+          return AppErrorState(
+              inline: true,
+              error: snapshot.error,
+              onRetry: () => setState(_streams.reset));
         }
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return Container(
@@ -1341,9 +994,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   children: [
                     // Today's Sales
                     StreamBuilder<Map<String, dynamic>>(
-                      stream: _getDailyStatsStream(),
+                      stream: _cached('daily', _getDailyStatsStream),
                       builder: (context, snap) {
-                        String sales = '₹0';
+                        // A dash until real data arrives (or if it fails), never a
+                        // made-up zero.
+                        String sales = '—';
                         if (snap.hasData) {
                           final d = snap.data!;
                           sales =
@@ -1362,12 +1017,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
                     // Monthly Sales
                     StreamBuilder<double>(
-                      stream: _getMonthlySalesStream(),
+                      stream: _cached('monthSales', _getMonthlySalesStream),
                       builder: (context, snap) {
                         return _buildMetricCard(
                           icon: Icons.calendar_month_rounded,
                           label: "Month's Revenue",
-                          value: "₹${snap.data?.toStringAsFixed(0) ?? '0'}",
+                          value: snap.hasData
+                              ? "₹${snap.data!.toStringAsFixed(0)}"
+                              : '—',
                           gradient: AppGradients.blueAccent,
                           onTap: () => Navigator.pushNamed(
                               context, '/monthly_sales_breakdown'),
@@ -1377,12 +1034,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
                     // Total Pending Credit
                     StreamBuilder<double>(
-                      stream: _getTotalPendingCreditStream(),
+                      stream: _cached(
+                          'pendingCredit', _getTotalPendingCreditStream),
                       builder: (context, snap) {
                         return _buildMetricCard(
                           icon: Icons.account_balance_wallet_rounded,
                           label: "Total Credit Due",
-                          value: "₹${snap.data?.toStringAsFixed(0) ?? '0'}",
+                          value: snap.hasData
+                              ? "₹${snap.data!.toStringAsFixed(0)}"
+                              : '—',
                           gradient: AppGradients.orangeAccent,
                           onTap: () => Navigator.push(
                               context,
@@ -1395,12 +1055,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
                     // Monthly Expenses
                     StreamBuilder<double>(
-                      stream: _getMonthlyExpensesStream(),
+                      stream:
+                          _cached('monthExpenses', _getMonthlyExpensesStream),
                       builder: (context, snap) {
                         return _buildMetricCard(
                           icon: Icons.receipt_long_rounded,
                           label: "Month's Expenses",
-                          value: "₹${snap.data?.toStringAsFixed(0) ?? '0'}",
+                          value: snap.hasData
+                              ? "₹${snap.data!.toStringAsFixed(0)}"
+                              : '—',
                           gradient: AppGradients.redAccent,
                           onTap: () => Navigator.pushNamed(
                               context, '/admin_expense_report'),
@@ -1437,16 +1100,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 const SizedBox(height: 12),
 
                 StreamBuilder<List<DocumentSnapshot>>(
-                  stream: _getRecentBillsStream(),
+                  stream: _cached('recent', _getRecentBillsStream),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: CircularProgressIndicator(
-                              color: AppColors.accentBlue),
-                        ),
-                      );
+                      return const AppLoading();
+                    }
+                    if (snapshot.hasError) {
+                      return AppErrorState(
+                          inline: true,
+                          error: snapshot.error,
+                          onRetry: () => setState(_streams.reset));
                     }
                     if (!snapshot.hasData || snapshot.data!.isEmpty) {
                       return Container(
@@ -1581,37 +1244,48 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
+  /// Budgets are per canteen, so each canteen is judged against ITS OWN
+  /// budget for the month (never a pooled total).
   Widget _buildBudgetAlertBanner() {
     final now = DateTime.now();
-    final monthId = DateFormat('yyyy-MM').format(now);
-    final start = DateTime(now.year, now.month, 1);
-    final end = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+    final monthId = BusinessTime.monthKey(now);
+    final month = BusinessTime.monthRange(now);
 
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('monthlyFunds')
-          .doc(monthId)
-          .snapshots(),
+    return StreamBuilder<QuerySnapshot>(
+      stream: _cached(
+          'budgetFunds',
+          () => FirebaseFirestore.instance
+              .collection('monthlyFunds')
+              .where('monthYear', isEqualTo: monthId)
+              .snapshots()),
       builder: (context, fundSnap) {
         if (fundSnap.hasError) {
           debugPrint("Budget Alert Fund Error: ${fundSnap.error}");
           return const SizedBox.shrink();
         }
-        if (!fundSnap.hasData || !fundSnap.data!.exists) {
-          return const SizedBox.shrink();
-        }
+        if (!fundSnap.hasData) return const SizedBox.shrink();
 
-        final data = fundSnap.data!.data() as Map<String, dynamic>?;
-        if (data == null) return const SizedBox.shrink();
-        final allocated = (data['fundAmount'] as num?)?.toDouble() ?? 0.0;
-        if (allocated == 0) return const SizedBox.shrink();
+        final allocated = <String, double>{};
+        final names = <String, String>{};
+        for (final doc in fundSnap.data!.docs) {
+          final d = doc.data() as Map<String, dynamic>;
+          final id = (d['canteenId'] ?? '').toString();
+          final amount = (d['fundAmount'] as num?)?.toDouble() ?? 0.0;
+          if (id.isNotEmpty && amount > 0) {
+            allocated[id] = amount;
+            names[id] = (d['canteenName'] ?? id).toString();
+          }
+        }
+        if (allocated.isEmpty) return const SizedBox.shrink();
 
         return StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('expenses')
-              .where('timestamp', isGreaterThanOrEqualTo: start)
-              .where('timestamp', isLessThanOrEqualTo: end)
-              .snapshots(),
+          stream: _cached(
+              'budgetExpenses',
+              () => FirebaseFirestore.instance
+                  .collection('expenses')
+                  .where('timestamp', isGreaterThanOrEqualTo: month.start)
+                  .where('timestamp', isLessThan: month.end)
+                  .snapshots()),
           builder: (context, expSnap) {
             if (expSnap.hasError) {
               debugPrint("Budget Alert Expenses Error: ${expSnap.error}");
@@ -1619,23 +1293,18 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             }
             if (!expSnap.hasData) return const SizedBox.shrink();
 
-            double spent = 0;
-            for (var doc in expSnap.data!.docs) {
-              final d = doc.data() as Map<String, dynamic>?;
-              if (d != null) {
-                spent += ((d['amount'] ?? 0.0) as num).toDouble();
-              }
+            final spent = <String, double>{};
+            for (final doc in expSnap.data!.docs) {
+              final d = doc.data() as Map<String, dynamic>;
+              final id = (d['canteenId'] ?? 'main').toString();
+              spent[id] = (spent[id] ?? 0) +
+                  ((d['amount'] ?? 0.0) as num).toDouble();
             }
 
-            double available = allocated - spent;
-            double pctRemaining = available / allocated;
+            final alerts = budgetsNeedingAlert(
+                allocatedByCanteen: allocated, spentByCanteen: spent);
+            if (alerts.isEmpty) return const SizedBox.shrink();
 
-            debugPrint(
-                "Budget Alert values: allocated=$allocated, spent=$spent, available=$available, pctRemaining=$pctRemaining");
-
-            if (pctRemaining >= 0.15) return const SizedBox.shrink();
-
-            final pctStr = (pctRemaining * 100).toStringAsFixed(0);
             return Padding(
               padding: const EdgeInsets.only(bottom: 14),
               child: Container(
@@ -1647,6 +1316,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       color: AppColors.accentRed.withValues(alpha: 0.55)),
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Icon(Icons.warning_amber_rounded,
                         color: AppColors.accentRed, size: 20),
@@ -1656,21 +1326,24 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            available < 0
-                                ? 'Budget Overspent!'
-                                : 'Low Budget Alert ($pctStr% Left)',
+                            alerts.any((b) => b.exceeded)
+                                ? 'Canteen budget exceeded'
+                                : 'Canteen budget running low',
                             style: AppText.style(
                                 color: AppColors.accentRed,
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold),
                           ),
-                          Text(
-                            available < 0
-                                ? 'You have exceeded the allocated budget by ₹${available.abs().toStringAsFixed(0)}.'
-                                : 'Available: ₹${available.toStringAsFixed(0)} left of ₹${allocated.toStringAsFixed(0)} allocated.',
-                            style: AppText.style(
-                                color: AppColors.textSecondary, fontSize: 10),
-                          ),
+                          const SizedBox(height: 2),
+                          for (final b in alerts)
+                            Text(
+                              b.exceeded
+                                  ? '${names[b.canteenId] ?? b.canteenId}: over by ₹${b.available.abs().toStringAsFixed(0)} (budget ₹${b.allocated.toStringAsFixed(0)})'
+                                  : '${names[b.canteenId] ?? b.canteenId}: ₹${b.available.toStringAsFixed(0)} left of ₹${b.allocated.toStringAsFixed(0)} (${b.percentUsed}% used)',
+                              style: AppText.style(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 10),
+                            ),
                         ],
                       ),
                     ),
@@ -1837,9 +1510,14 @@ class _CanteensTabState extends State<_CanteensTab> {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('canteens').snapshots(),
         builder: (context, snap) {
+          if (snap.hasError) {
+            return AppErrorState(
+                inline: true,
+                error: snap.error,
+                onRetry: () => setState(() {}));
+          }
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(
-                child: CircularProgressIndicator(color: AppColors.accentGreen));
+            return const AppLoading();
           }
           final docs = snap.data?.docs ?? [];
           if (docs.isEmpty) {
@@ -2106,13 +1784,11 @@ class _AssignedCanteenStaff extends StatelessWidget {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('canteenStaff').snapshots(),
       builder: (context, snap) {
+        if (snap.hasError) {
+          return AppErrorState(inline: true, error: snap.error);
+        }
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.all(16),
-            child: Center(
-                child: CircularProgressIndicator(
-                    color: AppColors.accentGreen, strokeWidth: 2)),
-          );
+          return const AppLoading();
         }
         if (snap.hasError) {
           return Padding(
@@ -2239,9 +1915,11 @@ class _StaffTab extends StatelessWidget {
             .orderBy('email')
             .snapshots(),
         builder: (context, snap) {
+          if (snap.hasError) {
+            return AppErrorState(inline: true, error: snap.error);
+          }
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(
-                child: CircularProgressIndicator(color: AppColors.accentBlue));
+            return const AppLoading();
           }
           final docs = snap.data?.docs ?? [];
           if (docs.isEmpty) {
@@ -2616,7 +2294,7 @@ class _StaffTab extends StatelessWidget {
                         } catch (e) {
                           setDialogState(() {
                             isLoading = false;
-                            errorMsg = 'Error: $e';
+                            errorMsg = 'Could not create the account. ${friendlyErrorMessage(e, action: 'saving')}';
                           });
                         }
                       },
@@ -2740,7 +2418,7 @@ class _StaffTab extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed: $e', style: AppText.style()),
+          content: Text('Could not complete this. ${friendlyErrorMessage(e, action: 'saving')}', style: AppText.style()),
           backgroundColor: AppColors.accentRed,
         ));
       }

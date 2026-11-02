@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'theme.dart';
+import 'stream_cache.dart';
+import 'state_views.dart';
+import 'money.dart';
 import 'canteen_provider.dart';
 
 class AddItemPage extends StatefulWidget {
@@ -11,6 +14,8 @@ class AddItemPage extends StatefulWidget {
 
 class _AddItemPageState extends State<AddItemPage>
     with SingleTickerProviderStateMixin {
+  final StreamCache _streams = StreamCache();
+
   late TabController _tabController;
   final _formKey = GlobalKey<FormState>();
   final _codeController = TextEditingController();
@@ -138,7 +143,7 @@ class _AddItemPageState extends State<AddItemPage>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e', style: AppText.style()),
+          content: Text('Could not save the item. ${friendlyErrorMessage(e, action: 'saving')}', style: AppText.style()),
           backgroundColor: AppColors.accentRed,
           behavior: SnackBarBehavior.floating,
         ));
@@ -149,6 +154,7 @@ class _AddItemPageState extends State<AddItemPage>
   }
 
   Future<void> _deleteItem(String docId, String name) async {
+    if (!CanteenProvider.isAdmin) return; // admin-only action
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -196,7 +202,7 @@ class _AddItemPageState extends State<AddItemPage>
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error deleting: $e', style: AppText.style()),
+            content: Text('Could not delete the item. ${friendlyErrorMessage(e, action: 'deleting')}', style: AppText.style()),
             backgroundColor: AppColors.accentRed,
             behavior: SnackBarBehavior.floating,
           ));
@@ -250,17 +256,21 @@ class _AddItemPageState extends State<AddItemPage>
               children: [
                 // ── TAB 1: LIST + SEARCH ──────────────────────
                 StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
+                  stream: _streams.get('menu', () => FirebaseFirestore.instance
                       .collection('menuItems')
                       .where('canteenId',
                           isEqualTo: CanteenProvider.selectedCanteenId)
                       .orderBy('name')
-                      .snapshots(),
+                      .snapshots()),
                   builder: (context, snap) {
+                    if (snap.hasError) {
+                      return AppErrorState(
+                          inline: true,
+                          error: snap.error,
+                          onRetry: () => setState(_streams.reset));
+                    }
                     if (snap.connectionState == ConnectionState.waiting) {
-                      return const Center(
-                          child: CircularProgressIndicator(
-                              color: AppColors.accentGreen));
+                      return const AppLoading();
                     }
                     if (!snap.hasData || snap.data!.docs.isEmpty) {
                       return Center(
@@ -473,17 +483,17 @@ class _AddItemPageState extends State<AddItemPage>
                                                   const SizedBox(height: 4),
                                                   Row(children: [
                                                     _priceBadge(
-                                                        'Cost ₹${costPrice.toStringAsFixed(0)}',
+                                                        'Cost ₹${formatRupees(costPrice)}',
                                                         AppColors.accentBlue),
                                                     const SizedBox(width: 6),
                                                     _priceBadge(
-                                                        'Full ₹${fullPrice.toStringAsFixed(0)}',
+                                                        'Full ₹${formatRupees(fullPrice)}',
                                                         AppColors.accentGreen),
                                                     if (halfPrice != null &&
                                                         halfPrice > 0) ...[
                                                       const SizedBox(width: 6),
                                                       _priceBadge(
-                                                          'Half ₹${halfPrice.toStringAsFixed(0)}',
+                                                          'Half ₹${formatRupees(halfPrice)}',
                                                           AppColors
                                                               .accentOrange),
                                                     ],
@@ -498,13 +508,19 @@ class _AddItemPageState extends State<AddItemPage>
                                                     Icons.edit_rounded,
                                                     AppColors.accentBlue,
                                                     () => _loadForEdit(data)),
-                                                const SizedBox(height: 4),
-                                                _iconBtn(
-                                                    Icons
-                                                        .delete_outline_rounded,
-                                                    AppColors.accentRed,
-                                                    () => _deleteItem(
-                                                        data['docId'], name)),
+                                                // Deleting a menu item is an
+                                                // admin action (business
+                                                // decision; see
+                                                // MENU_SECURITY_CHANGE_PROPOSAL.md)
+                                                if (CanteenProvider.isAdmin) ...[
+                                                  const SizedBox(height: 4),
+                                                  _iconBtn(
+                                                      Icons
+                                                          .delete_outline_rounded,
+                                                      AppColors.accentRed,
+                                                      () => _deleteItem(
+                                                          data['docId'], name)),
+                                                ],
                                               ],
                                             ),
                                           ],

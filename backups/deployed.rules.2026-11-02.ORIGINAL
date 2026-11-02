@@ -1,0 +1,12 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // This allows ANY logged-in user to read and write
+    // to ALL collections (like 'canteenStaff' and 'expenses')
+    
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

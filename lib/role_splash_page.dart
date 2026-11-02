@@ -1,13 +1,24 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'theme.dart';
+import 'connection_probe.dart';
 import 'canteen_provider.dart';
+import 'role_routing.dart';
+
+/// Result of reading `canteenStaff/{uid}`.
+typedef StaffRecord = ({bool exists, Map<String, dynamic>? data});
+typedef StaffLoader = Future<StaffRecord> Function(String uid);
 
 class RoleSplashPage extends StatefulWidget {
-  final String role;
-  const RoleSplashPage({super.key, required this.role});
+  final String role; // the signed-in user's uid (historical name)
+
+  /// Injectable for tests. Defaults read the staff document from the SERVER
+  /// (never the local cache) so a deactivation takes effect immediately.
+  final StaffLoader? loadStaff;
+  final Future<void> Function()? signOut;
+  const RoleSplashPage(
+      {super.key, required this.role, this.loadStaff, this.signOut});
 
   @override
   State<RoleSplashPage> createState() => _RoleSplashPageState();
@@ -45,70 +56,57 @@ class _RoleSplashPageState extends State<RoleSplashPage>
     _fetchUserRoleAndNavigate();
   }
 
+  static Future<StaffRecord> _defaultLoad(String uid) async {
+    final doc = await FirebaseFirestore.instance
+        .collection('canteenStaff')
+        .doc(uid)
+        .get(const GetOptions(source: Source.server));
+    return (exists: doc.exists, data: doc.data());
+  }
+
+  bool _navigated = false;
+
+  /// Authorise, then go. There is no fixed wait: an authorised user is sent to
+  /// the dashboard the moment the staff document has been verified. A denied
+  /// user sees the reason for a moment and is then signed out.
   Future<void> _fetchUserRoleAndNavigate() async {
-    String actualRole = 'unknown';
-
+    RoleDecision decision;
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('canteenStaff')
-          .doc(widget.role)
-          .get();
-
-      if (doc.exists) {
-        actualRole = doc.data()?['role'] ?? 'unknown';
-        await CanteenProvider.initializeForStaff(widget.role);
-
-        if (mounted) {
-          setState(() {
-            if (actualRole == 'admin') {
-              _welcomeMessage = 'Welcome, Admin';
-              _subMessage = 'Loading your dashboard...';
-            } else {
-              _welcomeMessage = 'Welcome, Cashier';
-              _subMessage = 'Loading your dashboard...';
-            }
-            _showDots = false;
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            _welcomeMessage = 'Access Denied';
-            _subMessage = 'User role not found.';
-            _error = 'Contact your administrator.';
-            _showDots = false;
-          });
-        }
-      }
+      final rec = await (widget.loadStaff ?? _defaultLoad)(widget.role);
+      decision = decideRole(docExists: rec.exists, data: rec.data);
+      if (decision.allowed) CanteenProvider.applyStaffData(rec.data);
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _welcomeMessage = 'Connection Error';
-          _subMessage = 'Check your internet connection.';
-          _error = e.toString();
-          _showDots = false;
-        });
-      }
+      decision = decideRole(docExists: false, error: e);
+    }
+    if (!mounted) return;
+
+    setState(() {
+      _welcomeMessage = decision.title;
+      _subMessage = decision.subtitle;
+      _error = decision.allowed ? '' : decision.detail;
+      _showDots = false;
+    });
+
+    if (decision.allowed) {
+      if (_navigated) return;
+      _navigated = true;
+      // Production path only (tests inject their own loader, no Firebase).
+      if (widget.loadStaff == null) ConnectionProbe.start(widget.role);
+      Navigator.pushReplacementNamed(context, decision.route!);
+      return;
     }
 
     _controller.forward();
-
-    Timer(const Duration(seconds: 3), () {
-      if (!mounted) return;
-      String? destination;
-      if (actualRole == 'admin') {
-        destination = '/admin_dashboard';
-      } else if (actualRole == 'cashier') {
-        destination = '/billing_dashboard';
-      }
-      if (destination == null) {
-        FirebaseAuth.instance.signOut();
-        Navigator.pushReplacementNamed(context, '/login');
-        return;
-      }
-
-      Navigator.pushReplacementNamed(context, destination);
-    });
+    await Future<void>.delayed(decision.denialHold);
+    if (!mounted || _navigated) return;
+    _navigated = true;
+    try {
+      await (widget.signOut ?? FirebaseAuth.instance.signOut)();
+    } catch (_) {
+      // Navigating to login is still the right outcome.
+    }
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, '/login');
   }
 
   @override

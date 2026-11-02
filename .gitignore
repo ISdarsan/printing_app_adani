@@ -49,3 +49,15 @@ app.*.map.json
 # Node dependencies
 **/node_modules/
 
+
+# --- sensitive outputs and signing material: never commit ---
+staff-audit.json
+legacy-audit*.json
+*-audit.json
+after.rules
+deployed-after.rules
+*.keystore
+*.jks
+key.properties
+android/key.properties
+android/local.properties

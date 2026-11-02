@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'theme.dart';
+import 'stream_cache.dart';
+import 'state_views.dart';
 import 'credit_detail_page.dart';
 
 class AdminCreditCustomersPage extends StatefulWidget {
@@ -12,7 +14,15 @@ class AdminCreditCustomersPage extends StatefulWidget {
 }
 
 class _AdminCreditCustomersPageState extends State<AdminCreditCustomersPage> {
+  final StreamCache _streams = StreamCache();
+
   final TextEditingController _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
   String _searchQuery = '';
 
   @override
@@ -45,20 +55,19 @@ class _AdminCreditCustomersPageState extends State<AdminCreditCustomersPage> {
           ),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
+              stream: _streams.get('customers', () => FirebaseFirestore.instance
                   .collection('creditCustomers')
                   .orderBy('totalPending', descending: true)
-                  .snapshots(),
+                  .snapshots()),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child: CircularProgressIndicator(
-                          color: AppColors.accentBlue));
+                  return const AppLoading();
                 }
                 if (snapshot.hasError) {
-                  return Center(
-                      child: Text('Error: ${snapshot.error}',
-                          style: const TextStyle(color: Colors.white)));
+                  return AppErrorState(
+                      inline: true,
+                      error: snapshot.error,
+                      onRetry: () => setState(_streams.reset));
                 }
 
                 var docs = snapshot.data?.docs ?? [];

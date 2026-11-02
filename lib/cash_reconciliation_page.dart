@@ -3,7 +3,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'state_views.dart';
+import 'report_records.dart' show asDouble;
+import 'money.dart';
+import 'sync_status.dart';
 import 'canteen_provider.dart';
+import 'business_time.dart';
 
 class _AlreadyReconciledException implements Exception {}
 
@@ -21,27 +26,37 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
   final _formKey = GlobalKey<FormState>();
   bool _isSubmitting = false;
 
-  String get _todayId => DateFormat('yyyy-MM-dd').format(DateTime.now());
+  String get _todayId => BusinessTime.dateKey(DateTime.now());
   String get _todayRecordId =>
       CanteenProvider.cashReconciliationDocumentId(DateTime.now());
   String get _todayLabel => DateFormat('dd MMMM yyyy').format(DateTime.now());
 
-  late Stream<DocumentSnapshot> _todayStatsStream;
-  late Stream<DocumentSnapshot> _todayReconciliationStream;
+  late Stream<Map<String, dynamic>?> _todayStatsStream;
+  late Stream<Map<String, dynamic>?> _todayReconciliationStream;
   late Stream<QuerySnapshot> _reconciliationHistoryStream;
 
   @override
   void initState() {
     super.initState();
-    _todayStatsStream = FirebaseFirestore.instance
-        .collection('dailyStats')
-        .doc(CanteenProvider.dailyStatsDocumentId(DateTime.now()))
-        .snapshots();
+    _openStreams();
+  }
 
-    _todayReconciliationStream = FirebaseFirestore.instance
-        .collection('cashReconciliations')
-        .doc(_todayRecordId)
-        .snapshots();
+  /// Opens (or re-opens, for Retry) the three listeners.
+  void _openStreams() {
+    // Branch-scoped queries instead of document streams: a cashier cannot read
+    // a document that does not exist yet, and a failed stream ends for good, so
+    // the screen would never notice the closing being submitted. A query just
+    // returns nothing and then the new record. Equality filters only.
+    Stream<Map<String, dynamic>?> today(String collection) =>
+        FirebaseFirestore.instance
+            .collection(collection)
+            .where('canteenId', isEqualTo: CanteenProvider.selectedCanteenId)
+            .where('date', isEqualTo: _todayId)
+            .limit(1)
+            .snapshots()
+            .map((s) => s.docs.isEmpty ? null : s.docs.first.data());
+    _todayStatsStream = today('dailyStats');
+    _todayReconciliationStream = today('cashReconciliations');
 
     Query<Map<String, dynamic>> historyQuery =
         FirebaseFirestore.instance.collection('cashReconciliations');
@@ -56,6 +71,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
   }
 
   Future<void> _submitReconciliation(double systemCash) async {
+    if (_isSubmitting) return; // duplicate tap
     if (!_formKey.currentState!.validate()) return;
     final actual = double.tryParse(_cashController.text);
     if (actual == null || actual < 0) {
@@ -69,27 +85,59 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
 
     setState(() => _isSubmitting = true);
     try {
-      final discrepancy = actual - systemCash;
+      // Rounded to the paisa: floating point noise must not turn an exact
+      // count into a 0.0000000000001 "shortage" in the audit log.
+      final discrepancy = roundMoney(actual - systemCash);
       final reconciliationRef = FirebaseFirestore.instance
           .collection('cashReconciliations')
           .doc(_todayRecordId);
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        final existing = await transaction.get(reconciliationRef);
-        if (existing.exists) throw _AlreadyReconciledException();
-
-        transaction.set(reconciliationRef, {
-          'date': _todayId,
-          'canteenId': CanteenProvider.selectedCanteenId,
-          'canteenName': CanteenProvider.selectedCanteenName,
-          'systemCash': systemCash,
-          'actualCash': actual,
-          'discrepancy': discrepancy,
-          'note': _noteController.text.trim(),
-          'submittedBy':
-              FirebaseAuth.instance.currentUser?.email ?? 'Unknown Cashier',
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-      });
+      var alreadyMine = false;
+      await SyncTracker.instance.track<void>(
+        key: 'closing:$_todayRecordId',
+        label: 'Cash closing ₹${actual.toStringAsFixed(2)} for $_todayLabel',
+        safeToRetry: false,
+        run: () async {
+          // Already closed today? Asked with a branch-scoped query (cashiers cannot
+          // read a missing document). If a previous attempt of THIS submission
+          // did commit but its acknowledgement was lost, the record is ours:
+          // report success instead of "already submitted".
+          final prior = await FirebaseFirestore.instance
+              .collection('cashReconciliations')
+              .where('canteenId', isEqualTo: CanteenProvider.selectedCanteenId)
+              .where('date', isEqualTo: _todayId)
+              .limit(1)
+              .get(const GetOptions(source: Source.server));
+          if (prior.docs.isNotEmpty) {
+            final d = prior.docs.first.data();
+            alreadyMine =
+                d['submittedBy'] == FirebaseAuth.instance.currentUser?.email &&
+                    moneyEquals(asDouble(d['actualCash']), actual);
+            if (alreadyMine) return;
+            throw _AlreadyReconciledException();
+          }
+          // Create-only: the record id is fixed per branch and day, so a second
+          // create is an UPDATE to the rules, which cashiers may not do. A
+          // transaction (not a plain set) so that it fails when offline instead
+          // of being queued.
+          await FirebaseFirestore.instance.runTransaction((transaction) async {
+            transaction.set(reconciliationRef, {
+              'date': _todayId,
+              'canteenId': CanteenProvider.selectedCanteenId,
+              'canteenName': CanteenProvider.selectedCanteenName,
+              'systemCash': roundMoney(systemCash),
+              'actualCash': roundMoney(actual),
+              'discrepancy': discrepancy,
+              'note': _noteController.text.trim(),
+              'submittedBy':
+                  FirebaseAuth.instance.currentUser?.email ?? 'Unknown Cashier',
+              // Required by the security rules: the closing is signed with the
+              // caller's uid, so it cannot be filed in someone else's name.
+              'submittedByUid': FirebaseAuth.instance.currentUser?.uid,
+              'timestamp': FieldValue.serverTimestamp(),
+            });
+          });
+        },
+      );
 
       _cashController.clear();
       _noteController.clear();
@@ -113,7 +161,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e', style: AppText.style()),
+          content: Text('Could not save the closing. ${friendlyErrorMessage(e, action: 'saving')}', style: AppText.style()),
           backgroundColor: AppColors.accentRed,
         ));
       }
@@ -145,20 +193,23 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
   }
 
   Widget _buildCashierSubmissionView() {
-    return StreamBuilder<DocumentSnapshot>(
+    return StreamBuilder<Map<String, dynamic>?>(
       stream: _todayReconciliationStream,
       builder: (context, reconSnap) {
+        if (reconSnap.hasError) {
+          return AppErrorState(
+              error: reconSnap.error, onRetry: () => setState(_openStreams));
+        }
         if (reconSnap.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator(color: AppColors.accentBlue));
+          return const AppLoading();
         }
 
         // If today is already reconciled, show status and details
-        if (reconSnap.hasData && reconSnap.data!.exists) {
-          final data = reconSnap.data!.data() as Map<String, dynamic>;
-          final system = (data['systemCash'] ?? 0.0) as double;
-          final actual = (data['actualCash'] ?? 0.0) as double;
-          final discrepancy = (data['discrepancy'] ?? 0.0) as double;
+        if (reconSnap.data != null) {
+          final data = reconSnap.data!;
+          final system = asDouble(data['systemCash']);
+          final actual = asDouble(data['actualCash']);
+          final discrepancy = asDouble(data['discrepancy']);
           final note = data['note'] ?? '';
           final user = data['submittedBy'] ?? '';
           final ts = data['timestamp'] as Timestamp?;
@@ -209,9 +260,9 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
                       _rowDetail(
                         'Discrepancy',
                         '₹${discrepancy.toStringAsFixed(2)}',
-                        valueColor: discrepancy == 0
+                        valueColor: toPaise(discrepancy) == 0
                             ? AppColors.accentGreen
-                            : discrepancy < 0
+                            : toPaise(discrepancy) < 0
                                 ? AppColors.accentRed
                                 : AppColors.accentOrange,
                       ),
@@ -228,13 +279,25 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
         }
 
         // Otherwise show the submission form
-        return StreamBuilder<DocumentSnapshot>(
+        return StreamBuilder<Map<String, dynamic>?>(
           stream: _todayStatsStream,
           builder: (context, statsSnap) {
+            // The expected cash must be KNOWN before a closing can be entered.
+            // Previously an error or a not-yet-arrived value silently counted
+            // as Rs 0, so a closing could be submitted against Rs 0.
+            if (statsSnap.hasError) {
+              return AppErrorState(
+                  error: statsSnap.error,
+                  onRetry: () => setState(_openStreams));
+            }
+            if (statsSnap.connectionState == ConnectionState.waiting) {
+              return const AppLoading(
+                  message: 'Loading the cash total for today...');
+            }
             double systemCash = 0.0;
-            if (statsSnap.hasData && statsSnap.data!.exists) {
-              final d = statsSnap.data!.data() as Map<String, dynamic>;
-              systemCash = ((d['totalCash'] ?? 0.0) as num).toDouble();
+            final d = statsSnap.data;
+            if (d != null) {
+              systemCash = asDouble(d['totalCash']);
             }
 
             return Form(
@@ -358,9 +421,9 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
     final actual = double.tryParse(_cashController.text) ?? 0.0;
     if (_cashController.text.isEmpty) return const SizedBox();
 
-    final discrepancy = actual - systemCash;
-    final isMatched = discrepancy == 0;
-    final isNegative = discrepancy < 0;
+    final discrepancy = roundMoney(actual - systemCash);
+    final isMatched = toPaise(discrepancy) == 0;
+    final isNegative = toPaise(discrepancy) < 0;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -419,9 +482,12 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
     return StreamBuilder<QuerySnapshot>(
       stream: _reconciliationHistoryStream,
       builder: (context, snap) {
+        if (snap.hasError) {
+          return AppErrorState(
+              error: snap.error, onRetry: () => setState(_openStreams));
+        }
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator(color: AppColors.accentBlue));
+          return const AppLoading();
         }
 
         final docs = snap.data?.docs ?? [];
@@ -439,14 +505,16 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
             final data = docs[i].data() as Map<String, dynamic>;
             final dateStr = data['date'] ?? docs[i].id;
             final date = DateFormat('yyyy-MM-dd').parse(dateStr);
-            final system = (data['systemCash'] ?? 0.0) as double;
-            final actual = (data['actualCash'] ?? 0.0) as double;
-            final discrepancy = (data['discrepancy'] ?? 0.0) as double;
+            final system = asDouble(data['systemCash']);
+            final actual = asDouble(data['actualCash']);
+            final discrepancy = asDouble(data['discrepancy']);
             final note = data['note'] ?? '';
             final user = data['submittedBy'] ?? '';
 
-            final isBalanced = discrepancy == 0;
-            final isShortage = discrepancy < 0;
+            // Read-time paise comparison also fixes old records that were
+            // stored with floating point dust (no data is rewritten).
+            final isBalanced = toPaise(discrepancy) == 0;
+            final isShortage = toPaise(discrepancy) < 0;
 
             return Container(
               margin: const EdgeInsets.only(bottom: 12),

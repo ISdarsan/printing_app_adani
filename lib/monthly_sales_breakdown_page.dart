@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'state_views.dart';
+import 'stream_cache.dart';
 import 'daily_sales_report_page.dart';
 import 'canteen_provider.dart';
+import 'business_time.dart';
 
 class DailySaleSummary {
   final DateTime date;
@@ -19,7 +22,14 @@ class MonthlySalesBreakdownPage extends StatefulWidget {
 }
 
 class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
-  DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  final StreamCache _streams = StreamCache();
+  Stream<T> _cached<T>(String name, Stream<T> Function() make, String sig) =>
+      _streams.get<T>(name, make,
+          signature: '${CanteenProvider.selectedCanteenId}|$sig');
+
+  DateTime _selectedMonth = DateTime(
+      BusinessTime.wallClock(DateTime.now()).year,
+      BusinessTime.wallClock(DateTime.now()).month);
 
   Future<void> _selectMonth(BuildContext context) async {
     final picked = await showDatePicker(
@@ -47,14 +57,16 @@ class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
   }
 
   Stream<List<DailySaleSummary>> _getDailyBreakdown() {
-    final start = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
-    final end =
-        DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0, 23, 59, 59);
-    return FirebaseFirestore.instance
-        .collection('bills')
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThanOrEqualTo: end)
-        .orderBy('timestamp')
+    final month = BusinessTime.monthRangeForMonth(
+        _selectedMonth.year, _selectedMonth.month);
+    // Branch-scoped + half-open month range. Index: bills(canteenId, timestamp DESC).
+    return CanteenProvider.scopeQuery(
+            FirebaseFirestore.instance.collection('bills'))
+        .where('timestamp', isGreaterThanOrEqualTo: month.start)
+        .where('timestamp', isLessThan: month.end)
+        // Descending: the page groups by day and sorts afterwards, so order is
+        // irrelevant here, and it lets one bills index serve every bills query.
+        .orderBy('timestamp', descending: true)
         .snapshots()
         .map((snap) {
       final Map<String, double> dailyTotals = {};
@@ -65,7 +77,7 @@ class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
         if (data['timestamp'] is Timestamp) {
           date = (data['timestamp'] as Timestamp).toDate();
         }
-        final dayKey = DateFormat('yyyy-MM-dd').format(date);
+        final dayKey = BusinessTime.dateKey(date);
         dailyTotals[dayKey] = (dailyTotals[dayKey] ?? 0) +
             ((data['totalAmount'] ?? 0) as num).toDouble();
       }
@@ -122,12 +134,17 @@ class _MonthlySalesBreakdownPageState extends State<MonthlySalesBreakdownPage> {
           // ── Daily List ────────────────────────────────
           Expanded(
             child: StreamBuilder<List<DailySaleSummary>>(
-              stream: _getDailyBreakdown(),
+              stream: _cached('month', _getDailyBreakdown,
+                  '${_selectedMonth.year}-${_selectedMonth.month}'),
               builder: (context, snap) {
+                if (snap.hasError) {
+                  return AppErrorState(
+                      inline: true,
+                      error: snap.error,
+                      onRetry: () => setState(_streams.reset));
+                }
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child:
-                          CircularProgressIndicator(color: AppColors.gradBlue));
+                  return const AppLoading();
                 }
                 if (!snap.hasData || snap.data!.isEmpty) {
                   return Center(

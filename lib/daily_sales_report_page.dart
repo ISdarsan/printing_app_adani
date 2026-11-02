@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'state_views.dart';
+import 'stream_cache.dart';
 import 'bill_detail_page.dart';
 import 'canteen_provider.dart';
+import 'business_time.dart';
 
 class DailySalesReportPage extends StatefulWidget {
   final DateTime? selectedDate;
@@ -14,12 +17,18 @@ class DailySalesReportPage extends StatefulWidget {
 }
 
 class _DailySalesReportPageState extends State<DailySalesReportPage> {
+  final StreamCache _streams = StreamCache();
+  Stream<T> _cached<T>(String name, Stream<T> Function() make, String sig) =>
+      _streams.get<T>(name, make,
+          signature: '${CanteenProvider.selectedCanteenId}|$sig');
+
   late DateTime _selectedDate;
 
   @override
   void initState() {
     super.initState();
-    _selectedDate = widget.selectedDate ?? DateTime.now();
+    _selectedDate =
+        widget.selectedDate ?? BusinessTime.wallClock(DateTime.now());
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -45,19 +54,16 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
     }
   }
 
-  (DateTime, DateTime) _getDayRange(DateTime date) {
-    return (
-      DateTime(date.year, date.month, date.day, 0, 0, 0),
-      DateTime(date.year, date.month, date.day, 23, 59, 59),
-    );
-  }
-
+  // _selectedDate is a calendar date (from the picker or "now"); its
+  // year/month/day are interpreted in the business timezone.
   Stream<QuerySnapshot> _getBillsStream() {
-    final (start, end) = _getDayRange(_selectedDate);
-    return FirebaseFirestore.instance
-        .collection('bills')
-        .where('timestamp', isGreaterThanOrEqualTo: start)
-        .where('timestamp', isLessThanOrEqualTo: end)
+    final day = BusinessTime.dayRangeForDate(
+        _selectedDate.year, _selectedDate.month, _selectedDate.day);
+    // Branch-scoped + half-open range. Index: bills(canteenId, timestamp).
+    return CanteenProvider.scopeQuery(
+            FirebaseFirestore.instance.collection('bills'))
+        .where('timestamp', isGreaterThanOrEqualTo: day.start)
+        .where('timestamp', isLessThan: day.end)
         .orderBy('timestamp', descending: true)
         .snapshots();
   }
@@ -113,26 +119,17 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
           // ── Bills List ─────────────────────────────────
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: _getBillsStream(),
+              stream: _cached('bills', _getBillsStream,
+                  _selectedDate.toIso8601String().substring(0, 10)),
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child:
-                          CircularProgressIndicator(color: AppColors.gradBlue));
+                  return const AppLoading();
                 }
                 if (snap.hasError) {
                   debugPrint('[DailySalesReport] Error: ${snap.error}');
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        'Error loading report:\n${snap.error}',
-                        style: AppText.style(
-                            color: AppColors.accentRed, fontSize: 13),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  );
+                  return AppErrorState(
+                      error: snap.error,
+                      onRetry: () => setState(_streams.reset));
                 }
 
                 final allDocs = snap.data?.docs ?? [];

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'stream_cache.dart';
+import 'state_views.dart';
 import 'bill_detail_page.dart';
 
 class AdminMasterCreditLedgerPage extends StatefulWidget {
@@ -14,7 +16,15 @@ class AdminMasterCreditLedgerPage extends StatefulWidget {
 
 class _AdminMasterCreditLedgerPageState
     extends State<AdminMasterCreditLedgerPage> {
+  final StreamCache _streams = StreamCache();
+
   final TextEditingController _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
   String _searchQuery = '';
   String _filterStatus = 'All'; // All, Paid, Pending
 
@@ -89,20 +99,19 @@ class _AdminMasterCreditLedgerPageState
           ),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
+              stream: _streams.get('ledger', () => FirebaseFirestore.instance
                   .collection('bills')
                   .where('paymentMode', isEqualTo: 'Credit')
-                  .snapshots(),
+                  .snapshots()),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child: CircularProgressIndicator(
-                          color: AppColors.accentBlue));
+                  return const AppLoading();
                 }
                 if (snapshot.hasError) {
-                  return Center(
-                      child: Text('Error: ${snapshot.error}',
-                          style: const TextStyle(color: Colors.white)));
+                  return AppErrorState(
+                      inline: true,
+                      error: snapshot.error,
+                      onRetry: () => setState(_streams.reset));
                 }
 
                 var docs = snapshot.data?.docs ?? [];

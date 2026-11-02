@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'theme.dart';
+import 'state_views.dart';
+import 'tracked_write.dart';
 import 'canteen_provider.dart';
 
 class SendNotificationPage extends StatefulWidget {
@@ -25,6 +27,7 @@ class _SendNotificationPageState extends State<SendNotificationPage> {
   }
 
   Future<void> _sendNotification() async {
+    if (_isLoading) return; // duplicate tap while sending
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
@@ -33,29 +36,35 @@ class _SendNotificationPageState extends State<SendNotificationPage> {
       final String title = _titleController.text;
       final String message = _messageController.text;
 
-      await FirebaseFirestore.instance.collection('notifications').add({
+      final ref = FirebaseFirestore.instance.collection('notifications').doc();
+      final confirmed = await saveTracked(ref, {
         'title': title,
         'message': message,
         'timestamp': Timestamp.now(),
         'sentBy': user?.email ?? 'Admin',
         'canteenId': CanteenProvider.selectedCanteenId,
         'canteenName': CanteenProvider.selectedCanteenName,
-      });
+      }, label: 'Notice "$title"');
 
       _titleController.clear();
       _messageController.clear();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Notification sent', style: AppText.style()),
-              backgroundColor: const Color(0xFF1B4332)),
+              content: Text(
+                  confirmed
+                      ? 'Notification sent'
+                      : 'Saved on this device, not sent yet. It will be delivered when you are online.',
+                  style: AppText.style()),
+              backgroundColor:
+                  confirmed ? const Color(0xFF1B4332) : AppColors.accentOrange),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Failed: $e', style: AppText.style()),
+              content: Text('Could not send the notice. ${friendlyErrorMessage(e, action: 'sending')}', style: AppText.style()),
               backgroundColor: AppColors.accentRed),
         );
       }

@@ -35,7 +35,8 @@ class AppColors {
   // Text
   static const textPrimary = Color(0xFFF2F5FC);
   static const textSecondary = Color(0xFF8E9BB0);
-  static const textHint = Color(0xFF566176);
+  // WCAG AA: 4.6:1 or better on every surface below (was 0xFF566176 = 2.8:1).
+  static const textHint = Color(0xFF78849B);
 
   // Surfaces / hairlines
   static const glassBorder = Color(0x14FFFFFF); // 8% white

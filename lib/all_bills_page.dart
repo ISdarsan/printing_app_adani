@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'stream_cache.dart';
+import 'state_views.dart';
 import 'bill_detail_page.dart';
 import 'canteen_provider.dart';
+import 'business_time.dart';
 
 class AllBillsPage extends StatefulWidget {
   const AllBillsPage({super.key});
@@ -12,29 +15,33 @@ class AllBillsPage extends StatefulWidget {
 }
 
 class _AllBillsPageState extends State<AllBillsPage> {
-  DateTime _selectedMonth = DateTime.now();
+  final StreamCache _streams = StreamCache();
 
-  DateTime get _start => DateTime(_selectedMonth.year, _selectedMonth.month, 1);
-  DateTime get _end =>
-      DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0, 23, 59, 59);
+  // Only year/month are used; initialised from the business calendar (IST).
+  DateTime _selectedMonth = BusinessTime.wallClock(DateTime.now());
 
-  Stream<QuerySnapshot> get _stream => FirebaseFirestore.instance
-      .collection('bills')
-      .where('timestamp', isGreaterThanOrEqualTo: _start)
-      .where('timestamp', isLessThanOrEqualTo: _end)
-      .orderBy('timestamp', descending: true)
-      .snapshots();
+  DateRange get _range => BusinessTime.monthRangeForMonth(
+      _selectedMonth.year, _selectedMonth.month);
+
+  // Branch-scoped + half-open month range. Index: bills(canteenId, timestamp).
+  Stream<QuerySnapshot> get _stream =>
+      CanteenProvider.scopeQuery(FirebaseFirestore.instance.collection('bills'))
+          .where('timestamp', isGreaterThanOrEqualTo: _range.start)
+          .where('timestamp', isLessThan: _range.end)
+          .orderBy('timestamp', descending: true)
+          .snapshots();
 
   bool get _canGoForward {
-    final now = DateTime.now();
+    final now = BusinessTime.wallClock(DateTime.now());
     return _selectedMonth.year < now.year ||
         (_selectedMonth.year == now.year && _selectedMonth.month < now.month);
   }
 
   @override
   Widget build(BuildContext context) {
-    final isCurrent = _selectedMonth.month == DateTime.now().month &&
-        _selectedMonth.year == DateTime.now().year;
+    final nowBiz = BusinessTime.wallClock(DateTime.now());
+    final isCurrent = _selectedMonth.month == nowBiz.month &&
+        _selectedMonth.year == nowBiz.year;
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: buildGradientAppBar(title: 'Bills History'),
@@ -83,26 +90,18 @@ class _AllBillsPageState extends State<AllBillsPage> {
           ),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: _stream,
+              stream: _streams.get('bills', () => _stream,
+                  signature:
+                      '${_selectedMonth.year}-${_selectedMonth.month}|${CanteenProvider.selectedCanteenId}'),
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child:
-                          CircularProgressIndicator(color: AppColors.gradBlue));
+                  return const AppLoading();
                 }
                 if (snap.hasError) {
                   debugPrint('[AllBills] Error: ${snap.error}');
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        'Error loading bills:\n${snap.error}',
-                        style: AppText.style(
-                            color: AppColors.accentRed, fontSize: 13),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  );
+                  return AppErrorState(
+                      error: snap.error,
+                      onRetry: () => setState(_streams.reset));
                 }
 
                 final allDocs = snap.data?.docs ?? [];

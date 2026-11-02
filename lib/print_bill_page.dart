@@ -9,7 +9,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'theme.dart';
+import 'state_views.dart';
+import 'money.dart';
+import 'sync_status.dart';
 import 'canteen_provider.dart';
+import 'financial_metrics.dart';
+import 'business_time.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'printer_bridge.dart';
 
@@ -30,8 +35,9 @@ class BillItem {
     required this.price,
     this.costPrice = 0.0,
   });
-  double get subtotal => price * quantity;
-  double get estimatedProfit => (price - costPrice) * quantity;
+  // Rounded to the paisa so stored totals never carry 0.44999999999999996.
+  double get subtotal => roundMoney(price * quantity);
+  double get estimatedProfit => roundMoney((price - costPrice) * quantity);
 }
 
 class MenuItem {
@@ -282,6 +288,27 @@ class _PrintBillPageState extends State<PrintBillPage> {
   final List<BillItem> _billItems = [];
   double _totalAmount = 0.0;
   bool _isSaving = false;
+  bool _saveFlowActive = false;
+
+  /// Stable request id for the bill being saved. If a save ends with an unknown
+  /// outcome, the next tap asks the server whether a bill with this id exists
+  /// before creating anything, so a lost acknowledgement cannot double-book.
+  final AttemptTracker _billAttempts = AttemptTracker();
+
+  String _billAttemptKey(String? customerPhone) {
+    final user = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final items = _billItems
+        .map((i) => '${i.code}:${i.type}:${i.quantity}:${toPaise(i.price)}')
+        .join(',');
+    return [
+      user,
+      CanteenProvider.selectedCanteenId,
+      _paymentMethod,
+      toPaise(_totalAmount),
+      customerPhone ?? '',
+      items,
+    ].join('|');
+  }
   bool _isAdding = false;
   bool _menuLoading = true;
 
@@ -600,7 +627,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
       _snack('Receipt printed successfully.');
     } catch (e) {
       if (mounted) setState(() => _printerStatus = _PrinterStatus.disconnected);
-      final reason = e is PlatformException ? (e.message ?? e.code) : '$e';
+      final reason = e is PlatformException ? (e.message ?? e.code) : friendlyErrorMessage(e, action: 'printing');
       _snack('Print failed: $reason', error: true, onRetry: retry);
     } finally {
       if (mounted) setState(() => _isPrinting = false);
@@ -629,7 +656,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
       }
     } catch (e) {
       if (mounted) setState(() => _menuLoading = false);
-      _snack('Failed to load menu: $e', error: true);
+      _snack('Could not load the menu. ${friendlyErrorMessage(e, action: 'loading')}', error: true);
     }
   }
 
@@ -709,7 +736,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
       });
 
   void _recalcTotal() =>
-      _totalAmount = _billItems.fold(0.0, (s, i) => s + i.subtotal);
+      _totalAmount = roundMoney(_billItems.fold(0.0, (s, i) => s + i.subtotal));
 
   // ─────────────────────────────────────────────────────────────
   //  Save + Print Bill
@@ -720,33 +747,41 @@ class _PrintBillPageState extends State<PrintBillPage> {
       _snack('Add at least one item first.', error: true);
       return;
     }
+    // Block re-entry for the whole flow (credit dialog + save + print), so a
+    // double tap cannot create two bills.
+    if (_isSaving || _saveFlowActive) return;
+    _saveFlowActive = true;
 
-    final billItemsSnapshot = List<BillItem>.from(_billItems);
-    final totalSnapshot = _totalAmount;
-    final paymentSnapshot = _paymentMethod;
-    String? customerName, customerPhone;
+    try {
+      final billItemsSnapshot = List<BillItem>.from(_billItems);
+      final totalSnapshot = _totalAmount;
+      final paymentSnapshot = _paymentMethod;
+      String? customerName, customerPhone;
 
-    if (_paymentMethod == 'Credit') {
-      final result = await _showCreditCustomerDialog();
-      if (result == null) return;
-      customerName = result['name'];
-      customerPhone = result['phone'];
-    }
+      if (_paymentMethod == 'Credit') {
+        final result = await _showCreditCustomerDialog();
+        if (result == null) return;
+        customerName = result['name'];
+        customerPhone = result['phone'];
+      }
 
-    final billId = await _saveBill(
-      customerName: customerName,
-      customerPhone: customerPhone,
-    );
-
-    if (billId != null) {
-      await _printReceipt(
-        billId: billId,
-        items: billItemsSnapshot,
-        totalAmount: totalSnapshot,
-        paymentMode: paymentSnapshot,
+      final billId = await _saveBill(
         customerName: customerName,
         customerPhone: customerPhone,
       );
+
+      if (billId != null && mounted) {
+        await _printReceipt(
+          billId: billId,
+          items: billItemsSnapshot,
+          totalAmount: totalSnapshot,
+          paymentMode: paymentSnapshot,
+          customerName: customerName,
+          customerPhone: customerPhone,
+        );
+      }
+    } finally {
+      _saveFlowActive = false;
     }
   }
 
@@ -759,6 +794,40 @@ class _PrintBillPageState extends State<PrintBillPage> {
     final db = FirebaseFirestore.instance;
     String? generatedBillId;
     try {
+      final branchForCheck = CanteenProvider.selectedCanteenId;
+      final requestId = _billAttempts.idFor(_billAttemptKey(customerPhone));
+      // Does this credit customer already have a record? (a query, not a get of
+      // a possibly missing document; see the note in the transaction)
+      var customerExists = false;
+      if (_paymentMethod == 'Credit' && customerPhone != null) {
+        final q = await db
+            .collection('creditCustomers')
+            .where('canteenId', isEqualTo: branchForCheck)
+            .where('phone', isEqualTo: customerPhone)
+            .limit(1)
+            .get(const GetOptions(source: Source.server));
+        customerExists = q.docs.isNotEmpty;
+      }
+      generatedBillId = await SyncTracker.instance.track<String?>(
+        key: 'bill:$requestId',
+        label: 'Bill ₹${_totalAmount.toStringAsFixed(2)} ($_paymentMethod)',
+        // Not retryable from the banner: the cashier re-taps Save, which runs
+        // the server check first.
+        safeToRetry: false,
+        run: () => createOnce<String?>(
+          attempts: _billAttempts,
+          findExisting: () async {
+            final q = await db
+                .collection('bills')
+                .where('canteenId', isEqualTo: branchForCheck)
+                .where('clientRequestId', isEqualTo: requestId)
+                .limit(1)
+                .get(const GetOptions(source: Source.server));
+            if (q.docs.isEmpty) return null;
+            final d = q.docs.first.data();
+            return (d['billId'] ?? q.docs.first.id).toString();
+          },
+          create: () async {
       await db.runTransaction((tx) async {
         // Each canteen has its own bill counter so branches never share or
         // contend on numbering.
@@ -785,8 +854,12 @@ class _PrintBillPageState extends State<PrintBillPage> {
           today,
           canteenId: selectedCanteenId,
         );
-        final dateId = DateFormat('yyyy-MM-dd').format(today);
-        final billRef = db.collection('bills').doc();
+        final dateId = BusinessTime.dateKey(today);
+        // Document id == request id. A second create with the same id is an
+        // UPDATE to the rules, which cashiers may not do, so a duplicate bill
+        // is rejected atomically (and this transaction rolls back) without
+        // reading a document that may not exist (cashiers cannot read those).
+        final billRef = db.collection('bills').doc(requestId);
 
         // Generate a bill ID like "BILL-20260915170112"
         final now = DateTime.now();
@@ -799,6 +872,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
         final billData = <String, dynamic>{
           'billId': generatedBillId,
           'billNumber': newBillNum,
+          'clientRequestId': requestId,
           'canteenId': selectedCanteenId,
           'canteenName': CanteenProvider.selectedCanteenName,
           'totalAmount': _totalAmount,
@@ -831,22 +905,30 @@ class _PrintBillPageState extends State<PrintBillPage> {
           );
           final customerRef =
               db.collection('creditCustomers').doc(customerDocId);
-          final customerSnap = await tx.get(customerRef);
-          if (customerSnap.exists) {
+          // No read inside the transaction: cashiers cannot read a customer
+          // document that does not exist yet. Existence was established just
+          // before (scoped query). A new customer is created with merge +
+          // increment, so even if another device created the same customer in
+          // between, the balance is ADDED to, never overwritten.
+          if (customerExists) {
             tx.update(customerRef, {
               'totalPending': FieldValue.increment(_totalAmount),
               'lastUpdated': FieldValue.serverTimestamp(),
               'name': customerName,
             });
           } else {
-            tx.set(customerRef, {
-              'phone': customerPhone,
-              'name': customerName,
-              'canteenId': selectedCanteenId,
-              'canteenName': CanteenProvider.selectedCanteenName,
-              'totalPending': _totalAmount,
-              'lastUpdated': FieldValue.serverTimestamp(),
-            });
+            tx.set(
+              customerRef,
+              {
+                'phone': customerPhone,
+                'name': customerName,
+                'canteenId': selectedCanteenId,
+                'canteenName': CanteenProvider.selectedCanteenName,
+                'totalPending': FieldValue.increment(_totalAmount),
+                'lastUpdated': FieldValue.serverTimestamp(),
+              },
+              SetOptions(merge: true),
+            );
           }
         }
 
@@ -857,21 +939,20 @@ class _PrintBillPageState extends State<PrintBillPage> {
             'canteenId': selectedCanteenId,
             'canteenName': CanteenProvider.selectedCanteenName,
             'date': dateId,
-            'totalSales': FieldValue.increment(_totalAmount),
-            'totalBills': FieldValue.increment(1),
-            if (_paymentMethod == 'Cash')
-              'totalCash': FieldValue.increment(_totalAmount),
-            if (_paymentMethod == 'UPI')
-              'totalUpi': FieldValue.increment(_totalAmount),
-            if (_paymentMethod == 'Credit')
-              'totalCredit': FieldValue.increment(_totalAmount),
+            ...dailyStatsDeltaForSale(_totalAmount, _paymentMethod)
+                .map((k, v) => MapEntry(k, FieldValue.increment(v))),
             'lastUpdated': FieldValue.serverTimestamp(),
           },
           SetOptions(merge: true),
         );
         tx.set(counterRef, {'canteenId': branchId, 'lastNumber': newBillNum});
       });
+            return generatedBillId;
+          },
+        ),
+      );
 
+      if (!mounted) return generatedBillId;
       _snack(
           'Bill saved! ₹${_totalAmount.toStringAsFixed(2)} · $_paymentMethod');
       setState(() {
@@ -885,7 +966,11 @@ class _PrintBillPageState extends State<PrintBillPage> {
       });
       return generatedBillId;
     } catch (e) {
-      _snack('Error saving bill: $e', error: true);
+      if (mounted) {
+        _snack(
+            'Bill not confirmed: $e\nIf unsure, tap Save again: the app first checks whether this bill was already recorded.',
+            error: true);
+      }
       return null;
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -1084,8 +1169,8 @@ class _PrintBillPageState extends State<PrintBillPage> {
                               final double currentPending =
                                   (customer['totalPending'] ?? 0.0).toDouble();
                               const double maxCreditLimit = 2000.0;
-                              if (currentPending + _totalAmount >
-                                  maxCreditLimit) {
+                              if (moneyGreater(
+                                  currentPending + _totalAmount, maxCreditLimit)) {
                                 showDialog(
                                   context: context,
                                   builder: (dCtx) => AlertDialog(
@@ -1316,12 +1401,12 @@ class _PrintBillPageState extends State<PrintBillPage> {
               // ── Scrollable Cart ──
               Expanded(
                 child: _billItems.isEmpty
-                    ? _EmptyCart()
-                    : _CartList(items: _billItems, onRemove: _removeItem),
+                    ? EmptyCart()
+                    : CartList(items: _billItems, onRemove: _removeItem),
               ),
 
               // ── Bottom: Payment + Actions ──
-              _BottomPanel(
+              BillBottomPanel(
                 total: _totalAmount,
                 paymentMethod: _paymentMethod,
                 isSaving: _isSaving || _isPrinting,
@@ -1739,13 +1824,13 @@ class _AddItemPanel extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              _QtyStepper(
+              QtyStepper(
                 value: quantity,
                 onInc: onIncrement,
                 onDec: onDecrement,
               ),
               const SizedBox(width: 10),
-              _PriceToggle(
+              PriceToggle(
                 isFull: isFullPrice,
                 onToggle: onTogglePrice,
               ),
@@ -1884,7 +1969,7 @@ class _SearchField extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '₹${item.fullPrice.toStringAsFixed(0)}',
+                          '₹${formatRupees(item.fullPrice)}',
                           style: AppText.style(
                               color: AppColors.accentGreen,
                               fontWeight: FontWeight.w700,
@@ -1903,16 +1988,19 @@ class _SearchField extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  _QtyStepper
+//  QtyStepper
 // ─────────────────────────────────────────────────────────────
 
-class _QtyStepper extends StatelessWidget {
+class QtyStepper extends StatelessWidget {
   final int value;
   final VoidCallback onInc;
   final VoidCallback onDec;
 
-  const _QtyStepper(
-      {required this.value, required this.onInc, required this.onDec});
+  const QtyStepper(
+      {super.key,
+      required this.value,
+      required this.onInc,
+      required this.onDec});
 
   @override
   Widget build(BuildContext context) {
@@ -1926,7 +2014,8 @@ class _QtyStepper extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _StepBtn(icon: Icons.remove, onTap: onDec),
+          _StepBtn(
+              icon: Icons.remove, onTap: onDec, label: 'Decrease quantity'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Text('$value',
@@ -1935,7 +2024,11 @@ class _QtyStepper extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                     fontSize: 16)),
           ),
-          _StepBtn(icon: Icons.add, onTap: onInc, isAdd: true),
+          _StepBtn(
+              icon: Icons.add,
+              onTap: onInc,
+              isAdd: true,
+              label: 'Increase quantity'),
         ],
       ),
     );
@@ -1946,12 +2039,24 @@ class _StepBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final bool isAdd;
+  final String label; // read out by screen readers
 
-  const _StepBtn({required this.icon, required this.onTap, this.isAdd = false});
+  const _StepBtn({
+    required this.icon,
+    required this.onTap,
+    required this.label,
+    this.isAdd = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
         width: 36,
@@ -1969,19 +2074,20 @@ class _StepBtn extends StatelessWidget {
             color: isAdd ? AppColors.accentBlue : AppColors.textSecondary,
             size: 18),
       ),
-    );
+    ));
   }
 }
 
 // ─────────────────────────────────────────────────────────────
-//  _PriceToggle
+//  PriceToggle
 // ─────────────────────────────────────────────────────────────
 
-class _PriceToggle extends StatelessWidget {
+class PriceToggle extends StatelessWidget {
   final bool isFull;
   final ValueChanged<bool> onToggle;
 
-  const _PriceToggle({required this.isFull, required this.onToggle});
+  const PriceToggle(
+      {super.key, required this.isFull, required this.onToggle});
 
   @override
   Widget build(BuildContext context) {
@@ -2018,22 +2124,37 @@ class _ToggleChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    // The visible pill is small, but the tappable area is the full 46 px row
+    // height so the Full/Half choice is easy to hit one-handed.
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$label price',
+      excludeSemantics: true,
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected
-              ? AppColors.accentBlue.withValues(alpha: 0.2)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Text(
-          label,
-          style: AppText.style(
-            color: selected ? AppColors.accentBlue : AppColors.textHint,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          height: 46,
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: selected
+                    ? AppColors.accentBlue.withValues(alpha: 0.2)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                label,
+                style: AppText.style(
+                  color: selected ? AppColors.accentBlue : AppColors.textHint,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -2128,10 +2249,12 @@ class _CartHeader extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  _EmptyCart
+//  EmptyCart
 // ─────────────────────────────────────────────────────────────
 
-class _EmptyCart extends StatelessWidget {
+class EmptyCart extends StatelessWidget {
+  const EmptyCart({super.key});
+
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -2155,14 +2278,14 @@ class _EmptyCart extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  _CartList
+//  CartList
 // ─────────────────────────────────────────────────────────────
 
-class _CartList extends StatelessWidget {
+class CartList extends StatelessWidget {
   final List<BillItem> items;
   final ValueChanged<int> onRemove;
 
-  const _CartList({required this.items, required this.onRemove});
+  const CartList({super.key, required this.items, required this.onRemove});
 
   @override
   Widget build(BuildContext context) {
@@ -2186,11 +2309,17 @@ class _CartList extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(children: [
-                    Text(item.name,
-                        style: AppText.style(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600)),
+                    // Flexible + ellipsis: a long item name used to push the
+                    // row past the screen edge (RenderFlex overflow).
+                    Flexible(
+                      child: Text(item.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.style(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600)),
+                    ),
                     if (item.type == 'Half') ...[
                       const SizedBox(width: 6),
                       Container(
@@ -2227,16 +2356,30 @@ class _CartList extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             // Remove
-            GestureDetector(
+            Semantics(
+              button: true,
+              label: 'Remove ${item.name}',
+              excludeSemantics: true,
               onTap: () => onRemove(i),
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: AppColors.accentRed.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onRemove(i),
+                // 44 x 44 tap area around the same small red icon.
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppColors.accentRed.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.delete_outline_rounded,
+                          color: AppColors.accentRed, size: 16),
+                    ),
+                  ),
                 ),
-                child: const Icon(Icons.delete_outline_rounded,
-                    color: AppColors.accentRed, size: 16),
               ),
             ),
           ]),
@@ -2247,10 +2390,10 @@ class _CartList extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  _BottomPanel
+//  BillBottomPanel
 // ─────────────────────────────────────────────────────────────
 
-class _BottomPanel extends StatelessWidget {
+class BillBottomPanel extends StatelessWidget {
   final double total;
   final String paymentMethod;
   final bool isSaving;
@@ -2260,7 +2403,8 @@ class _BottomPanel extends StatelessWidget {
   final VoidCallback onSave;
   final VoidCallback onClear;
 
-  const _BottomPanel({
+  const BillBottomPanel({
+    super.key,
     required this.total,
     required this.paymentMethod,
     required this.isSaving,
@@ -2297,13 +2441,22 @@ class _BottomPanel extends StatelessWidget {
                       color: AppColors.textSecondary,
                       fontSize: 13,
                       fontWeight: FontWeight.w500)),
-              Text(
-                '₹ ${total.toStringAsFixed(2)}',
-                style: AppText.style(
-                    color: AppColors.accentGreen,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5),
+              const SizedBox(width: 12),
+              // The amount shrinks to fit (large phone text, big totals)
+              // instead of overflowing the row.
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    '₹ ${total.toStringAsFixed(2)}',
+                    style: AppText.style(
+                        color: AppColors.accentGreen,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5),
+                  ),
+                ),
               ),
             ],
           ),
