@@ -17,7 +17,6 @@ Status key: FIXED (code changed + analyze/tests green), OPEN (confirmed in sourc
 | B-10 | P3 | Startup | Role splash always waits a fixed 3 s timer before navigating. | OPEN |
 | B-11 | P3 | Repayment | `_processRepayment` runs a non-transactional bills query inside the transaction; docs are re-read with `tx.get` so values are safe, but a bill created mid-flight is missed. Money is `double` (rounding drift possible). | OPEN (low risk) |
 | B-12 | P2 | Offline | No sync-state UI (pending / failed / retry). `runTransaction` fails when offline, so nothing is falsely shown as saved, but the cashier gets a raw exception string. | OPEN |
-
 | B-14 | P1 | Cashier reads | Cashier screens query bills/expenses by timestamp with no canteenId filter; denied by firestore.rules (emulator-proved). Likely cause of reported sync problem. | NEEDS-DECISION (Q1: composite index deploy) |
 | B-15 | P1 | Excel export | Net Position = Sales + Repayments - Expenses double counts repaid credit | NEEDS-DECISION (Q3) |
 | B-16 | P2 | Excel export | 'Cash/UPI Collected' excludes repayments, disagrees with dailyStats | NEEDS-DECISION (Q4) |
