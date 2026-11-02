@@ -47,3 +47,43 @@ All source guards were confirmed to **fail on the pre-sweep code** and pass on t
 - The clock guard can only judge the phone's date when it can reach the server's time. With no connection it cannot tell and does **not** block (billing while offline is already unsupported by decision).
 - Wrongly set time on a phone that stays on the same IST day is allowed (only the day matters for filing).
 - Everything above is verified by tests and static analysis, not on a phone. See `REAL_DEVICE_QA.md` for the new device checks.
+
+---
+
+# Round 2: admin canteen choosers, cash reconciliation review, analytics check
+
+Requested after device testing. Branch `fix/full-analysis-sweep`.
+
+## What changed
+
+| Area | Before | Now |
+|---|---|---|
+| **Manage Menu (admin)** | showed and edited the admin's own canteen's menu, with no way to choose | a canteen chooser; the menu list and the Add/Edit form follow the chosen canteen; **"All canteens" shows "Choose a canteen"** on both tabs and nothing can be edited; switching canteen clears a half-edited item. Cashiers unchanged (own canteen, no delete). |
+| **Master Credit Ledger** | every canteen's credit bills mixed together, canteen not shown | chooser with **All canteens** (default) or one canteen (server-side filter, no new index); canteen name on each bill when All is selected; "N bills · ₹X still due" (exact paise) |
+| **Analytics & Graphs** | **silently showed only the admin's own canteen (normally Main)**, no chooser | chooser with **All canteens** (default) or one canteen; the loader is told which canteen; a slow answer for an old choice never overwrites a newer one |
+| **Monthly Budget (admin)** | had a selector, but no explanation when All was selected | explanatory note under the selector when All is selected |
+| **SMS Broadcast** | opened the unfinished flow (admin) | "Coming soon" popup for **both** cashier and admin |
+
+## Cash reconciliation review (cashier and admin)
+
+Logic read line by line. Expected cash = `dailyStats.totalCash` for the canteen and day (cash sales + cash repayments, per the earlier decision); discrepancy = counted - expected in whole paise; a second closing for the same canteen and day is refused; the closing is signed with the caller's uid. Three defects found and fixed:
+
+1. **Midnight rollover (cashier).** Expected cash was loaded for the day the page opened, but the save used the day at the moment of saving. A page left open past IST midnight could file today's closing against yesterday's cash. Now the screen reloads at the day change (30 s watcher) and refuses to save against stale figures, asking the cashier to check and submit again.
+2. **Admin logs had no canteen.** Closings from all canteens were mixed with no canteen name. Now: canteen chooser with All, and the canteen name on every record.
+3. **Admin log crash and rounding.** A record without a `date` field parsed its document id (`north_2026-11-02`) as a date and threw, blanking the whole list; amounts were rounded to whole rupees ("Shortage: ₹0" for 40 paise). Now a safe date parser (also rejects impossible dates like 2026-02-31) and exact amounts.
+
+## Analytics and graphs: are they working?
+
+Yes for the code paths now covered. The real page, all five tabs (Weekly, Monthly, Payments, Profit, Ops) and their charts, is rendered in tests with realistic data produced by the app's own calculation code: normal data, a canteen with no data, an item with unknown cost, a failed load with Retry, switching canteens, a late stale answer, small phone, and 160% text. That found **one real overflow** (Profit tab rows at large text and with long item names), now fixed. Not done: a run against live production data on a device.
+
+## Tests
+
+| Check | Result |
+|---|---|
+| `flutter analyze` | clean |
+| `flutter test` | **434 passed** |
+| Emulator, whole folder | **208 / 208** (candidate suite 113) |
+| Index registry | 20 queries, still 5 composite indexes (the ledger's one-canteen query needs none) |
+| Deploy verifiers / tool tests | all pass / 26 |
+| Rules, indexes, configs, `pubspec.yaml`, Android config | identical to the release branch |
+| New source guards (7) | confirmed to fail on the pre-change code |

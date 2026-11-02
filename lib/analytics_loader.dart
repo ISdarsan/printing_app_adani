@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'analytics_calc.dart';
 import 'business_time.dart';
 import 'canteen_provider.dart';
+import 'canteen_selector.dart' show kAllCanteens;
 import 'paged_fetch.dart';
 import 'report_data_loader.dart' show firestorePageFetcher;
 import 'report_records.dart';
@@ -72,12 +73,20 @@ class AnalyticsLoader {
     DateTime? now,
     void Function(String stage, int count)? onProgress,
     bool Function()? isCancelled,
+
+    /// Which canteen to analyse: [kAllCanteens] for every canteen, a canteen
+    /// id for that one. Omitted = the signed-in user's own canteen (the
+    /// original behaviour).
+    String? canteenId,
   }) async {
     final at = now ?? DateTime.now();
     final start = range.startInstant(at);
     final startKey = range.startDateKey(at);
-    final selected = CanteenProvider.selectedCanteenId;
-    final scoped = needsServerBranchFilter(selected);
+    final selected = canteenId ?? CanteenProvider.selectedCanteenId;
+    final everyCanteen = selected == kAllCanteens;
+    bool inScope(Map<String, dynamic> data) =>
+        everyCanteen || CanteenProvider.matchesCanteen(data, selected);
+    final scoped = !everyCanteen && needsServerBranchFilter(selected);
     var truncated = false;
 
     // ---- bills: aggregate page by page -------------------------------
@@ -92,7 +101,7 @@ class AnalyticsLoader {
       fetchPage: firestorePageFetcher<String>(bq, (d) {
         if (seenBills.add(d.id)) {
           final data = d.data();
-          if (CanteenProvider.matchesSelectedCanteen(data)) agg.add(data);
+          if (inScope(data)) agg.add(data);
         }
         return d.id;
       }),
@@ -116,7 +125,7 @@ class AnalyticsLoader {
       fetchPage: firestorePageFetcher<String>(sq, (d) {
         if (seenStats.add(d.id)) {
           final data = d.data();
-          if (CanteenProvider.matchesSelectedCanteen(data)) {
+          if (inScope(data)) {
             daily.add(data, d.id, CanteenProvider.dateFromDailyStatsDocumentId);
           }
         }
@@ -140,7 +149,7 @@ class AnalyticsLoader {
       fetchPage: firestorePageFetcher<String>(eq, (d) {
         if (seenExp.add(d.id)) {
           final data = d.data();
-          if (CanteenProvider.matchesSelectedCanteen(data)) {
+          if (inScope(data)) {
             final ts = asDateTime(data['timestamp']);
             if (ts != null) expenseMonths.add(BusinessTime.monthKey(ts));
           }

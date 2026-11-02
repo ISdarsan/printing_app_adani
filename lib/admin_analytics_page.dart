@@ -8,9 +8,21 @@ import 'business_time.dart';
 import 'analytics_calc.dart';
 import 'analytics_loader.dart';
 import 'paged_fetch.dart';
+import 'canteen_selector.dart';
+
+/// Loads the analytics for a canteen. Injectable so the page (and its charts)
+/// can be tested without Firebase.
+typedef AnalyticsLoadFn = Future<AnalyticsResult> Function(
+  AnalyticsRange range,
+  String canteenId, {
+  bool Function()? isCancelled,
+  void Function(String stage, int count)? onProgress,
+});
 
 class AdminAnalyticsPage extends StatefulWidget {
-  const AdminAnalyticsPage({super.key});
+  final AnalyticsLoadFn? loadAnalytics;
+  final Stream<List<CanteenChoice>>? canteenChoices; // tests only
+  const AdminAnalyticsPage({super.key, this.loadAnalytics, this.canteenChoices});
 
   @override
   State<AdminAnalyticsPage> createState() => _AdminAnalyticsPageState();
@@ -20,6 +32,10 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   AnalyticsRange _range = AnalyticsRange.defaultRange;
+  String _canteen = kAllCanteens; // admin: all canteens, or one
+  // The top bar is built in two layouts (loading / loaded); a stable key keeps
+  // the canteen selector (and its listener) alive across them.
+  final GlobalKey _canteenSelectorKey = GlobalKey();
   AnalyticsResult? _result;
   Object? _error;
   bool _loading = false;
@@ -56,8 +72,15 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
       _progress = 'Starting...';
     });
     try {
-      final r = await AnalyticsLoader(FirebaseFirestore.instance).load(
+      final loader = widget.loadAnalytics ??
+          (range, canteenId, {isCancelled, onProgress}) =>
+              AnalyticsLoader(FirebaseFirestore.instance).load(range,
+                  canteenId: canteenId,
+                  isCancelled: isCancelled,
+                  onProgress: onProgress);
+      final r = await loader(
         _range,
+        _canteen,
         isCancelled: () => !mounted || gen != _generation,
         onProgress: (stage, n) {
           if (mounted && gen == _generation) {
@@ -98,6 +121,19 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Which canteen to analyse: all of them together, or one.
+          CanteenSelector(
+            key: _canteenSelectorKey,
+            value: _canteen,
+            label: 'Canteen',
+            choicesStream: widget.canteenChoices,
+            margin: const EdgeInsets.only(bottom: 10),
+            onChanged: (c) {
+              if (c.id == _canteen) return;
+              setState(() => _canteen = c.id);
+              _load();
+            },
+          ),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -411,12 +447,18 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
               children: [
                 Row(
                   children: [
-                    Text('$label. ${item['name']}',
-                        style: AppText.style(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600)),
-                    const Spacer(),
+                    // the name takes the free space and wraps; the amount never
+                    // gets pushed off the screen by a long item name
+                    Expanded(
+                      child: Text('$label. ${item['name']}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.style(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                    const SizedBox(width: 8),
                     Text(_formatCurrency(revenue),
                         style: AppText.style(
                             color: AppColors.accentBlue,
@@ -431,14 +473,18 @@ class _AdminAnalyticsPageState extends State<AdminAnalyticsPage>
                         style: AppText.style(
                             color: AppColors.textSecondary, fontSize: 11)),
                     const SizedBox(width: 18),
-                    Text(
-                        knownCostQty == 0
-                            ? 'Profit: Unknown'
-                            : 'Known-cost profit: ${_formatCurrency(profit)}',
-                        style: AppText.style(
-                            color: AppColors.accentGreen,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold)),
+                    Flexible(
+                      child: Text(
+                          knownCostQty == 0
+                              ? 'Profit: Unknown'
+                              : 'Known-cost profit: ${_formatCurrency(profit)}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.style(
+                              color: AppColors.accentGreen,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold)),
+                    ),
                   ],
                 ),
                 if (unknownCostQty > 0) ...[

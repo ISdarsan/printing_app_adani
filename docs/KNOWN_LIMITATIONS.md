@@ -29,3 +29,9 @@
 21. **Phone-date guard needs the server's time.** It reads the HTTP `Date` header of the Firebase endpoint; offline or blocked networks mean "cannot tell" and the save is allowed. It blocks only when the phone's IST day differs from the server's by more than 2 minutes.
 22. **Firebase client packages are several major versions behind** (see `FULL_ANALYSIS_SWEEP.md`); a major upgrade is a separate, fully tested change.
 23. **Credit limit of ₹2,000 per customer is hard-coded** in the billing screen.
+
+## Added by round 2
+
+24. **SMS Broadcast is not implemented**: both menus show "Coming soon"; the old SMS code remains in the project but is unreachable.
+25. **Analytics for a single canteen** reads that canteen's bills on the server (needs the existing indexes); for "All canteens" and for "Main Canteen" it reads all bills of the period and filters on the device (Main also owns older records with no canteen id). Large histories take longer; the page shows progress and a row limit.
+26. **One malformed bill** (for example an item price stored as text) makes the whole Analytics load fail with "Could not load analytics" instead of skipping that bill. No such record is known.

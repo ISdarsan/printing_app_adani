@@ -61,7 +61,10 @@ void main() {
     expect(s.contains('sms_broadcast_helper'), isFalse);
   });
 
-  test('the admin menu is unchanged (still opens the existing SMS dialog)', () {
-    expect(read('lib/admin_dashboard_page.dart'), contains('showSMSBroadcastDialog(context)'));
+  test('the admin menu also shows Coming soon and no longer opens the SMS flow', () {
+    final s = read('lib/admin_dashboard_page.dart');
+    expect(s, contains("showComingSoonDialog(context, feature: 'SMS Broadcast Specials')"));
+    expect(s.contains('showSMSBroadcastDialog'), isFalse);
+    expect(s.contains('sms_broadcast_helper'), isFalse);
   });
 }

@@ -13,7 +13,6 @@ import 'state_views.dart';
 import 'logout_splash_page.dart';
 import 'admin_master_credit_ledger_page.dart';
 import 'bill_detail_page.dart';
-import 'sms_broadcast_helper.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
 import 'excel_report_builder.dart';
@@ -418,7 +417,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           _drawerTile(Icons.campaign_rounded, 'SMS Broadcast Specials',
               AppColors.accentOrange, () {
             Navigator.pop(context);
-            showSMSBroadcastDialog(context);
+            // Not finished yet: tell the admin instead of opening it.
+            showComingSoonDialog(context, feature: 'SMS Broadcast Specials');
           }),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),

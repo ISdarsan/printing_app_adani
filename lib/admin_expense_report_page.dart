@@ -302,6 +302,23 @@ class _AdminExpenseReportPageState extends State<AdminExpenseReportPage> {
     return Column(
       children: [
         _selector(options),
+        if (isAll)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Icon(Icons.info_outline_rounded,
+                  size: 16, color: AppColors.accentBlue),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Budgets are set per canteen. Choose a canteen above to set or change its monthly budget. '
+                  '"All canteens" shows the totals only.',
+                  style: AppText.style(
+                      color: AppColors.textSecondary, fontSize: 12, height: 1.4),
+                ),
+              ),
+            ]),
+          ),
         if (legacy > 0)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
