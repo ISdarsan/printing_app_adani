@@ -161,7 +161,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e', style: AppText.style()),
+          content: Text('Could not save the closing. ${friendlyErrorMessage(e, action: 'saving')}', style: AppText.style()),
           backgroundColor: AppColors.accentRed,
         ));
       }

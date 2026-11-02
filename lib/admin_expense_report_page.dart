@@ -44,7 +44,7 @@ class _AdminExpenseReportPageState extends State<AdminExpenseReportPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e', style: AppText.style()),
+          content: Text('Could not complete this. ${friendlyErrorMessage(e, action: 'saving')}', style: AppText.style()),
           backgroundColor: AppColors.accentRed,
         ));
       }

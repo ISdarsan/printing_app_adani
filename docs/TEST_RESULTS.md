@@ -62,3 +62,12 @@ Run on the final code of this branch. Nothing here touched production.
 | `flutter build appbundle --release -t lib/main.dart` | built, 58.9 MB, SHA-256 `9FCFAC9E…212338`. **Not uploaded.** |
 
 Not tested: any real device (printer, Bluetooth reconnect, airplane mode, performance), screenshots / visual QA, widget tests of the admin and cashier dashboards, customer search, repayment dialog and cash-closing page (no injection point for Firestore; see UI_UX_AUDIT.md).
+
+## Loading/error sweep (after first device screenshots)
+
+| Check | Result |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **323 passed** (240 existing unmodified + 83 new) |
+| New guards (mutation-verified against the previous code) | no raw error text anywhere outside debug logs; no Firestore listener opened inside `build()` on any `*_page.dart` except the admin dashboard's documented dialog lists; no made-up ₹0 on admin money cards; chart and recent bills show errors, not "empty" |
+| Release APK rebuilt | 62,351,576 bytes, SHA-256 `FF3F4BB7…973B29`, signer certificate unchanged |

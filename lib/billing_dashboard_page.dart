@@ -774,10 +774,13 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
     final month = BusinessTime.monthRange(now);
 
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('monthlyFunds')
-          .doc(monthId)
-          .snapshots(),
+      stream: _streams.get(
+          'budgetFund',
+          () => FirebaseFirestore.instance
+              .collection('monthlyFunds')
+              .doc(monthId)
+              .snapshots(),
+          signature: monthId),
       builder: (context, fundSnap) {
         if (fundSnap.hasError) {
           debugPrint("Budget Alert Fund Error: ${fundSnap.error}");
@@ -793,11 +796,14 @@ class _BillingDashboardPageState extends State<BillingDashboardPage> {
         if (allocated == 0) return const SizedBox.shrink();
 
         return StreamBuilder<QuerySnapshot>(
-          stream: CanteenProvider.scopeQuery(
-                  FirebaseFirestore.instance.collection('expenses'))
-              .where('timestamp', isGreaterThanOrEqualTo: month.start)
-              .where('timestamp', isLessThan: month.end)
-              .snapshots(),
+          stream: _streams.get(
+              'budgetExpenses',
+              () => CanteenProvider.scopeQuery(
+                      FirebaseFirestore.instance.collection('expenses'))
+                  .where('timestamp', isGreaterThanOrEqualTo: month.start)
+                  .where('timestamp', isLessThan: month.end)
+                  .snapshots(),
+              signature: monthId),
           builder: (context, expSnap) {
             if (expSnap.hasError) {
               debugPrint("Budget Alert Expenses Error: ${expSnap.error}");

@@ -71,6 +71,11 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
       body: StreamBuilder<DocumentSnapshot>(
         stream: _customerStream,
         builder: (context, customerSnap) {
+          if (customerSnap.hasError) {
+            return AppErrorState(
+                error: customerSnap.error,
+                onRetry: () => setState(_openStreams));
+          }
           double currentTotalPending = 0.0;
           if (customerSnap.hasData && customerSnap.data!.exists) {
             final data = customerSnap.data!.data() as Map<String, dynamic>;
@@ -572,7 +577,7 @@ class _CreditDetailPageState extends State<CreditDetailPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Error: $e'),
+        content: Text('Could not complete this. ${friendlyErrorMessage(e, action: 'saving')}'),
         backgroundColor: AppColors.accentRed,
       ));
     } finally {

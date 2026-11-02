@@ -80,7 +80,7 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e', style: AppText.style()),
+          content: Text('Could not save the fund. ${friendlyErrorMessage(e, action: 'saving')}', style: AppText.style()),
           backgroundColor: AppColors.accentRed,
         ));
       }

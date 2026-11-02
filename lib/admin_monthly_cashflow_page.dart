@@ -55,7 +55,7 @@ class _AdminMonthlyCashflowPageState extends State<AdminMonthlyCashflowPage> {
       _amountController.clear();
       _showSnackBar('Monthly fund saved', const Color(0xFF1B4332));
     } catch (e) {
-      _showSnackBar('Failed to save fund: $e', AppColors.accentRed);
+      _showSnackBar('Failed to save the fund. ${friendlyErrorMessage(e, action: 'saving')}', AppColors.accentRed);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

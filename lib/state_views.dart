@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 
 import 'theme.dart';
 
-/// Plain-language text for a failed load. Staff never see Firebase terms.
-String friendlyErrorMessage(Object? error) {
+/// Plain-language text for a failed load or save. Staff never see Firebase
+/// terms. [action] is "loading", "saving"... and only affects the fallback text.
+String friendlyErrorMessage(Object? error, {String action = 'loading'}) {
   if (error is FirebaseException) {
     switch (error.code) {
       case 'permission-denied':
@@ -16,9 +17,14 @@ String friendlyErrorMessage(Object? error) {
       case 'network-request-failed':
         return 'Cannot reach the server. Check the internet connection '
             'and try again.';
+      case 'failed-precondition':
+        // Firestore: "The query requires an index". A one-time database
+        // setup, not something a cashier can fix by retrying.
+        return 'This screen needs a one-time database setup that is not '
+            'finished yet. Please tell the admin.';
     }
   }
-  return 'Something went wrong while loading. Please try again.';
+  return 'Something went wrong while $action. Please try again.';
 }
 
 /// Centered progress indicator with an optional message.

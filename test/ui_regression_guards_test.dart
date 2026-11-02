@@ -65,4 +65,60 @@ void main() {
           reason: '${f.path} prints a raw error object');
     }
   });
+
+  test('no screen prints a raw error object or exception (outside debug logs)', () {
+    final raw = RegExp(r"\$\{?(snap|snapshot|\w*[sS]nap|op)\.error\}?|\$e'|\$\{e\}");
+    for (final f in Directory('lib')
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.dart'))) {
+      var n = 0;
+      for (final line in f.readAsLinesSync()) {
+        n++;
+        final t = line.trimLeft();
+        // debug logs: debugPrint(...) or a wrapped log string starting '[Tag]
+        if (t.startsWith('//') ||
+            t.startsWith("'[") ||
+            t.contains('debugPrint(') ||
+            t.contains('print(')) {
+          continue;
+        }
+        expect(raw.hasMatch(line), isFalse,
+            reason: '${f.path}:$n shows a raw error to the user: ${line.trim()}');
+      }
+    }
+  });
+
+  test('list/report pages never hand Firestore a new stream from build()', () {
+    // admin_dashboard_page: its remaining inline streams are small
+    // whole-collection lists inside dialogs/sheets (documented in
+    // PERFORMANCE_AUDIT.md).
+    final direct = RegExp(r'stream:\s*(FirebaseFirestore|_stream\b|CanteenProvider\.scopeQuery)');
+    for (final f in Directory('lib')
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.endsWith('_page.dart'))) {
+      if (f.path.endsWith('admin_dashboard_page.dart')) continue;
+      expect(direct.hasMatch(f.readAsStringSync()), isFalse,
+          reason: '${f.path} opens a Firestore listener inside build()');
+    }
+  });
+
+  test('money cards show a dash, never a made-up zero, while loading or on error', () {
+    final s = read('lib/admin_dashboard_page.dart');
+    expect(s.contains("?? '0'"), isFalse);
+    expect(s.contains("String sales = '₹0'"), isFalse);
+  });
+
+  test('stream errors on the dashboard chart and recent bills are not shown as "empty"', () {
+    final s = read('lib/admin_dashboard_page.dart');
+    final weekly = s.indexOf("_cached('weekly'");
+    final weeklyErr = s.indexOf('snapshot.hasError', weekly);
+    expect(weeklyErr, greaterThan(-1), reason: 'chart must handle errors');
+    expect(weeklyErr, lessThan(s.indexOf('No trends data available yet')));
+    final recent = s.indexOf("_cached('recent'");
+    final recentErr = s.indexOf('snapshot.hasError', recent);
+    expect(recentErr, greaterThan(-1), reason: 'recent bills must handle errors');
+    expect(recentErr, lessThan(s.indexOf('No recent bills recorded.')));
+  });
 }

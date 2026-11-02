@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'stream_cache.dart';
 import 'state_views.dart';
 import 'bill_detail_page.dart';
 
@@ -15,6 +16,8 @@ class AdminMasterCreditLedgerPage extends StatefulWidget {
 
 class _AdminMasterCreditLedgerPageState
     extends State<AdminMasterCreditLedgerPage> {
+  final StreamCache _streams = StreamCache();
+
   final TextEditingController _searchCtrl = TextEditingController();
 
   @override
@@ -96,10 +99,10 @@ class _AdminMasterCreditLedgerPageState
           ),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
+              stream: _streams.get('ledger', () => FirebaseFirestore.instance
                   .collection('bills')
                   .where('paymentMode', isEqualTo: 'Credit')
-                  .snapshots(),
+                  .snapshots()),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
@@ -110,7 +113,7 @@ class _AdminMasterCreditLedgerPageState
                   return AppErrorState(
                       inline: true,
                       error: snapshot.error,
-                      onRetry: () => setState(() {}));
+                      onRetry: () => setState(_streams.reset));
                 }
 
                 var docs = snapshot.data?.docs ?? [];

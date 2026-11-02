@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'stream_cache.dart';
 import 'bill_detail_page.dart';
 import 'canteen_provider.dart';
@@ -128,17 +129,9 @@ class _DailySalesReportPageState extends State<DailySalesReportPage> {
                 }
                 if (snap.hasError) {
                   debugPrint('[DailySalesReport] Error: ${snap.error}');
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        'Error loading report:\n${snap.error}',
-                        style: AppText.style(
-                            color: AppColors.accentRed, fontSize: 13),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  );
+                  return AppErrorState(
+                      error: snap.error,
+                      onRetry: () => setState(_streams.reset));
                 }
 
                 final allDocs = snap.data?.docs ?? [];

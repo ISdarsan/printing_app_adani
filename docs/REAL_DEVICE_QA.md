@@ -1,16 +1,16 @@
 # Real-Device QA Build
 
-Built 2026-11-02 from branch `feature/ui-modernization-performance`, commit `27d3f20`, clean working tree. Nothing was uploaded, no Firebase rules or indexes were deployed, no signing credential was changed or printed.
+Built 2026-11-02 from branch `feature/ui-modernization-performance` (rebuilt after the loading/error fixes below; commit hash is in `git log`), clean working tree. Nothing was uploaded, no Firebase rules or indexes were deployed, no signing credential was changed or printed.
 
 ## The build
 
 | Item | Value |
 |---|---|
 | APK path | `D:\app\printing_app_adani-master\build\app\outputs\flutter-apk\app-release.apk` |
-| APK size | 62,286,040 bytes (59.4 MB) |
-| APK SHA-256 | `353CBE14AFB17AE4C4C3C348D2CD9BDC9F2EC09C0F0686056ACE5674BC64435B` |
+| APK size | 62,351,576 bytes (59.5 MB) |
+| APK SHA-256 | `FF3F4BB78F60807B5C053372163703A9EF3DA4B062739F3B4CE1710E33973B29` |
 | AAB path (not for phones) | `D:\app\printing_app_adani-master\build\app\outputs\bundle\release\app-release.aab` |
-| AAB size / SHA-256 | 61,725,179 bytes · `9FCFAC9ECE301CBB79537A6D8242DC8636202B53F08DB231A26376AB01212338` |
+| AAB size / SHA-256 | 61,740,712 bytes · `5BF29360DA8AF75EAE4DE908CE5B6800470A328A2A160A03748589B153013BF8` |
 | Commands | `flutter build apk --release -t lib/main.dart` and `flutter build appbundle --release -t lib/main.dart`, both exit 0 |
 | Application id | `com.adani.canteen_adani` |
 | Version | 1.0.5, versionCode 6 |
@@ -19,6 +19,20 @@ Built 2026-11-02 from branch `feature/ui-modernization-performance`, commit `27d
 | Firebase project | `canteen-app-adani`. `google-services.json` and `firebase_options.dart` both name it; Android package name in the config matches the application id. Android app id `1:1081372073317:android:a9de02d9171aa3c7ea158c`. |
 
 The build output folder is git-ignored, so the APK is not in the repository. Copy it somewhere safe if you want to keep it.
+
+## STOP: deploy the Firestore indexes first (found during first QA run)
+
+This build reads data with branch-filtered, date-ordered queries. Firestore needs **composite indexes** for them, and the production project does **not have them yet** because indexes have never been deployed. Without them these screens fail with `failed-precondition: The query requires an index` (the app now says "needs a one-time database setup, please tell the admin"): Daily Sales Report, Today's Sales, All Bills, Monthly breakdown, Expenses, Notices, Cash closing history, and the menu list with sorting.
+
+The indexes are in `firestore.indexes.json` (5 of them, additive, they cannot lock anyone out and do not change any data or rules). Deploy them with:
+
+```powershell
+cd D:\app\printing_app_adani-master
+node tool/verify_deploy_files.mjs indexes          # must end: ALL 11 CHECKS PASSED
+firebase deploy --only firestore:indexes --project canteen-app-adani
+```
+
+Then wait in Firebase Console -> Firestore -> Indexes until all 5 show **Enabled** (usually a few minutes). Only then start QA. **This is a production change and was not run by me; it needs your decision.**
 
 ## READ BEFORE INSTALLING
 

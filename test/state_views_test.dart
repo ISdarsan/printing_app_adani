@@ -30,6 +30,21 @@ void main() {
         expect(m, contains('internet'));
       }
     });
+    test('a missing database index is explained as a one-time setup for the admin', () {
+      final m = friendlyErrorMessage(FirebaseException(
+          plugin: 'cloud_firestore',
+          code: 'failed-precondition',
+          message: 'The query requires an index. https://console.firebase.google.com/...'));
+      expect(m, contains('one-time database setup'));
+      expect(m, contains('tell the admin'));
+      expect(m, isNot(contains('http')));
+      expect(m.toLowerCase(), isNot(contains('index')));
+    });
+    test('saving failures say saving, not loading', () {
+      final m = friendlyErrorMessage(StateError('x'), action: 'saving');
+      expect(m, contains('saving'));
+      expect(m, isNot(contains('loading')));
+    });
     test('unknown errors never leak technical text', () {
       final m = friendlyErrorMessage(StateError('boom: stack trace here'));
       expect(m, isNot(contains('boom')));

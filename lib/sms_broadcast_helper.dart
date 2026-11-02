@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'canteen_provider.dart';
 
 void showSMSBroadcastDialog(BuildContext context) {
@@ -165,7 +166,7 @@ void showSMSBroadcastDialog(BuildContext context) {
                   Navigator.pop(context); // Pop loading if still showing
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Error: $e'),
+                      content: Text('Could not open messages. ${friendlyErrorMessage(e, action: 'opening messages')}'),
                       backgroundColor: Colors.red,
                     ),
                   );

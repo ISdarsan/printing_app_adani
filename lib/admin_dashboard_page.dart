@@ -8,6 +8,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'logout_splash_page.dart';
 import 'admin_master_credit_ledger_page.dart';
 import 'bill_detail_page.dart';
@@ -308,7 +309,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               style: AppText.style(
                   color: Colors.white, fontWeight: FontWeight.w700)),
           content: Text(
-              'No file was created. Check the connection and try again.\n\n$e',
+              'No file was created. Check the connection and try again.\n\n${friendlyErrorMessage(e, action: 'exporting')}',
               style:
                   AppText.style(color: AppColors.textSecondary, fontSize: 13)),
           actions: [
@@ -521,6 +522,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             child: Center(
                 child: CircularProgressIndicator(color: AppColors.accentBlue)),
           );
+        }
+        if (snapshot.hasError) {
+          return AppErrorState(
+              inline: true,
+              error: snapshot.error,
+              onRetry: () => setState(_streams.reset));
         }
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return Container(
@@ -992,7 +999,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     StreamBuilder<Map<String, dynamic>>(
                       stream: _cached('daily', _getDailyStatsStream),
                       builder: (context, snap) {
-                        String sales = '₹0';
+                        // A dash until real data arrives (or if it fails), never a
+                        // made-up zero.
+                        String sales = '—';
                         if (snap.hasData) {
                           final d = snap.data!;
                           sales =
@@ -1016,7 +1025,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         return _buildMetricCard(
                           icon: Icons.calendar_month_rounded,
                           label: "Month's Revenue",
-                          value: "₹${snap.data?.toStringAsFixed(0) ?? '0'}",
+                          value: snap.hasData
+                              ? "₹${snap.data!.toStringAsFixed(0)}"
+                              : '—',
                           gradient: AppGradients.blueAccent,
                           onTap: () => Navigator.pushNamed(
                               context, '/monthly_sales_breakdown'),
@@ -1032,7 +1043,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         return _buildMetricCard(
                           icon: Icons.account_balance_wallet_rounded,
                           label: "Total Credit Due",
-                          value: "₹${snap.data?.toStringAsFixed(0) ?? '0'}",
+                          value: snap.hasData
+                              ? "₹${snap.data!.toStringAsFixed(0)}"
+                              : '—',
                           gradient: AppGradients.orangeAccent,
                           onTap: () => Navigator.push(
                               context,
@@ -1051,7 +1064,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         return _buildMetricCard(
                           icon: Icons.receipt_long_rounded,
                           label: "Month's Expenses",
-                          value: "₹${snap.data?.toStringAsFixed(0) ?? '0'}",
+                          value: snap.hasData
+                              ? "₹${snap.data!.toStringAsFixed(0)}"
+                              : '—',
                           gradient: AppGradients.redAccent,
                           onTap: () => Navigator.pushNamed(
                               context, '/admin_expense_report'),
@@ -1098,6 +1113,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                               color: AppColors.accentBlue),
                         ),
                       );
+                    }
+                    if (snapshot.hasError) {
+                      return AppErrorState(
+                          inline: true,
+                          error: snapshot.error,
+                          onRetry: () => setState(_streams.reset));
                     }
                     if (!snapshot.hasData || snapshot.data!.isEmpty) {
                       return Container(
@@ -1487,6 +1508,12 @@ class _CanteensTabState extends State<_CanteensTab> {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('canteens').snapshots(),
         builder: (context, snap) {
+          if (snap.hasError) {
+            return AppErrorState(
+                inline: true,
+                error: snap.error,
+                onRetry: () => setState(() {}));
+          }
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(
                 child: CircularProgressIndicator(color: AppColors.accentGreen));
@@ -1756,6 +1783,9 @@ class _AssignedCanteenStaff extends StatelessWidget {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('canteenStaff').snapshots(),
       builder: (context, snap) {
+        if (snap.hasError) {
+          return AppErrorState(inline: true, error: snap.error);
+        }
         if (snap.connectionState == ConnectionState.waiting) {
           return const Padding(
             padding: EdgeInsets.all(16),
@@ -1889,6 +1919,9 @@ class _StaffTab extends StatelessWidget {
             .orderBy('email')
             .snapshots(),
         builder: (context, snap) {
+          if (snap.hasError) {
+            return AppErrorState(inline: true, error: snap.error);
+          }
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(
                 child: CircularProgressIndicator(color: AppColors.accentBlue));
@@ -2266,7 +2299,7 @@ class _StaffTab extends StatelessWidget {
                         } catch (e) {
                           setDialogState(() {
                             isLoading = false;
-                            errorMsg = 'Error: $e';
+                            errorMsg = 'Could not create the account. ${friendlyErrorMessage(e, action: 'saving')}';
                           });
                         }
                       },
@@ -2390,7 +2423,7 @@ class _StaffTab extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed: $e', style: AppText.style()),
+          content: Text('Could not complete this. ${friendlyErrorMessage(e, action: 'saving')}', style: AppText.style()),
           backgroundColor: AppColors.accentRed,
         ));
       }

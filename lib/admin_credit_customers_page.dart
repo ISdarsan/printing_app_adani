@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'theme.dart';
+import 'stream_cache.dart';
 import 'state_views.dart';
 import 'credit_detail_page.dart';
 
@@ -13,6 +14,8 @@ class AdminCreditCustomersPage extends StatefulWidget {
 }
 
 class _AdminCreditCustomersPageState extends State<AdminCreditCustomersPage> {
+  final StreamCache _streams = StreamCache();
+
   final TextEditingController _searchCtrl = TextEditingController();
 
   @override
@@ -52,10 +55,10 @@ class _AdminCreditCustomersPageState extends State<AdminCreditCustomersPage> {
           ),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
+              stream: _streams.get('customers', () => FirebaseFirestore.instance
                   .collection('creditCustomers')
                   .orderBy('totalPending', descending: true)
-                  .snapshots(),
+                  .snapshots()),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
@@ -66,7 +69,7 @@ class _AdminCreditCustomersPageState extends State<AdminCreditCustomersPage> {
                   return AppErrorState(
                       inline: true,
                       error: snapshot.error,
-                      onRetry: () => setState(() {}));
+                      onRetry: () => setState(_streams.reset));
                 }
 
                 var docs = snapshot.data?.docs ?? [];

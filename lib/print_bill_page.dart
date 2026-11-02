@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'theme.dart';
+import 'state_views.dart';
 import 'money.dart';
 import 'sync_status.dart';
 import 'canteen_provider.dart';
@@ -626,7 +627,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
       _snack('Receipt printed successfully.');
     } catch (e) {
       if (mounted) setState(() => _printerStatus = _PrinterStatus.disconnected);
-      final reason = e is PlatformException ? (e.message ?? e.code) : '$e';
+      final reason = e is PlatformException ? (e.message ?? e.code) : friendlyErrorMessage(e, action: 'printing');
       _snack('Print failed: $reason', error: true, onRetry: retry);
     } finally {
       if (mounted) setState(() => _isPrinting = false);
@@ -655,7 +656,7 @@ class _PrintBillPageState extends State<PrintBillPage> {
       }
     } catch (e) {
       if (mounted) setState(() => _menuLoading = false);
-      _snack('Failed to load menu: $e', error: true);
+      _snack('Could not load the menu. ${friendlyErrorMessage(e, action: 'loading')}', error: true);
     }
   }
 
