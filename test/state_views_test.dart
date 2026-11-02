@@ -6,10 +6,16 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/fonts.dart';
+
 Widget host(Widget child, {Size size = const Size(360, 640), double scale = 1}) {
   return MediaQuery(
     data: MediaQueryData(size: size, textScaler: TextScaler.linear(scale)),
     child: MaterialApp(
+        // Constrain the REAL layout to the requested size. MediaQuery alone only
+        // changes the reported size, not the width the widgets are laid out in.
+        builder: (ctx, c) => Center(
+            child: SizedBox(width: size.width, height: size.height, child: c)),
       theme: buildAppTheme(),
       home: Scaffold(body: child),
     ),
@@ -17,6 +23,8 @@ Widget host(Widget child, {Size size = const Size(360, 640), double scale = 1}) 
 }
 
 void main() {
+  setUpAll(loadInterFont);
+
   group('friendlyErrorMessage', () {
     test('permission problems are explained in business language', () {
       final m = friendlyErrorMessage(

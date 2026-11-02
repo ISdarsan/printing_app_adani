@@ -300,128 +300,14 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                               onTap: widget.isAdmin
                                   ? () => _showUpdateDialog(allocatedFund)
                                   : null,
-                              child: Container(
-                                padding: const EdgeInsets.all(22),
-                                decoration: gradientCard(
-                                    gradient: AppGradients.blueAccent,
-                                    radius: 24),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(children: [
-                                      const Icon(
-                                          Icons.account_balance_wallet_rounded,
-                                          color: Colors.white,
-                                          size: 24),
-                                      const SizedBox(width: 8),
-                                      Text(widget.isAdmin ? 'Monthly Budget Console' : 'Organisation Fund (shared by all canteens)',
-                                          style: AppText.style(
-                                              color: Colors.white70,
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w600)),
-                                      const Spacer(),
-                                      if (widget.isAdmin)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 10, vertical: 4),
-                                          decoration: BoxDecoration(
-                                              color: Colors.white24,
-                                              borderRadius:
-                                                  BorderRadius.circular(20)),
-                                          child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                const Icon(Icons.edit_rounded,
-                                                    color: Colors.white,
-                                                    size: 12),
-                                                const SizedBox(width: 4),
-                                                Text('Edit',
-                                                    style: AppText.style(
-                                                        color: Colors.white,
-                                                        fontSize: 11)),
-                                              ]),
-                                        ),
-                                    ]),
-                                    const SizedBox(height: 12),
-                                    Text(_monthLabel,
-                                        style: AppText.style(
-                                            color: Colors.white70,
-                                            fontSize: 12)),
-                                    const SizedBox(height: 16),
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(widget.isAdmin ? 'Allocated Fund' : 'Organisation Fund',
-                                                style: AppText.style(
-                                                    color: Colors.white60,
-                                                    fontSize: 11)),
-                                            const SizedBox(height: 2),
-                                            Text(allocatedStr,
-                                                style: AppText.style(
-                                                    color: Colors.white,
-                                                    fontSize: 20,
-                                                    fontWeight:
-                                                        FontWeight.w800)),
-                                          ],
-                                        ),
-                                        Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.center,
-                                          children: [
-                                            Text(widget.isAdmin ? 'Total Spent' : 'Spent by this canteen',
-                                                style: AppText.style(
-                                                    color: Colors.white60,
-                                                    fontSize: 11)),
-                                            const SizedBox(height: 2),
-                                            Text(spentStr,
-                                                style: AppText.style(
-                                                    color: Colors.white,
-                                                    fontSize: 20,
-                                                    fontWeight:
-                                                        FontWeight.w800)),
-                                          ],
-                                        ),
-                                        Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.end,
-                                          children: [
-                                            Text(widget.isAdmin ? 'Available Balance' : 'Fund minus this canteen\'s spending',
-                                                style: AppText.style(
-                                                    color: Colors.white60,
-                                                    fontSize: 11)),
-                                            const SizedBox(height: 2),
-                                            Text(availableStr,
-                                                style: AppText.style(
-                                                    color: isNegative
-                                                        ? AppColors.accentRed
-                                                        : AppColors.accentGreen,
-                                                    fontSize: 20,
-                                                    fontWeight:
-                                                        FontWeight.w800)),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 14),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 4),
-                                      decoration: BoxDecoration(
-                                          color: Colors.black26,
-                                          borderRadius:
-                                              BorderRadius.circular(20)),
-                                      child: Text(lastUpdated,
-                                          style: AppText.style(
-                                              fontSize: 10,
-                                              color: Colors.white70)),
-                                    ),
-                                  ],
-                                ),
+                              child: FundSummaryCard(
+                                isAdmin: widget.isAdmin,
+                                monthLabel: _monthLabel,
+                                allocatedStr: allocatedStr,
+                                spentStr: spentStr,
+                                availableStr: availableStr,
+                                isNegative: isNegative,
+                                lastUpdated: lastUpdated,
                               ),
                             ),
                           ),
@@ -518,6 +404,181 @@ class _FundsReceivedPageState extends State<FundsReceivedPage> {
                 );
               },
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+/// The blue fund summary card. Public (and free of Firestore) so its layout
+/// can be tested at small screen sizes and large text.
+class FundSummaryCard extends StatelessWidget {
+  final bool isAdmin;
+  final String monthLabel;
+  final String allocatedStr;
+  final String spentStr;
+  final String availableStr;
+  final bool isNegative;
+  final String lastUpdated;
+
+  const FundSummaryCard({
+    super.key,
+    required this.isAdmin,
+    required this.monthLabel,
+    required this.allocatedStr,
+    required this.spentStr,
+    required this.availableStr,
+    required this.isNegative,
+    required this.lastUpdated,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: gradientCard(
+          gradient: AppGradients.blueAccent,
+          radius: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(
+                Icons.account_balance_wallet_rounded,
+                color: Colors.white,
+                size: 24),
+            const SizedBox(width: 8),
+            Flexible(
+              child:
+            Text(isAdmin ? 'Monthly Budget Console' : 'Organisation Fund (shared by all canteens)',
+                style: AppText.style(
+                    color: Colors.white70,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600)),
+            ),
+            const Spacer(),
+            if (isAdmin)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius:
+                        BorderRadius.circular(20)),
+                child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.edit_rounded,
+                          color: Colors.white,
+                          size: 12),
+                      const SizedBox(width: 4),
+                      Text('Edit',
+                          style: AppText.style(
+                              color: Colors.white,
+                              fontSize: 11)),
+                    ]),
+              ),
+          ]),
+          const SizedBox(height: 12),
+          Text(monthLabel,
+              style: AppText.style(
+                  color: Colors.white70,
+                  fontSize: 12)),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment:
+                MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
+                children: [
+                  Text(isAdmin ? 'Allocated Fund' : 'Organisation Fund',
+                      textAlign: TextAlign.start,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.style(
+                          color: Colors.white60,
+                          fontSize: 11)),
+                  const SizedBox(height: 2),
+                  FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(allocatedStr,
+                      style: AppText.style(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight:
+                              FontWeight.w800))),
+                ],
+              ),
+              ),
+              Expanded(
+                child: Column(
+                crossAxisAlignment:
+                    CrossAxisAlignment.center,
+                children: [
+                  Text(isAdmin ? 'Total Spent' : 'Spent by this canteen',
+                      textAlign: TextAlign.center,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.style(
+                          color: Colors.white60,
+                          fontSize: 11)),
+                  const SizedBox(height: 2),
+                  FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(spentStr,
+                      style: AppText.style(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight:
+                              FontWeight.w800))),
+                ],
+              ),
+              ),
+              Expanded(
+                child: Column(
+                crossAxisAlignment:
+                    CrossAxisAlignment.end,
+                children: [
+                  Text(isAdmin ? 'Available Balance' : 'Fund minus this canteen\'s spending',
+                      textAlign: TextAlign.end,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.style(
+                          color: Colors.white60,
+                          fontSize: 11)),
+                  const SizedBox(height: 2),
+                  FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(availableStr,
+                      style: AppText.style(
+                          color: isNegative
+                              ? AppColors.accentRed
+                              : AppColors.accentGreen,
+                          fontSize: 20,
+                          fontWeight:
+                              FontWeight.w800))),
+                ],
+              ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius:
+                    BorderRadius.circular(20)),
+            child: Text(lastUpdated,
+                style: AppText.style(
+                    fontSize: 10,
+                    color: Colors.white70)),
           ),
         ],
       ),

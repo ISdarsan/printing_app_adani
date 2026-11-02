@@ -7,10 +7,10 @@ Built 2026-11-02 from branch `feature/ui-modernization-performance` (rebuilt aft
 | Item | Value |
 |---|---|
 | APK path | `D:\app\printing_app_adani-master\build\app\outputs\flutter-apk\app-release.apk` |
-| APK size | 62,367,960 bytes (59.5 MB) |
-| APK SHA-256 | `E2691D35148A4ABBEFAC98486A563FF73CEB8B617AE77BC6CE3FC3C6E30F6B2D` |
+| APK size | 62,384,344 bytes (59.5 MB) |
+| APK SHA-256 | `2AF8893549F3B33D392752FB1766BF0E56D7694EB7E0313FF0538B5AE2F4FF5E` |
 | AAB path (not for phones) | `D:\app\printing_app_adani-master\build\app\outputs\bundle\release\app-release.aab` |
-| AAB size / SHA-256 | 61,747,378 bytes · `B8A3BCAC068DAA5DB7F4B1D59F62BE7FB90488D54A3F5B3B67535A6F08C1939C` |
+| AAB size / SHA-256 | 61,739,343 bytes · `C7F633910D9AA76345CEA62BC539A63A7B2D1BEAE1379680BAA28B38B0AD2B9A` |
 | Commands | `flutter build apk --release -t lib/main.dart` and `flutter build appbundle --release -t lib/main.dart`, both exit 0 |
 | Application id | `com.adani.canteen_adani` |
 | Version | 1.0.5, versionCode 6 |

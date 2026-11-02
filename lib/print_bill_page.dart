@@ -2441,13 +2441,22 @@ class BillBottomPanel extends StatelessWidget {
                       color: AppColors.textSecondary,
                       fontSize: 13,
                       fontWeight: FontWeight.w500)),
-              Text(
-                '₹ ${total.toStringAsFixed(2)}',
-                style: AppText.style(
-                    color: AppColors.accentGreen,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5),
+              const SizedBox(width: 12),
+              // The amount shrinks to fit (large phone text, big totals)
+              // instead of overflowing the row.
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    '₹ ${total.toStringAsFixed(2)}',
+                    style: AppText.style(
+                        color: AppColors.accentGreen,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5),
+                  ),
+                ),
               ),
             ],
           ),

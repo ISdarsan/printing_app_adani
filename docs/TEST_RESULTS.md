@@ -82,3 +82,19 @@ Not tested: any real device (printer, Bluetooth reconnect, airplane mode, perfor
 | Tool tests | 20 passed |
 | New: loading view says "Still loading. Check your internet connection." after 8 s; no leaked timer; guard against bare spinners as loading states | included above |
 | Release APK rebuilt | 62,367,960 bytes, SHA-256 `E2691D35…F6B2D`, signer certificate unchanged |
+
+## First on-device findings (screenshots from a real phone)
+
+| Finding | Result |
+|---|---|
+| Missing Firestore indexes made Bills History, Daily Sales Report, Monthly Budget & Expenses and Manage Menu fail | Indexes deployed 2026-11-02, all 5 Enabled; screens load on the phone |
+| Fund card (Monthly Budget & Expenses, cashier): "RIGHT OVERFLOWED BY 68 PIXELS", labels ran together | Fixed: columns share the width, labels wrap, amounts scale down. Card extracted as `FundSummaryCard` with 14 layout tests |
+| Billing panel total row could overflow at 320 px width with large phone text (found by the corrected tests) | Fixed: amount scales down |
+
+**Correction to earlier test claims.** The small-screen overflow tests added earlier (`state_views`, `billing_widgets`, `login_ui`) passed a size only to `MediaQuery`, which changes the *reported* size but not the width the widgets are laid out in (the test window stayed 800 px wide). Those tests therefore did not really exercise 320 / 360 px. They also drew text with Flutter's placeholder test font, not the app's Inter font. Both are now fixed (`test/support/fonts.dart` loads the real bundled Inter; each test helper constrains the actual layout). Re-run with the corrected method: all earlier layout tests still pass, apart from the billing total row above, which was fixed. A deliberate mutation (fixed-width columns) makes the fund card tests fail in 12 places, so they can fail.
+
+| Check | Result |
+|---|---|
+| `flutter analyze` | No issues found |
+| `flutter test` | **340 passed** |
+| Release APK rebuilt | 62,384,344 bytes, SHA-256 `2AF88935…4FF5E`, signer unchanged |

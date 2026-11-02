@@ -2,6 +2,8 @@ import 'package:canteen_adani/login_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/fonts.dart';
+
 // Widget tests for the sign-in screen's interaction details. The sign-in call
 // is injected, so no Firebase is needed. (Authentication behaviour itself is
 // covered in auth_flow_test.dart and is unchanged.)
@@ -9,12 +11,18 @@ Widget host(LoginPage page,
         {Size size = const Size(360, 640), double scale = 1}) =>
     MediaQuery(
       data: MediaQueryData(size: size, textScaler: TextScaler.linear(scale)),
-      child: MaterialApp(home: page),
+      child: MaterialApp(
+        // Constrain the REAL layout to the requested size. MediaQuery alone only
+        // changes the reported size, not the width the widgets are laid out in.
+        builder: (ctx, c) => Center(
+            child: SizedBox(width: size.width, height: size.height, child: c)),home: page),
     );
 
 Future<void> settle(WidgetTester t) => t.pump(const Duration(seconds: 1));
 
 void main() {
+  setUpAll(loadInterFont);
+
   testWidgets('empty fields: friendly message, no sign-in attempt', (t) async {
     var calls = 0;
     await t.pumpWidget(host(LoginPage(signIn: (e, p) async {

@@ -3,16 +3,24 @@ import 'package:canteen_adani/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/fonts.dart';
+
 Widget host(Widget child, {Size size = const Size(360, 640), double scale = 1}) =>
     MediaQuery(
       data: MediaQueryData(size: size, textScaler: TextScaler.linear(scale)),
-      child: MaterialApp(theme: buildAppTheme(), home: Scaffold(body: child)),
+      child: MaterialApp(
+        // Constrain the REAL layout to the requested size. MediaQuery alone only
+        // changes the reported size, not the width the widgets are laid out in.
+        builder: (ctx, c) => Center(
+            child: SizedBox(width: size.width, height: size.height, child: c)),theme: buildAppTheme(), home: Scaffold(body: child)),
     );
 
 BillItem item(String name, int qty, double price, {String type = 'Full'}) =>
     BillItem(code: name, name: name, type: type, quantity: qty, price: price);
 
 void main() {
+  setUpAll(loadInterFont);
+
   group('quantity stepper', () {
     testWidgets('shows the quantity and reports + and -', (t) async {
       var inc = 0, dec = 0;

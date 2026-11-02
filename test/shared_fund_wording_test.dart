@@ -17,10 +17,12 @@ void main() {
 
   test('Funds Received: cashier labels are explicit, admin labels unchanged', () {
     final src = read('lib/funds_received_page.dart');
-    expect(src, contains("widget.isAdmin ? 'Allocated Fund' : 'Organisation Fund'"));
-    expect(src, contains("widget.isAdmin ? 'Total Spent' : 'Spent by this canteen'"));
-    expect(src, contains("widget.isAdmin ? 'Monthly Budget Console' : 'Organisation Fund (shared by all canteens)'"));
+    expect(src, contains("isAdmin ? 'Allocated Fund' : 'Organisation Fund'"));
+    expect(src, contains("isAdmin ? 'Total Spent' : 'Spent by this canteen'"));
+    expect(src, contains("isAdmin ? 'Monthly Budget Console' : 'Organisation Fund (shared by all canteens)'"));
     expect(src, contains("Fund minus this canteen"));
+    // (the labels live in FundSummaryCard, which receives isAdmin from the page)
+    expect(src, contains('FundSummaryCard('));
     // the note is shown to cashiers only
     expect(src, contains('if (!widget.isAdmin)'));
     expect(src, contains('kSharedFundNote'));
