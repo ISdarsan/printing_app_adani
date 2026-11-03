@@ -107,7 +107,8 @@ Mark each line Pass / Fail / Not tried and write what you saw. Test as the **cas
 - [ ] Turn on airplane mode and try to save: the app clearly says a connection is needed and does **not** show success. Turn it off: the next bill works.
 
 ### D. Printing and Bluetooth
-- [ ] First use: Nearby-devices permission prompt appears (Android 12+), allow it.
+- [ ] First use: Nearby-devices permission prompt appears (Android 12+, covers both BLUETOOTH_CONNECT and BLUETOOTH_SCAN in one prompt), allow it.
+- [ ] Connect to the printer (fixed 2026-11-03: was failing on every attempt with "Need android.permission.BLUETOOTH_SCAN ... cancelDiscovery()" because that permission, though declared in the manifest, was never requested at runtime — see Round 4 in `FULL_ANALYSIS_SWEEP.md`). Tap **Reconnect** or **Choose**, pick the printer, confirm it reaches "Connected" (not "Disconnected").
 - [ ] Pair and connect the real printer; receipt prints with correct items, total, date, bill number and alignment.
 - [ ] Printer off during a print: app shows a clear failure, the bill is **not** duplicated on retry.
 - [ ] Switch printer off/on, Bluetooth off/on, walk out of range and back: reconnects or tells you what to do.
@@ -158,3 +159,23 @@ For each Fail: phone model and Android version, screen, exact steps, what you ex
 - [ ] **Correct phone date:** billing is not slower than before (the check runs in the background).
 - [ ] **Back with items in the cart:** add an item, press Back / swipe back: "Leave without saving?" appears; "Keep editing" stays, "Discard bill" leaves. With an empty cart Back leaves at once. While a bill is saving, Back shows "Saving the bill. Please wait a moment."
 - [ ] **Budget bar:** the cashier's Monthly Budget card shows the usage bar and "% of the budget used"; it turns orange under 15% left and red with "Over budget by ₹..." when exceeded; no bar when no budget is set.
+
+## Added by round 2 (canteen choosers, closing, analytics)
+
+- [ ] **Manage Menu (admin):** open it. With "All canteens" both tabs say "Choose a canteen". Pick a canteen: its menu loads and only that canteen's items show. Add a test item: it appears under that canteen only, and not in the other canteen. Switch canteen while editing: the form clears. **Cashier:** sees only their own canteen's menu, no canteen chooser, no delete button.
+- [ ] **Master Credit Ledger:** All canteens shows every canteen's credit bills with the canteen name on each; pick one canteen and only its bills show; the "still due" total matches the bills listed.
+- [ ] **Cash Reconciliation (cashier):** expected cash equals today's cash sales + cash repayments for your canteen; submit once; a second submit is refused. Leave the screen open past midnight (IST) and press submit: it refreshes and asks you to check the figures first.
+- [ ] **Cash Reconciliation Logs (admin):** pick a canteen or All; each record shows its canteen, exact amounts (a 40 paise shortage shows ₹0.40) and no crash on any record.
+- [ ] **Analytics & Graphs (admin):** with All canteens the figures cover every canteen; pick one canteen and they change to that canteen only. Open all five tabs (Weekly, Monthly, Payments, Profit, Ops): charts draw, nothing is cut off at large text.
+- [ ] **Monthly Budget (admin):** with All canteens a note explains budgets are per canteen; pick a canteen to set its budget.
+- [ ] **SMS Broadcast Specials** (cashier and admin): shows "Coming soon" and nothing else happens.
+
+## Added by round 3 (Main deletable, admins in every canteen)
+
+- [ ] **Manage Canteens & Staff -> Branches:** Main Canteen now shows the rename (pencil) and delete (bin) icons like the others. Expand any canteen: "Assigned Staff" lists its cashiers **and the admin** (marked ADMIN - ALL CANTEENS). Add a new branch: expand it, the admin is already listed.
+- [ ] **Delete a test branch that has no cashier:** confirmation says no cashiers are assigned; it deletes. Existing bills are untouched.
+- [ ] **Delete a branch that has a cashier (Main still exists):** the confirmation says the cashier will be moved to Main; after deleting, that cashier appears under Main.
+- [ ] **Try to delete Main while a cashier is assigned to it:** a "Cannot delete Main Canteen yet" message names the cashier and says to reassign first. Nothing is deleted.
+- [ ] **Staff tab:** the admin shows "All canteens"; the admin's row menu has no "Reassign Canteen"; a cashier shows their canteen and can be reassigned.
+- [ ] **Add Staff:** choosing Admin hides the canteen picker and explains admins reach every canteen; choosing Cashier shows only canteens that exist.
+- [ ] **Do NOT delete the real Main canteen during QA** unless you intend to: its records stay in the database but can only be seen under "All canteens" afterwards.

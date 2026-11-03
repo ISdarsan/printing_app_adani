@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +12,8 @@ import 'money.dart';
 import 'sync_status.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
+import 'canteen_selector.dart';
+import 'cash_closing_logic.dart';
 
 class _AlreadyReconciledException implements Exception {}
 
@@ -36,15 +40,33 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
   late Stream<Map<String, dynamic>?> _todayReconciliationStream;
   late Stream<QuerySnapshot> _reconciliationHistoryStream;
 
+  // The business day the cashier's figures were loaded for.
+  String _openedDay = '';
+  Timer? _dayWatch;
+
+  // Admin log: one canteen, or all of them.
+  String _adminCanteen = kAllCanteens;
+
   @override
   void initState() {
     super.initState();
     ClockGuard.warmUp();
     _openStreams();
+    if (!widget.isAdmin) {
+      // If the page stays open past midnight (IST) the expected cash on screen
+      // belongs to yesterday: reload everything for the new day.
+      _dayWatch = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (!mounted) return;
+        if (closingDayChanged(openedDayKey: _openedDay, now: DateTime.now())) {
+          setState(_openStreams);
+        }
+      });
+    }
   }
 
   /// Opens (or re-opens, for Retry) the three listeners.
   void _openStreams() {
+    _openedDay = _todayId;
     // Branch-scoped queries instead of document streams: a cashier cannot read
     // a document that does not exist yet, and a failed stream ends for good, so
     // the screen would never notice the closing being submitted. A query just
@@ -65,6 +87,9 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
     if (!widget.isAdmin) {
       historyQuery = historyQuery.where('canteenId',
           isEqualTo: CanteenProvider.selectedCanteenId);
+    } else if (_adminCanteen != kAllCanteens) {
+      // index: cashReconciliations(canteenId, timestamp desc)
+      historyQuery = historyQuery.where('canteenId', isEqualTo: _adminCanteen);
     }
     _reconciliationHistoryStream = historyQuery
         .orderBy('timestamp', descending: true)
@@ -74,6 +99,20 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
 
   Future<void> _submitReconciliation(double systemCash) async {
     if (_isSubmitting) return; // duplicate tap
+    // The screen was opened on an earlier business day (it stayed open past
+    // midnight): the expected cash shown belongs to that day. Reload for the new
+    // day and ask again rather than saving today's closing against old figures.
+    if (closingDayChanged(openedDayKey: _openedDay, now: DateTime.now())) {
+      setState(_openStreams);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            'A new day has started, so the figures were refreshed. '
+            'Please check the expected cash and submit again.',
+            style: AppText.style()),
+        backgroundColor: AppColors.accentOrange,
+      ));
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
     final actual = double.tryParse(_cashController.text);
     if (actual == null || actual < 0) {
@@ -177,6 +216,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
 
   @override
   void dispose() {
+    _dayWatch?.cancel();
     _cashController.dispose();
     _noteController.dispose();
     super.dispose();
@@ -484,6 +524,23 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
   }
 
   Widget _buildAdminHistoryView() {
+    return Column(
+      children: [
+        // Which canteen's closings to read (all canteens together by default).
+        CanteenSelector(
+          value: _adminCanteen,
+          label: 'Canteen',
+          onChanged: (c) => setState(() {
+            _adminCanteen = c.id;
+            _openStreams();
+          }),
+        ),
+        Expanded(child: _historyList()),
+      ],
+    );
+  }
+
+  Widget _historyList() {
     return StreamBuilder<QuerySnapshot>(
       stream: _reconciliationHistoryStream,
       builder: (context, snap) {
@@ -509,7 +566,8 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
           itemBuilder: (context, i) {
             final data = docs[i].data() as Map<String, dynamic>;
             final dateStr = data['date'] ?? docs[i].id;
-            final date = DateFormat('yyyy-MM-dd').parse(dateStr);
+            // A record without a usable date shows its raw text, never a crash.
+            final date = closingDay(data['date'], docs[i].id);
             final system = asDouble(data['systemCash']);
             final actual = asDouble(data['actualCash']);
             final discrepancy = asDouble(data['discrepancy']);
@@ -531,7 +589,10 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(DateFormat('dd MMMM yyyy').format(date),
+                      Text(
+                          date == null
+                              ? dateStr.toString()
+                              : DateFormat('dd MMMM yyyy').format(date),
                           style: AppText.style(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -549,11 +610,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
-                          isBalanced
-                              ? 'Balanced'
-                              : isShortage
-                                  ? 'Shortage: ₹${discrepancy.abs().toStringAsFixed(0)}'
-                                  : 'Surplus: ₹${discrepancy.toStringAsFixed(0)}',
+                          closingChipText(discrepancy),
                           style: AppText.style(
                             color: isBalanced
                                 ? AppColors.accentGreen
@@ -567,16 +624,25 @@ class _CashReconciliationPageState extends State<CashReconciliationPage> {
                       )
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 4),
+                  // which canteen this closing belongs to
+                  Text(
+                      (data['canteenName'] ?? data['canteenId'] ?? 'Main Canteen')
+                          .toString(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.style(
+                          color: AppColors.textSecondary, fontSize: 12)),
+                  const SizedBox(height: 10),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       _colDetail(
-                          'Expected (System)', '₹${system.toStringAsFixed(0)}'),
+                          'Expected (System)', '₹${formatRupees(system)}'),
                       _colDetail(
-                          'Actual counted', '₹${actual.toStringAsFixed(0)}'),
+                          'Actual counted', '₹${formatRupees(actual)}'),
                       _colDetail(
-                          'Discrepancy', '₹${discrepancy.toStringAsFixed(0)}',
+                          'Discrepancy', '₹${formatRupees(discrepancy)}',
                           valColor: isBalanced
                               ? AppColors.accentGreen
                               : isShortage

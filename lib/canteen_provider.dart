@@ -73,16 +73,16 @@ class CanteenProvider {
     }
   }
 
-  static bool matchesSelectedCanteen(Map<String, dynamic> data) {
+  static bool matchesSelectedCanteen(Map<String, dynamic> data) =>
+      matchesCanteen(data, selectedCanteenId);
+
+  /// Does this record belong to [canteenId]? Records without a canteen id are
+  /// the original canteen's ('main'). Used by screens where an admin picks a
+  /// canteen other than their own.
+  static bool matchesCanteen(Map<String, dynamic> data, String canteenId) {
     final docCanteenId = (data['canteenId'] ?? '').toString();
-    final selectedId = selectedCanteenId;
-
-    if (docCanteenId.isEmpty) return selectedId == 'main';
-    if (selectedId == 'main') {
-      return docCanteenId == 'main';
-    }
-
-    return docCanteenId == selectedId;
+    if (docCanteenId.isEmpty) return canteenId == 'main';
+    return docCanteenId == canteenId;
   }
 
   static bool matchesNotificationCanteen(Map<String, dynamic> data) {

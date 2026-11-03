@@ -7,6 +7,7 @@ import 'stream_cache.dart';
 import 'state_views.dart';
 import 'business_time.dart';
 import 'fund_budget.dart';
+import 'canteen_selector.dart';
 import 'expense_detail_page.dart';
 
 /// Admin: monthly budgets and expenses.
@@ -156,16 +157,12 @@ class _AdminExpenseReportPageState extends State<AdminExpenseReportPage> {
   }
 
   /// "Main Canteen" plus every canteen in the database.
-  List<_CanteenOption> _options(QuerySnapshot? canteens) {
-    final out = <_CanteenOption>[const _CanteenOption('main', 'Main Canteen')];
-    for (final doc in canteens?.docs ?? const <QueryDocumentSnapshot>[]) {
-      if (doc.id == 'main') continue;
-      final d = doc.data() as Map<String, dynamic>;
-      final name = (d['name'] ?? doc.id).toString();
-      out.add(_CanteenOption(doc.id, name));
-    }
-    return out;
-  }
+  /// Every canteen that really exists (Main only while its record exists).
+  List<_CanteenOption> _options(QuerySnapshot? canteens) => buildCanteenChoices(
+        (canteens?.docs ?? const <QueryDocumentSnapshot>[]).map(
+            (d) => MapEntry(d.id, d.data() as Map<String, dynamic>)),
+        all: false,
+      ).map((c) => _CanteenOption(c.id, c.name)).toList();
 
   Widget _selector(List<_CanteenOption> options) {
     final value = options.any((o) => o.id == _selected) ? _selected : _all;
@@ -302,6 +299,23 @@ class _AdminExpenseReportPageState extends State<AdminExpenseReportPage> {
     return Column(
       children: [
         _selector(options),
+        if (isAll)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Icon(Icons.info_outline_rounded,
+                  size: 16, color: AppColors.accentBlue),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Budgets are set per canteen. Choose a canteen above to set or change its monthly budget. '
+                  '"All canteens" shows the totals only.',
+                  style: AppText.style(
+                      color: AppColors.textSecondary, fontSize: 12, height: 1.4),
+                ),
+              ),
+            ]),
+          ),
         if (legacy > 0)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),

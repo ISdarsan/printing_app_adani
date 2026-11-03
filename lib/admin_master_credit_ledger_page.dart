@@ -5,6 +5,9 @@ import 'theme.dart';
 import 'stream_cache.dart';
 import 'state_views.dart';
 import 'bill_detail_page.dart';
+import 'canteen_selector.dart';
+import 'credit_ledger_logic.dart';
+import 'money.dart';
 
 class AdminMasterCreditLedgerPage extends StatefulWidget {
   const AdminMasterCreditLedgerPage({super.key});
@@ -27,6 +30,7 @@ class _AdminMasterCreditLedgerPageState
   }
   String _searchQuery = '';
   String _filterStatus = 'All'; // All, Paid, Pending
+  String _canteen = kAllCanteens; // 'all' or one canteen id
 
   @override
   Widget build(BuildContext context) {
@@ -35,6 +39,12 @@ class _AdminMasterCreditLedgerPageState
       appBar: buildGradientAppBar(title: 'Master Credit Ledger'),
       body: Column(
         children: [
+          // Choose one canteen, or see every canteen's credit bills together.
+          CanteenSelector(
+            value: _canteen,
+            label: 'Canteen',
+            onChanged: (c) => setState(() => _canteen = c.id),
+          ),
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: TextField(
@@ -99,10 +109,18 @@ class _AdminMasterCreditLedgerPageState
           ),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: _streams.get('ledger', () => FirebaseFirestore.instance
-                  .collection('bills')
-                  .where('paymentMode', isEqualTo: 'Credit')
-                  .snapshots()),
+              stream: _streams.get(
+                  'ledger',
+                  () {
+                    Query<Map<String, dynamic>> q = FirebaseFirestore.instance
+                        .collection('bills')
+                        .where('paymentMode', isEqualTo: 'Credit');
+                    if (_canteen != kAllCanteens) {
+                      q = q.where('canteenId', isEqualTo: _canteen);
+                    }
+                    return q.snapshots();
+                  },
+                  signature: _canteen),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const AppLoading();
@@ -165,7 +183,10 @@ class _AdminMasterCreditLedgerPageState
                   );
                 }
 
-                return ListView.builder(
+                return Column(children: [
+                  _summary(docs),
+                  Expanded(
+                      child: ListView.builder(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   itemCount: docs.length,
@@ -268,6 +289,18 @@ class _AdminMasterCreditLedgerPageState
                                           style: AppText.style(
                                               color: AppColors.textSecondary,
                                               fontSize: 13)),
+                                      // which canteen this credit belongs to
+                                      if (_canteen == kAllCanteens)
+                                        Text(
+                                            (data['canteenName'] ??
+                                                    data['canteenId'] ??
+                                                    'Main Canteen')
+                                                .toString(),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: AppText.style(
+                                                color: AppColors.textHint,
+                                                fontSize: 11)),
                                     ],
                                   ),
                                 ),
@@ -292,12 +325,36 @@ class _AdminMasterCreditLedgerPageState
                       ),
                     );
                   },
-                );
+                )),
+                ]);
               },
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// "12 bills · ₹4,350 still due", exact to the paisa.
+  Widget _summary(List<QueryDocumentSnapshot> docs) {
+    final duePaise = creditDuePaise(
+        docs.map((d) => d.data() as Map<String, dynamic>));
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      child: Row(children: [
+        Expanded(
+          child: Text(
+            '${docs.length} bill${docs.length == 1 ? '' : 's'}'
+            '${_canteen == kAllCanteens ? ' · all canteens' : ''}',
+            style: AppText.style(color: AppColors.textHint, fontSize: 12),
+          ),
+        ),
+        Text('₹${formatRupees(duePaise / 100)} still due',
+            style: AppText.style(
+                color: AppColors.accentRed,
+                fontSize: 13,
+                fontWeight: FontWeight.w700)),
+      ]),
     );
   }
 }

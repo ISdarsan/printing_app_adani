@@ -49,3 +49,9 @@ Per-branch counter `billCounter_<canteenId>`; `lastNumber` is a positive integer
 ## Which clock files a record under a day
 - Bill, repayment and cash-closing records are filed under a day key taken from the **phone's** clock in IST (`dailyStats` id `<canteenId>_<yyyy-MM-dd>`, closing id the same). Bill timestamps are **server** time.
 - Since the sweep, those three actions are refused when the phone's IST day differs from the server's by more than 2 minutes (`lib/clock_guard.dart`), so a wrong phone date can no longer file money under the wrong day. When the server time cannot be reached the action is allowed.
+
+## Cash closing (reviewed in round 2)
+- Expected cash for a canteen and day = that canteen's `dailyStats.totalCash` (cash sales + cash repayments). Cash expenses are not deducted (decision Q2).
+- Discrepancy = counted - expected, whole paise; Balanced when exactly 0, Shortage below, Surplus above. Admin logs show exact amounts.
+- One closing per canteen per business day (id `<canteenId>_<yyyy-MM-dd>`); signed with the caller's uid.
+- A closing is never saved against figures from an earlier business day: if IST midnight passes while the screen is open, it reloads and asks again.

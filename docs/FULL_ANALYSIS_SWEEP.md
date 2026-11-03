@@ -47,3 +47,113 @@ All source guards were confirmed to **fail on the pre-sweep code** and pass on t
 - The clock guard can only judge the phone's date when it can reach the server's time. With no connection it cannot tell and does **not** block (billing while offline is already unsupported by decision).
 - Wrongly set time on a phone that stays on the same IST day is allowed (only the day matters for filing).
 - Everything above is verified by tests and static analysis, not on a phone. See `REAL_DEVICE_QA.md` for the new device checks.
+
+---
+
+# Round 2: admin canteen choosers, cash reconciliation review, analytics check
+
+Requested after device testing. Branch `fix/full-analysis-sweep`.
+
+## What changed
+
+| Area | Before | Now |
+|---|---|---|
+| **Manage Menu (admin)** | showed and edited the admin's own canteen's menu, with no way to choose | a canteen chooser; the menu list and the Add/Edit form follow the chosen canteen; **"All canteens" shows "Choose a canteen"** on both tabs and nothing can be edited; switching canteen clears a half-edited item. Cashiers unchanged (own canteen, no delete). |
+| **Master Credit Ledger** | every canteen's credit bills mixed together, canteen not shown | chooser with **All canteens** (default) or one canteen (server-side filter, no new index); canteen name on each bill when All is selected; "N bills · ₹X still due" (exact paise) |
+| **Analytics & Graphs** | **silently showed only the admin's own canteen (normally Main)**, no chooser | chooser with **All canteens** (default) or one canteen; the loader is told which canteen; a slow answer for an old choice never overwrites a newer one |
+| **Monthly Budget (admin)** | had a selector, but no explanation when All was selected | explanatory note under the selector when All is selected |
+| **SMS Broadcast** | opened the unfinished flow (admin) | "Coming soon" popup for **both** cashier and admin |
+
+## Cash reconciliation review (cashier and admin)
+
+Logic read line by line. Expected cash = `dailyStats.totalCash` for the canteen and day (cash sales + cash repayments, per the earlier decision); discrepancy = counted - expected in whole paise; a second closing for the same canteen and day is refused; the closing is signed with the caller's uid. Three defects found and fixed:
+
+1. **Midnight rollover (cashier).** Expected cash was loaded for the day the page opened, but the save used the day at the moment of saving. A page left open past IST midnight could file today's closing against yesterday's cash. Now the screen reloads at the day change (30 s watcher) and refuses to save against stale figures, asking the cashier to check and submit again.
+2. **Admin logs had no canteen.** Closings from all canteens were mixed with no canteen name. Now: canteen chooser with All, and the canteen name on every record.
+3. **Admin log crash and rounding.** A record without a `date` field parsed its document id (`north_2026-11-02`) as a date and threw, blanking the whole list; amounts were rounded to whole rupees ("Shortage: ₹0" for 40 paise). Now a safe date parser (also rejects impossible dates like 2026-02-31) and exact amounts.
+
+## Analytics and graphs: are they working?
+
+Yes for the code paths now covered. The real page, all five tabs (Weekly, Monthly, Payments, Profit, Ops) and their charts, is rendered in tests with realistic data produced by the app's own calculation code: normal data, a canteen with no data, an item with unknown cost, a failed load with Retry, switching canteens, a late stale answer, small phone, and 160% text. That found **one real overflow** (Profit tab rows at large text and with long item names), now fixed. Not done: a run against live production data on a device.
+
+## Tests
+
+| Check | Result |
+|---|---|
+| `flutter analyze` | clean |
+| `flutter test` | **434 passed** |
+| Emulator, whole folder | **208 / 208** (candidate suite 113) |
+| Index registry | 20 queries, still 5 composite indexes (the ledger's one-canteen query needs none) |
+| Deploy verifiers / tool tests | all pass / 26 |
+| Rules, indexes, configs, `pubspec.yaml`, Android config | identical to the release branch |
+| New source guards (7) | confirmed to fail on the pre-change code |
+
+---
+
+# Round 3: Main Canteen deletable, admins assigned to every canteen (2026-11-03)
+
+Owner request: Main Canteen must be deletable like any other canteen, and an admin must be able to access every canteen and be assigned to every canteen automatically.
+
+| Area | Before | Now |
+|---|---|---|
+| Delete Main | Main had no rename/delete buttons | every canteen, including Main, can be renamed and deleted |
+| Deleting a canteen | deleted the record, **then** moved its staff to Main (two steps; a failure between them could strand staff) | **one atomic batch**: delete + move cashiers together |
+| Cashiers of a deleted canteen | silently moved to Main | moved to Main **only if Main exists and is not the one being deleted**; otherwise the delete is **blocked** with a plain explanation naming the cashiers ("move them first: Staff tab, row menu, Reassign Canteen"). A cashier is never left without a canteen. |
+| Admins | listed under one canteen (the one on their record) | **assigned to every canteen automatically**, including canteens created later: each canteen's "Assigned Staff" shows its cashiers plus every admin ("ADMIN · ALL CANTEENS"). The Staff tab shows an admin as "All canteens" and offers no Reassign. Creating an admin needs no canteen. Access itself was already by role. |
+| Pickers (dashboard filter, Manage Menu, ledger, logs, analytics, budget, staff dialogs) | always offered a built-in "Main Canteen" | offer only canteens that exist; Main only while its record exists. No canteens at all: the screens say "add a canteen" and nothing is invented. |
+| Staff dialogs | defaulted to `main`; if Main was gone the dropdown would crash | a dropdown is only ever given one of its own items (falls back to the first canteen) |
+
+## What deleting a canteen does NOT do
+Bills, expenses, repayments, closings, customers and menu items are **never** deleted. After Main is deleted:
+- records tagged `main` (and older records with no canteen at all) stay in the database; they appear under **All canteens** (dashboard, ledger, analytics, logs) but can no longer be picked as a single canteen;
+- re-adding a canteen called "Main Canteen" creates the id `main_canteen`, not `main`, so those records are **not** re-attached automatically.
+
+Rules: no change (admins already write `canteens` and `canteenStaff`); 3 emulator tests added for the exact batch the screen sends.
+
+## Tests
+
+| Check | Result |
+|---|---|
+| Rules for deleting, assigning and picking (pure) | 17 tests |
+| Source guards (7), confirmed to fail on the old code | pass |
+| Emulator, candidate suite | **116 / 116** |
+
+---
+
+# Round 4: printer would not connect — missing BLUETOOTH_SCAN runtime request (2026-11-03)
+
+**Reported from a real device** (screenshot): tapping Reconnect/Choose always failed with
+`Connection failed: Need android.permission.BLUETOOTH_SCAN permission for ... BluetoothAdapterServiceBinder.cancelDiscovery()`.
+This is the first defect in this project found by an actual on-device run rather than by
+code reading or automated tests.
+
+## Root cause
+`BLUETOOTH_SCAN` is a runtime ("dangerous") permission on Android 12+ (API 31+). It was
+declared in `AndroidManifest.xml` with `usesPermissionFlags="neverForLocation"`, but
+`MainActivity.kt`'s `ensurePermission()` only ever requested `BLUETOOTH_CONNECT`. The one
+call that actually needs `BLUETOOTH_SCAN` — `adapter.cancelDiscovery()`, called right before
+opening the socket in `connect()` — therefore threw a `SecurityException` on every attempt,
+on every device running Android 12 or newer.
+
+## Fix (`android/app/src/main/kotlin/com/adani/canteen_adani/MainActivity.kt`)
+- `ensurePermission()` now requests `BLUETOOTH_CONNECT` and `BLUETOOTH_SCAN` together (Android
+  shows this as a single "Nearby devices" prompt); the granted check is a live re-check of
+  both permissions rather than trusting the `grantResults[]` array order.
+- `cancelDiscovery()` is now **best-effort**: it only runs if `BLUETOOTH_SCAN` is currently
+  granted, and a `SecurityException` from it is caught rather than allowed to fail the whole
+  connection. Stopping discovery is a reliability nicety, not something a real connection
+  attempt should be blocked by — including for a future Android version that introduces
+  another scan-adjacent check.
+- `getBondedDevices()` and the basic `connect()` gate are unchanged: they only ever needed
+  `BLUETOOTH_CONNECT`, which was already correctly requested.
+
+## Tests
+- No automated Dart test exercises the native Bluetooth channel (it requires a real adapter
+  and a real printer), so this class of bug is invisible to `flutter test` and to every
+  emulator/security suite in this project — a real device is the only way to catch it, which
+  is exactly how it was found. `KNOWN_LIMITATIONS.md` has said this plainly since the first
+  sweep.
+- Verified by rebuilding the release APK/AAB (same production signing certificate) and
+  re-running the full existing suite (`flutter analyze` clean, 460 Flutter tests) to confirm
+  the native-only change touched nothing else.
+- Device re-test needed: see the updated item in `REAL_DEVICE_QA.md`, section D.

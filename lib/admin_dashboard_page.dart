@@ -10,10 +10,11 @@ import 'package:share_plus/share_plus.dart';
 import 'theme.dart';
 import 'fund_budget.dart';
 import 'state_views.dart';
+import 'canteen_management_logic.dart';
+import 'canteen_selector.dart';
 import 'logout_splash_page.dart';
 import 'admin_master_credit_ledger_page.dart';
 import 'bill_detail_page.dart';
-import 'sms_broadcast_helper.dart';
 import 'canteen_provider.dart';
 import 'business_time.dart';
 import 'excel_report_builder.dart';
@@ -418,7 +419,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           _drawerTile(Icons.campaign_rounded, 'SMS Broadcast Specials',
               AppColors.accentOrange, () {
             Navigator.pop(context);
-            showSMSBroadcastDialog(context);
+            // Not finished yet: tell the admin instead of opening it.
+            showComingSoonDialog(context, feature: 'SMS Broadcast Specials');
           }),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -881,20 +883,17 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       .collection('canteens')
                       .snapshots(),
                   builder: (context, snapshot) {
+                    // Only canteens that really exist (Main only while its record
+                    // exists: every canteen, including Main, can be deleted).
                     List<Map<String, String>> canteenOptions = [
                       {'id': 'all', 'name': 'All Canteens (Overall)'},
-                      {'id': 'main', 'name': 'Main Canteen'},
                     ];
                     if (snapshot.hasData) {
-                      for (var doc in snapshot.data!.docs) {
-                        if (doc.id != 'main') {
-                          canteenOptions.add({
-                            'id': doc.id,
-                            'name':
-                                (doc.data() as Map<String, dynamic>)['name'] ??
-                                    doc.id,
-                          });
-                        }
+                      for (final ch in buildCanteenChoices(
+                          snapshot.data!.docs.map((d) => MapEntry(
+                              d.id, d.data() as Map<String, dynamic>)),
+                          all: false)) {
+                        canteenOptions.add({'id': ch.id, 'name': ch.name});
                       }
                     }
 
@@ -1619,8 +1618,7 @@ class _CanteensTabState extends State<_CanteensTab> {
                               ],
                             ),
                           ),
-                          if (!isMain)
-                            Row(
+                          Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
@@ -1723,22 +1721,75 @@ class _CanteensTabState extends State<_CanteensTab> {
     );
   }
 
-  void _confirmDeleteCanteen(BuildContext context, String id, String name) {
-    showDialog(
+  /// Deleting a canteen (any canteen, including Main): see
+  /// [planCanteenDelete]. Cashiers are moved to Main when that is possible,
+  /// otherwise the delete is blocked; admins keep access to every canteen.
+  /// The delete and the cashier moves happen in ONE batch, so a failure part
+  /// way cannot leave a cashier without a canteen.
+  Future<void> _confirmDeleteCanteen(
+      BuildContext context, String id, String name) async {
+    final db = FirebaseFirestore.instance;
+    final CanteenDeletePlan plan;
+    try {
+      final results = await Future.wait([
+        db.collection('canteens').get(),
+        db.collection('canteenStaff').get(),
+      ]);
+      plan = planCanteenDelete(
+        canteenId: id,
+        canteens: results[0]
+            .docs
+            .map((d) => CanteenInfo(d.id, (d.data()['name'] ?? d.id).toString())),
+        staff: results[1].docs.map((d) => StaffMember.fromMap(d.id, d.data())),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            'Could not check this canteen. ${friendlyErrorMessage(e, action: 'loading')}',
+            style: AppText.style()),
+        backgroundColor: AppColors.accentRed,
+      ));
+      return;
+    }
+    if (!context.mounted) return;
+
+    if (!plan.allowed) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.bgCard,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text('Cannot delete "$name" yet',
+              style: AppText.style(
+                  color: Colors.white, fontWeight: FontWeight.w700)),
+          content: Text(plan.message,
+              style: AppText.style(color: Colors.white70, fontSize: 13)),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('OK',
+                    style: AppText.style(color: AppColors.accentBlue))),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('Delete "$name"?',
             style: AppText.style(
                 color: Colors.white, fontWeight: FontWeight.w700)),
-        content: Text(
-          'This removes the branch record. Staff assigned here will fall back to Main Canteen. Existing bills are not deleted.',
-          style: AppText.style(color: Colors.white70, fontSize: 13),
-        ),
+        content: Text(plan.message,
+            style: AppText.style(color: Colors.white70, fontSize: 13)),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(ctx, false),
               child:
                   Text('Cancel', style: AppText.style(color: Colors.white54))),
           ElevatedButton(
@@ -1746,26 +1797,7 @@ class _CanteensTabState extends State<_CanteensTab> {
                 backgroundColor: AppColors.accentRed,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12))),
-            onPressed: () async {
-              Navigator.pop(context);
-              await FirebaseFirestore.instance
-                  .collection('canteens')
-                  .doc(id)
-                  .delete();
-              // Unassign staff from this canteen
-              final staffSnap = await FirebaseFirestore.instance
-                  .collection('canteenStaff')
-                  .where('canteenId', isEqualTo: id)
-                  .get();
-              final batch = FirebaseFirestore.instance.batch();
-              for (final s in staffSnap.docs) {
-                batch.update(s.reference, {
-                  'canteenId': 'main',
-                  'canteenName': 'Main Canteen',
-                });
-              }
-              await batch.commit();
-            },
+            onPressed: () => Navigator.pop(ctx, true),
             child: Text('Delete',
                 style: AppText.style(
                     color: Colors.white, fontWeight: FontWeight.w600)),
@@ -1773,6 +1805,35 @@ class _CanteensTabState extends State<_CanteensTab> {
         ],
       ),
     );
+    if (confirmed != true) return;
+
+    try {
+      final batch = db.batch();
+      batch.delete(db.collection('canteens').doc(id));
+      final to = plan.moveTo;
+      if (to != null) {
+        for (final cashier in plan.cashiers) {
+          batch.update(db.collection('canteenStaff').doc(cashier.uid), {
+            'canteenId': to.id,
+            'canteenName': to.name,
+          });
+        }
+      }
+      await batch.commit();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('"$name" deleted.', style: AppText.style()),
+        backgroundColor: AppColors.accentRed,
+      ));
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            'Could not delete the canteen. ${friendlyErrorMessage(e, action: 'deleting')}',
+            style: AppText.style()),
+        backgroundColor: AppColors.accentRed,
+      ));
+    }
   }
 }
 
@@ -1800,17 +1861,13 @@ class _AssignedCanteenStaff extends StatelessWidget {
           );
         }
 
-        final staff = (snap.data?.docs ?? []).where((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          return (data['canteenId'] ?? 'main').toString() == canteenId;
-        }).toList()
-          ..sort((a, b) {
-            final aData = a.data() as Map<String, dynamic>;
-            final bData = b.data() as Map<String, dynamic>;
-            return (aData['email'] ?? '').toString().compareTo(
-                  (bData['email'] ?? '').toString(),
-                );
-          });
+        // This canteen's cashiers plus EVERY admin: admins reach all canteens,
+        // so they are assigned to each one automatically (also to canteens
+        // created later).
+        final staff = staffForCanteen(
+            (snap.data?.docs ?? []).map((d) =>
+                StaffMember.fromMap(d.id, d.data() as Map<String, dynamic>)),
+            canteenId);
 
         return Container(
           width: double.infinity,
@@ -1849,35 +1906,44 @@ class _AssignedCanteenStaff extends StatelessWidget {
                 )
               else ...[
                 const SizedBox(height: 8),
-                for (final doc in staff) ...[
-                  if (doc != staff.first)
+                for (final member in staff) ...[
+                  if (member != staff.first)
                     const Divider(color: AppColors.bgDivider, height: 1),
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 9),
                     child: Row(
                       children: [
-                        const Icon(Icons.person_outline_rounded,
-                            color: AppColors.textSecondary, size: 18),
+                        Icon(
+                            member.isAdmin
+                                ? Icons.admin_panel_settings_rounded
+                                : Icons.person_outline_rounded,
+                            color: member.isAdmin
+                                ? AppColors.accentOrange
+                                : AppColors.textSecondary,
+                            size: 18),
                         const SizedBox(width: 9),
                         Expanded(
                           child: Text(
-                            ((doc.data() as Map<String, dynamic>)['email'] ??
-                                    'No email')
-                                .toString(),
+                            member.email,
                             style: AppText.style(
                                 color: AppColors.textPrimary, fontSize: 12),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          (((doc.data() as Map<String, dynamic>)['role'] ??
-                                  'cashier') as String)
-                              .toUpperCase(),
-                          style: AppText.style(
-                              color: AppColors.accentBlue,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700),
+                        Flexible(
+                          child: Text(
+                            member.isAdmin
+                                ? 'ADMIN · ALL CANTEENS'
+                                : member.role.toUpperCase(),
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.style(
+                                color: member.isAdmin
+                                    ? AppColors.accentOrange
+                                    : AppColors.accentBlue,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700),
+                          ),
                         ),
                       ],
                     ),
@@ -1952,8 +2018,12 @@ class _StaffTab extends StatelessWidget {
               final data = doc.data() as Map<String, dynamic>;
               final email = data['email'] ?? 'No email';
               final role = data['role'] ?? 'cashier';
-              final canteenName = data['canteenName'] ?? 'Main Canteen';
               final isAdmin = role == 'admin';
+              // Admins reach every canteen; a cashier shows their own canteen.
+              final canteenName = isAdmin
+                  ? 'All canteens'
+                  : (data['canteenName'] ?? data['canteenId'] ?? 'No canteen')
+                      .toString();
               final roleColor =
                   isAdmin ? AppColors.accentOrange : AppColors.accentBlue;
 
@@ -2037,7 +2107,8 @@ class _StaffTab extends StatelessWidget {
                         }
                       },
                       itemBuilder: (_) => [
-                        PopupMenuItem(
+                        if (!isAdmin)
+                          PopupMenuItem(
                           value: 'reassign',
                           child: Row(children: [
                             const Icon(Icons.swap_horiz_rounded,
@@ -2087,8 +2158,8 @@ class _StaffTab extends StatelessWidget {
     final emailCtrl = TextEditingController();
     final passCtrl = TextEditingController();
     String selectedRole = 'cashier';
-    String selectedCanteenId = 'main';
-    String selectedCanteenName = 'Main Canteen';
+    String selectedCanteenId = '';
+    String selectedCanteenName = '';
     bool isLoading = false;
     String errorMsg = '';
 
@@ -2169,7 +2240,20 @@ class _StaffTab extends StatelessWidget {
                           (v) => setDialogState(() => selectedRole = v)),
                     ]),
                     const SizedBox(height: 12),
-                    // Canteen picker
+                    // Canteen picker (cashiers only: an admin reaches every canteen)
+                    if (selectedRole == 'admin')
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.accentOrange.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                            'Admins can access every canteen automatically, including canteens added later.',
+                            style: AppText.style(
+                                color: AppColors.textSecondary, fontSize: 12)),
+                      ),
+                    if (selectedRole != 'admin') ...[
                     Text('Assign to Canteen',
                         style:
                             AppText.style(color: Colors.white54, fontSize: 11)),
@@ -2179,49 +2263,51 @@ class _StaffTab extends StatelessWidget {
                           .collection('canteens')
                           .snapshots(),
                       builder: (_, snap) {
-                        final List<DropdownMenuItem<String>> items = [];
-                        if (snap.hasData) {
-                          for (final doc in snap.data!.docs) {
-                            final d = doc.data() as Map<String, dynamic>;
-                            items.add(DropdownMenuItem(
-                              value: doc.id,
-                              child: Text(
-                                d['name'] ?? doc.id,
-                                style: AppText.style(
-                                    color: Colors.white, fontSize: 13),
-                              ),
-                            ));
-                          }
+                        final infos = (snap.data?.docs ?? []).map((d) =>
+                            CanteenInfo(
+                                d.id,
+                                ((d.data() as Map<String, dynamic>)['name'] ??
+                                        d.id)
+                                    .toString()));
+                        // The dropdown must be given one of its own items.
+                        final valid =
+                            validCanteenSelection(selectedCanteenId, infos);
+                        if (valid == null) {
+                          selectedCanteenId = '';
+                          selectedCanteenName = '';
+                          return Text(
+                              'No canteens yet. Add a canteen first (Manage Canteens), then create the cashier.',
+                              style: AppText.style(
+                                  color: AppColors.accentOrange, fontSize: 12));
                         }
-                        if (items.isEmpty) {
-                          items.add(DropdownMenuItem(
-                            value: 'main',
-                            child: Text('Main Canteen',
-                                style: AppText.style(
-                                    color: Colors.white, fontSize: 13)),
-                          ));
-                        }
+                        selectedCanteenId = valid.id;
+                        selectedCanteenName = valid.name;
                         return DropdownButtonFormField<String>(
-                          initialValue: selectedCanteenId,
+                          initialValue: valid.id,
                           dropdownColor: AppColors.bgInput,
                           decoration: _inputDeco(
                               'Select Branch', Icons.storefront_rounded),
-                          items: items,
+                          items: [
+                            for (final c in infos)
+                              DropdownMenuItem(
+                                value: c.id,
+                                child: Text(c.name,
+                                    style: AppText.style(
+                                        color: Colors.white, fontSize: 13)),
+                              ),
+                          ],
                           onChanged: (val) {
                             if (val == null) return;
-                            final d = (snap.data?.docs
-                                .where((e) => e.id == val)
-                                .firstOrNull
-                                ?.data() as Map<String, dynamic>?);
+                            final c = infos.firstWhere((x) => x.id == val);
                             setDialogState(() {
-                              selectedCanteenId = val;
-                              selectedCanteenName =
-                                  d?['name'] ?? 'Main Canteen';
+                              selectedCanteenId = c.id;
+                              selectedCanteenName = c.name;
                             });
                           },
                         );
                       },
                     ),
+                    ],
                   ],
                 ),
               ),
@@ -2251,6 +2337,11 @@ class _StaffTab extends StatelessWidget {
                         if (pass.length < 6) {
                           setDialogState(() => errorMsg =
                               'Password must be at least 6 characters.');
+                          return;
+                        }
+                        if (selectedRole != 'admin' && selectedCanteenId.isEmpty) {
+                          setDialogState(() => errorMsg =
+                              'Add a canteen first, then create the cashier.');
                           return;
                         }
                         setDialogState(() {
@@ -2283,8 +2374,16 @@ class _StaffTab extends StatelessWidget {
                               .set({
                             'email': email,
                             'role': selectedRole,
-                            'canteenId': selectedCanteenId,
-                            'canteenName': selectedCanteenName,
+                            // An admin reaches every canteen; the canteen
+                            // saved on the record is only a label.
+                            'canteenId': selectedRole == 'admin' &&
+                                    selectedCanteenId.isEmpty
+                                ? 'main'
+                                : selectedCanteenId,
+                            'canteenName': selectedRole == 'admin' &&
+                                    selectedCanteenName.isEmpty
+                                ? 'All canteens'
+                                : selectedCanteenName,
                             'createdAt': FieldValue.serverTimestamp(),
                           });
                           if (dialogCtx.mounted) Navigator.pop(dialogCtx);
@@ -2320,8 +2419,8 @@ class _StaffTab extends StatelessWidget {
   // ── Reassign canteen ─────────────────────────────────────────────────────
   void _showReassignDialog(
       BuildContext context, String uid, Map<String, dynamic> data) {
-    String selectedId = data['canteenId'] ?? 'main';
-    String selectedName = data['canteenName'] ?? 'Main Canteen';
+    String selectedId = (data['canteenId'] ?? '').toString();
+    String selectedName = (data['canteenName'] ?? '').toString();
 
     showDialog(
       context: context,
@@ -2337,40 +2436,40 @@ class _StaffTab extends StatelessWidget {
             stream:
                 FirebaseFirestore.instance.collection('canteens').snapshots(),
             builder: (_, snap) {
-              final List<DropdownMenuItem<String>> items = [];
-              if (snap.hasData) {
-                for (final doc in snap.data!.docs) {
-                  final d = doc.data() as Map<String, dynamic>;
-                  items.add(DropdownMenuItem(
-                    value: doc.id,
-                    child: Text(d['name'] ?? doc.id,
-                        style:
-                            AppText.style(color: Colors.white, fontSize: 13)),
-                  ));
-                }
+              final infos = (snap.data?.docs ?? []).map((d) => CanteenInfo(
+                  d.id,
+                  ((d.data() as Map<String, dynamic>)['name'] ?? d.id)
+                      .toString()));
+              // The dropdown must be given one of its own items (the staff
+              // member's old canteen may have been deleted).
+              final valid = validCanteenSelection(selectedId, infos);
+              if (valid == null) {
+                return Text('No canteens yet. Add a canteen first.',
+                    style: AppText.style(
+                        color: AppColors.accentOrange, fontSize: 12));
               }
-              if (items.isEmpty) {
-                items.add(DropdownMenuItem(
-                  value: 'main',
-                  child: Text('Main Canteen',
-                      style: AppText.style(color: Colors.white, fontSize: 13)),
-                ));
-              }
+              selectedId = valid.id;
+              selectedName = valid.name;
               return DropdownButtonFormField<String>(
-                initialValue: selectedId,
+                initialValue: valid.id,
                 dropdownColor: AppColors.bgInput,
                 decoration:
                     _inputDeco('Select Branch', Icons.storefront_rounded),
-                items: items,
+                items: [
+                  for (final c in infos)
+                    DropdownMenuItem(
+                      value: c.id,
+                      child: Text(c.name,
+                          style:
+                              AppText.style(color: Colors.white, fontSize: 13)),
+                    ),
+                ],
                 onChanged: (val) {
                   if (val == null) return;
-                  final d = (snap.data?.docs
-                      .where((e) => e.id == val)
-                      .firstOrNull
-                      ?.data() as Map<String, dynamic>?);
+                  final c = infos.firstWhere((x) => x.id == val);
                   setSt(() {
-                    selectedId = val;
-                    selectedName = d?['name'] ?? 'Main Canteen';
+                    selectedId = c.id;
+                    selectedName = c.name;
                   });
                 },
               );

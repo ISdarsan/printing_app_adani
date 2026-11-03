@@ -5,6 +5,7 @@ import 'stream_cache.dart';
 import 'state_views.dart';
 import 'money.dart';
 import 'canteen_provider.dart';
+import 'canteen_selector.dart';
 
 class AddItemPage extends StatefulWidget {
   const AddItemPage({super.key});
@@ -32,6 +33,35 @@ class _AddItemPageState extends State<AddItemPage>
 
   // Cached list of existing codes/names for duplicate validation
   List<Map<String, dynamic>> _allItems = [];
+
+  // An admin works on ONE chosen canteen at a time ("All canteens" = nothing to
+  // edit yet, so the screen asks to choose one). A cashier is fixed to their own.
+  String _adminCanteen = kAllCanteens;
+  String _adminCanteenName = '';
+
+  bool get _isAdmin => CanteenProvider.isAdmin;
+
+  /// The canteen whose menu is shown and edited; null = admin has not chosen.
+  String? get _canteenId => _isAdmin
+      ? (_adminCanteen == kAllCanteens ? null : _adminCanteen)
+      : CanteenProvider.selectedCanteenId;
+
+  String get _canteenName =>
+      _isAdmin ? _adminCanteenName : CanteenProvider.selectedCanteenName;
+
+  void _onCanteenChosen(CanteenChoice c) {
+    if (c.id == _adminCanteen) return;
+    // Never carry a half-edited item from one canteen into another.
+    _clearForm();
+    _searchController.clear();
+    setState(() {
+      _adminCanteen = c.id;
+      _adminCanteenName = c.isAll ? '' : c.name;
+    });
+  }
+
+  Widget _choosePrompt() => const ChooseCanteenPrompt(
+      message: 'Select a canteen above to view and edit its menu.');
 
   @override
   void initState() {
@@ -105,6 +135,14 @@ class _AddItemPageState extends State<AddItemPage>
   }
 
   Future<void> _saveItem() async {
+    final canteenId = _canteenId;
+    if (canteenId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Choose a canteen first.', style: AppText.style()),
+        backgroundColor: AppColors.accentOrange,
+      ));
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
     try {
@@ -114,14 +152,13 @@ class _AddItemPageState extends State<AddItemPage>
       final halfPrice = double.tryParse(_halfPriceController.text);
       final costPrice = double.tryParse(_costPriceController.text) ?? 0.0;
 
-      final canteenId = CanteenProvider.selectedCanteenId;
       final docId = '${canteenId}_$code';
 
       await FirebaseFirestore.instance.collection('menuItems').doc(docId).set({
         'code': code,
         'name': name,
         'canteenId': canteenId,
-        'canteenName': CanteenProvider.selectedCanteenName,
+        'canteenName': _canteenName,
         'fullPrice': fullPrice,
         'costPrice': costPrice,
         if (halfPrice != null && halfPrice > 0) 'halfPrice': halfPrice,
@@ -228,6 +265,13 @@ class _AddItemPageState extends State<AddItemPage>
       ),
       body: Column(
         children: [
+          // Admin: choose which canteen's menu to view / edit.
+          if (_isAdmin)
+            CanteenSelector(
+              value: _adminCanteen,
+              label: 'Canteen',
+              onChanged: _onCanteenChosen,
+            ),
           // ── Tab Bar ──────────────────────────────────────
           Container(
             color: AppColors.bgCard,
@@ -255,13 +299,17 @@ class _AddItemPageState extends State<AddItemPage>
               controller: _tabController,
               children: [
                 // ── TAB 1: LIST + SEARCH ──────────────────────
-                StreamBuilder<QuerySnapshot>(
-                  stream: _streams.get('menu', () => FirebaseFirestore.instance
-                      .collection('menuItems')
-                      .where('canteenId',
-                          isEqualTo: CanteenProvider.selectedCanteenId)
-                      .orderBy('name')
-                      .snapshots()),
+                _canteenId == null
+                    ? _choosePrompt()
+                    : StreamBuilder<QuerySnapshot>(
+                  stream: _streams.get(
+                      'menu',
+                      () => FirebaseFirestore.instance
+                          .collection('menuItems')
+                          .where('canteenId', isEqualTo: _canteenId)
+                          .orderBy('name')
+                          .snapshots(),
+                      signature: _canteenId!),
                   builder: (context, snap) {
                     if (snap.hasError) {
                       return AppErrorState(
@@ -536,7 +584,9 @@ class _AddItemPageState extends State<AddItemPage>
                 ),
 
                 // ── TAB 2: ADD / EDIT FORM ────────────────────
-                SingleChildScrollView(
+                _canteenId == null
+                    ? _choosePrompt()
+                    : SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
                   child: Form(
                     key: _formKey,

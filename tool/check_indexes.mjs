@@ -81,6 +81,9 @@ const Q = [
   { screen: 'Credit detail: pending bills (3 equality filters)', role: 'cashier',
     file: 'lib/credit_detail_page.dart', coll: 'bills', eq: ['customerPhone', 'canteenId', 'creditStatus'],
     must: ["where('creditStatus', isEqualTo: 'Pending')"] },
+  { screen: 'Master Credit Ledger (one canteen: 2 equality filters)', role: 'admin',
+    file: 'lib/admin_master_credit_ledger_page.dart', coll: 'bills', eq: ['paymentMode', 'canteenId'],
+    must: ["where('paymentMode', isEqualTo: 'Credit')", "q.where('canteenId', isEqualTo: _canteen)"] },
 ];
 
 function required(q) {

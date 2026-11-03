@@ -771,3 +771,70 @@ describe('L. Staff lifecycle and invalid payloads (candidate)', () => {
     await no(setDoc(doc(db, 'repayments/req_dup'), rep));
   });
 });
+
+// ===========================================================================
+describe('M. Admin canteen choosers (Manage Menu, Master Credit Ledger, closing logs, analytics)', () => {
+  test('admin reads one canteen at a time with the exact queries the screens send', async () => {
+    const a = A(cand);
+    for (const c of ['north', 'south', 'main']) {
+      await ok(getDocs(query(collection(a, 'bills'), where('paymentMode', '==', 'Credit'), where('canteenId', '==', c)))); // master ledger, one canteen
+      await ok(getDocs(query(collection(a, 'cashReconciliations'), where('canteenId', '==', c), orderBy('timestamp', 'desc'), limit(30)))); // closing logs, one canteen
+      await ok(getDocs(query(collection(a, 'menuItems'), where('canteenId', '==', c), orderBy('name')))); // manage menu, chosen canteen
+      await ok(getDocs(query(collection(a, 'bills'), where('canteenId', '==', c), orderBy('timestamp', 'desc')))); // analytics, one canteen
+      await ok(getDocs(query(collection(a, 'expenses'), where('canteenId', '==', c), orderBy('timestamp')))); // analytics expenses
+    }
+    // "All canteens" variants
+    await ok(getDocs(query(collection(a, 'bills'), where('paymentMode', '==', 'Credit'))));
+    await ok(getDocs(query(collection(a, 'cashReconciliations'), orderBy('timestamp', 'desc'), limit(30))));
+    await ok(getDocs(query(collection(a, 'bills'), orderBy('timestamp', 'desc'))));
+    await ok(getDocs(collection(a, 'canteens'))); // the chooser itself
+  });
+
+  test('admin can add, edit and delete a menu item for a canteen that is not their own', async () => {
+    const a = A(cand);
+    const item = { code: 'NEW1', name: 'New Item', canteenId: 'south', canteenName: 'South', fullPrice: 10, costPrice: 4 };
+    await ok(setDoc(doc(a, 'menuItems/south_NEW1'), item));
+    await ok(setDoc(doc(a, 'menuItems/south_NEW1'), { ...item, fullPrice: 12 }));
+    await ok(deleteDoc(doc(a, 'menuItems/south_NEW1')));
+  });
+
+  test('the same queries stay closed to cashiers outside their own canteen', async () => {
+    const n = N(cand);
+    await no(getDocs(query(collection(n, 'bills'), where('paymentMode', '==', 'Credit'), where('canteenId', '==', 'south'))));
+    await no(getDocs(query(collection(n, 'cashReconciliations'), where('canteenId', '==', 'south'), orderBy('timestamp', 'desc'), limit(30))));
+    await no(getDocs(query(collection(n, 'menuItems'), where('canteenId', '==', 'south'), orderBy('name'))));
+    await no(getDocs(query(collection(n, 'bills'), orderBy('timestamp', 'desc')))); // an unfiltered "all canteens" list
+    await no(getDocs(collection(n, 'canteens')) );
+    // and a cashier cannot delete a menu item even in their own canteen (admin-only)
+    await no(deleteDoc(doc(n, 'menuItems/north_TEA')));
+  });
+});
+// ===========================================================================
+describe('N. Deleting a canteen (including main) and moving its cashiers', () => {
+  test('admin deletes a canteen and moves its cashier in ONE batch (what the screen sends)', async () => {
+    const a = A(cand);
+    await ok(setDoc(doc(a, 'canteens/main'), { name: 'Main Canteen' }));
+    const batch = writeBatch(a);
+    batch.delete(doc(a, 'canteens/main'));
+    batch.update(doc(a, 'canteenStaff/cashier-main-explicit'), { canteenId: 'north', canteenName: 'North' });
+    await ok(batch.commit());
+    // the cashier now belongs to north (access follows the staff record at once)
+    await ok(getDocs(query(collection(as(cand, 'cashier-main-explicit', 'cashier-main-explicit@x.com'), 'bills'), where('canteenId', '==', 'north'))));
+  });
+
+  test('admin creates and deletes canteens; reading them stays admin-only', async () => {
+    const a = A(cand);
+    await ok(setDoc(doc(a, 'canteens/new_branch'), { name: 'New Branch', createdAt: serverTimestamp() }));
+    await ok(getDocs(collection(a, 'canteens')));
+    await ok(deleteDoc(doc(a, 'canteens/new_branch')));
+  });
+
+  test('a cashier cannot delete a canteen (not even their own) or move staff', async () => {
+    const n = N(cand);
+    await no(deleteDoc(doc(n, 'canteens/north')));
+    await no(deleteDoc(doc(n, 'canteens/main')));
+    const batch = writeBatch(n);
+    batch.update(doc(n, 'canteenStaff/cashier-north'), { canteenId: 'south', canteenName: 'South' });
+    await no(batch.commit());
+  });
+});
