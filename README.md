@@ -1,56 +1,66 @@
 # Adani CSR Canteen Billing Application
 
-A premium, feature-rich Flutter billing and management application developed for Adani CSR Canteen operations. Built with a modern, high-fidelity dark-themed glassmorphism interface, the application enables streamlined order placement, credit book tracking, daily cash reconciliation, real-time analytics, and automated reporting.
+A premium, feature-rich Flutter billing and management application developed for **Adani CSR Canteen** operations. Built with a modern dark-themed glassmorphism interface, the app enables streamlined order placement, credit book tracking, daily cash reconciliation, real-time analytics, multi-canteen management, and automated reporting — all backed by Firebase.
+
+> **Version:** `1.0.5+6` &nbsp;|&nbsp; **Flutter SDK:** `>=3.0.0 <4.0.0` &nbsp;|&nbsp; **Platform:** Android (primary), Windows
 
 ---
 
-## 🌟 Key Features
+## ✨ Key Features
 
 ### 1. POS Billing & Invoicing
-- **Interactive Cart**: Quick search for food items with real-time total updates.
-- **Multi-Mode Payments**: Options for **Cash**, **UPI**, and **Credit**.
-- **Receipt Generation**: Formats and packages receipt details ready for printing or sharing.
+- **Interactive Cart** — Quick food-item search with real-time total updates.
+- **Multi-Mode Payments** — Cash, UPI, and Credit.
+- **Receipt Generation** — Formats bill details ready for Bluetooth thermal printing or sharing.
+- **Bluetooth Thermal Printing** — Connects to ESC/POS printers; runtime `BLUETOOTH_SCAN` permission handling for Android 12+.
 
 ### 2. Credit Ledger & Customer Management
-- **Customer Directory**: Add, update, and track status of regular canteen credit customers.
-- **Credit Tracking**: Logs individual unpaid orders under customer profiles.
-- **Payment Logging**: Accept partial or complete settlements, logging payment methods dynamically.
-- **Master Credit Ledger**: Admin-exclusive detailed transaction logs for auditing.
+- **Customer Directory** — Add, update, and track regular credit customers.
+- **Credit Tracking** — Logs unpaid orders under individual customer profiles.
+- **Payment Logging** — Accept partial or full settlements with dynamic payment-method logging.
+- **Master Credit Ledger** — Admin-exclusive audit trail for all credit transactions (per-canteen).
 
 ### 3. Daily Cash Reconciliation & Closing
-- **Closing Register**: Cashiers count actual cash in the register at the end of their shift.
-- **Discrepancy Calculation**: Automatically highlights shortages or surpluses compared to Firestore system sales.
-- **Secure Submissions**: Logs the cashier identity, closing timestamp, and discrepancy notes. Once submitted, records are locked.
-- **Audit Logs**: Admin dashboard allows historical log tracking to identify trends.
+- **Closing Register** — Cashiers count actual cash at shift end.
+- **Discrepancy Calculation** — Automatically highlights shortages or surpluses vs. Firestore system totals.
+- **Secure Submissions** — Locks records with cashier identity and timestamp after submission.
+- **Audit Logs** — Admin dashboard shows historical trends across closing sessions.
 
 ### 4. Expense & Cashflow Management
-- **Expense Logger**: Cashiers can log local day-to-day purchases (e.g., vegetables, gas) directly from the register.
-- **Fund Logs**: Track additional cash inflows, monthly budgets, and capital additions.
-- **Daily Sales Reports**: Detailed breakdown of Cash vs. UPI vs. Credit splits for each day.
+- **Expense Logger** — Log day-to-day canteen purchases (vegetables, gas, etc.).
+- **Fund Logs** — Track cash inflows and monthly budget top-ups.
+- **Per-Canteen Budgets** — Monthly budgets are assigned individually per canteen (replacing the old shared org-wide fund).
+- **Daily Sales Reports** — Cash vs. UPI vs. Credit breakdown per day.
 
-### 5. Admin Analytics & Reporting
-- **Data Visualization**: Real-time sales trends, item performance, and payment mode splits powered by `fl_chart`.
-- **Excel Exports**: Generates multi-sheet Excel reports (`excel` package) for Bills, Expenses, Repayments, and Cash Reconciliations.
-- **Share & Print**: Share Excel worksheets instantly via system share options (`share_plus`).
+### 5. Multi-Canteen Admin Controls
+- **Canteen Chooser** — Admins can switch canteen scope across Manage Menu, Master Ledger, Closing Logs, and Analytics.
+- **Main Canteen** — Designated main canteen is protected from accidental deletion; other canteens can be safely removed.
+- **Auto Admin Assignment** — Admins are automatically assigned to every canteen on creation.
+- **Safe Canteen Deletion** — Cascades cleanup without orphaning any data.
 
-### 6. Notifications & SMS Broadcasts
-- **In-App Notices**: Canteen-scoped administrative notices are stored in Firestore and shown in the app while staff are signed in.
-- **SMS Specials**: Utility templates for broadcasting special menus or updates.
+### 6. Admin Analytics & Reporting
+- **Data Visualization** — Real-time sales trends, item performance, and payment-mode splits via `fl_chart`.
+- **Excel Exports** — Multi-sheet reports (Bills, Expenses, Repayments, Cash Reconciliations) via `excel` package.
+- **Share & Print** — Instantly share Excel worksheets via system share options (`share_plus`).
+
+### 7. Notifications & SMS Broadcasts
+- **In-App Notices** — Canteen-scoped admin notices stored in Firestore and shown during active sessions.
+- **SMS Specials** — Broadcast templates for special menus/updates *(Coming soon)*.
 
 ---
 
-## 🛠️ Technology Stack
+## 🛠 Technology Stack
 
-- **Framework**: [Flutter](https://flutter.dev/) (Targeting SDK `>=3.0.0 <4.0.0`)
-- **Database & Backend**: Firebase Suite
-  - **Firebase Auth**: Role-based access control (Admin vs. Cashier).
-  - **Cloud Firestore**: Real-time document storage for sales, expenses, and ledgers.
-- **Libraries**:
-  - `fl_chart`: For responsive visual data analytics.
-  - `excel`: Programmatic worksheet creation.
-  - `share_plus`: File sharing capability.
-  - `google_fonts`: Premium typography (`Poppins` and others).
-  - `lottie`: Vector animations for interactive elements.
+| Layer | Technology |
+|---|---|
+| **Framework** | [Flutter](https://flutter.dev/) `>=3.0.0 <4.0.0` |
+| **Auth** | Firebase Auth — role-based (Admin / Cashier) |
+| **Database** | Cloud Firestore — real-time document storage |
+| **Printing** | `blue_thermal_printer` + `esc_pos_utils_plus` |
+| **Charts** | `fl_chart` |
+| **Exports** | `excel`, `share_plus`, `path_provider` |
+| **UI** | `lottie`, `animated_text_kit`, Inter font family |
+| **Preferences** | `shared_preferences` |
 
 ---
 
@@ -58,52 +68,52 @@ A premium, feature-rich Flutter billing and management application developed for
 
 ```
 lib/
-├── main.dart                           # Application entry point & route registration
-├── theme.dart                          # Application styling, dark theme definitions, and colors
-├── sms_broadcast_helper.dart           # SMS utility and template generator
+├── main.dart                             # App entry point & route registration
+├── theme.dart                            # Dark theme, glassmorphism styles, and colors
+├── sms_broadcast_helper.dart             # SMS utility and template generator
 │
-├── cash_reconciliation_page.dart       # Daily register closing, calculations, and admin log view
+├── billing_dashboard_page.dart           # Cashier main portal, navigation, and notices
+├── print_bill_page.dart                  # Cart, item select, payment selection, bill checkout
+├── all_bills_page.dart                   # Historical bill log viewer
 │
-├── billing_dashboard_page.dart         # POS cashier main portal, navigation, and notices
-├── print_bill_page.dart                # Cart, item select, payment selection, and bill checkout
+├── credit_customers_page.dart            # Credit book directory (cashier)
+├── credit_detail_page.dart              # Individual credit tracking and repayment
 │
-├── credit_customers_page.dart          # Credit book directory for cashier
-├── credit_detail_page.dart             # Individual credit tracking and repayment gateway
+├── cash_reconciliation_page.dart         # Daily register closing & discrepancy view
 │
-├── admin_dashboard_page.dart           # Admin portal, excel exporter, user management
-├── admin_analytics_page.dart           # Visual reports, graphs, and category statistics
-├── admin_master_credit_ledger_page.dart# Complete credit history auditing
-├── admin_monthly_cashflow_page.dart    # Cashflow management, budgets, and investments
-├── admin_expense_report_page.dart      # Audits and filters for daily expenses
+├── admin_dashboard_page.dart             # Admin portal, Excel exporter, user management
+├── admin_analytics_page.dart             # Visual reports, graphs, and category stats
+├── admin_master_credit_ledger_page.dart  # Full credit history audit (per-canteen)
+├── admin_monthly_cashflow_page.dart      # Cashflow, per-canteen budgets & investments
+├── admin_expense_report_page.dart        # Expense audit and filtering
 │
-├── expenses_page.dart                  # Log single or recurring canteen expenses
-├── expense_detail_page.dart            # Detail view for an expense item
+├── expenses_page.dart                    # Log single/recurring canteen expenses
+├── expense_detail_page.dart             # Expense item detail view
 │
-├── funds_received_page.dart            # Monthly reports, cash inflow ledger
-├── today_sales_page.dart               # Summary of the current day's sales and payment methods
-├── daily_sales_report_page.dart        # Day-by-day historical sales summaries
-├── monthly_sales_breakdown_page.dart   # Monthly revenue overview
+├── funds_received_page.dart              # Monthly reports and cash inflow ledger
+├── today_sales_page.dart                 # Current day's sales summary
+├── daily_sales_report_page.dart          # Day-by-day historical sales
+├── monthly_sales_breakdown_page.dart     # Monthly revenue overview
 │
-├── notifications_page.dart             # Received announcements and alerts
-├── send_notification_page.dart         # Admin-only in-app notice broadcaster
+├── notification_detail_page.dart         # Notification detail view
+├── notifications_page.dart              # Received announcements and alerts
+├── send_notification_page.dart          # Admin-only in-app notice broadcaster
 │
-├── login_page.dart                     # User sign-in interface
-├── role_splash_page.dart               # Role verification and authorization gate
-└── splash_page.dart                    # Application launch branding screen
+├── login_page.dart                       # User sign-in interface
+├── role_splash_page.dart                 # Role verification & authorization gate
+└── splash_page.dart                      # App launch branding screen
 ```
 
 ---
 
-## ⚙️ Getting Started
+## 🚀 Getting Started
 
 ### Prerequisites
-Make sure you have Flutter installed and configured on your machine.
 ```bash
 flutter doctor
 ```
 
 ### 1. Clone & Fetch Dependencies
-Clone the repository, navigate to the project directory, and pull all package dependencies:
 ```bash
 git clone https://github.com/ISdarsan/printing_app_adani.git
 cd printing_app_adani
@@ -111,21 +121,18 @@ flutter pub get
 ```
 
 ### 2. Configure Firebase
-Ensure your Firebase Project is configured and the configuration files are added:
-- **Android**: Place your `google-services.json` in `android/app/`.
-- **iOS**: Place your `GoogleService-Info.plist` in `ios/Runner/`.
-- **Web** (if building for web): Initialize Firebase Web configurations in `web/index.html`.
+- **Android**: Place `google-services.json` in `android/app/`
+- **iOS**: Place `GoogleService-Info.plist` in `ios/Runner/`
+- **Web** *(optional)*: Add Firebase Web config in `web/index.html`
 
 ### 3. Run the App
-To start the app on an emulator, simulator, or connected device:
 ```bash
 flutter run
 ```
 
-### 4. Build Release Version
-To compile the release bundle:
+### 4. Build Release
 
-**Android (APK):**
+**Android APK:**
 ```bash
 flutter build apk --release
 ```
@@ -134,3 +141,17 @@ flutter build apk --release
 ```bash
 flutter build windows --release
 ```
+
+---
+
+## 📋 Recent Changelog
+
+| Version | Highlights |
+|---|---|
+| `1.0.5+6` | Android 12+ Bluetooth runtime permission (`BLUETOOTH_SCAN`); multi-canteen admin choosers; per-canteen budgets; safe main-canteen deletion guard; crash hardening & back-button bill protection |
+| `1.0.4` | Full analysis sweep — wrong-phone-date guard, budget usage bar, UI modernization |
+| `1.0.3` | Monthly budgets per canteen (replaces shared org-wide fund) |
+
+---
+
+*Built with ❤️ for Adani CSR Canteen operations.*
