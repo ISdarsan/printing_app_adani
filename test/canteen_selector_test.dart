@@ -26,9 +26,23 @@ void main() {
       expect(c.where((x) => x.id == 'main').length, 1);
     });
 
-    test('without "All" the list starts at Main', () {
-      final c = buildCanteenChoices(const [], all: false);
-      expect(c.map((x) => x.id), ['main']);
+    test('no canteens at all: only "All" (and nothing at all without it): nothing is invented', () {
+      expect(buildCanteenChoices(const []).map((x) => x.id), ['all']);
+      expect(buildCanteenChoices(const [], all: false), isEmpty);
+    });
+
+    test('a DELETED main is not listed any more (every canteen, including Main, can be deleted)', () {
+      final c = buildCanteenChoices([const MapEntry('north', {'name': 'North Canteen'})]);
+      expect(c.map((x) => x.id), ['all', 'north']);
+    });
+
+    test('main takes the name stored on its record and stays first', () {
+      final c = buildCanteenChoices([
+        const MapEntry('north', {'name': 'North Canteen'}),
+        const MapEntry('main', {'name': 'Head Office Canteen'}),
+      ]);
+      expect(c.map((x) => x.id), ['all', 'main', 'north']);
+      expect(c[1].name, 'Head Office Canteen');
     });
 
     test('a canteen with no name uses its id', () {
@@ -74,7 +88,7 @@ void main() {
       expect(find.text('All canteens'), findsOneWidget);
     });
 
-    testWidgets('while loading it still offers All and Main (never an empty control)', (t) async {
+    testWidgets('while loading it still offers All and keeps the current choice visible (never an empty control)', (t) async {
       await t.pumpWidget(host(CanteenSelector(
         value: kAllCanteens,
         choicesStream: const Stream.empty(),

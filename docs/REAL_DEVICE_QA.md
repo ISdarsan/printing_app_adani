@@ -168,3 +168,13 @@ For each Fail: phone model and Android version, screen, exact steps, what you ex
 - [ ] **Analytics & Graphs (admin):** with All canteens the figures cover every canteen; pick one canteen and they change to that canteen only. Open all five tabs (Weekly, Monthly, Payments, Profit, Ops): charts draw, nothing is cut off at large text.
 - [ ] **Monthly Budget (admin):** with All canteens a note explains budgets are per canteen; pick a canteen to set its budget.
 - [ ] **SMS Broadcast Specials** (cashier and admin): shows "Coming soon" and nothing else happens.
+
+## Added by round 3 (Main deletable, admins in every canteen)
+
+- [ ] **Manage Canteens & Staff -> Branches:** Main Canteen now shows the rename (pencil) and delete (bin) icons like the others. Expand any canteen: "Assigned Staff" lists its cashiers **and the admin** (marked ADMIN - ALL CANTEENS). Add a new branch: expand it, the admin is already listed.
+- [ ] **Delete a test branch that has no cashier:** confirmation says no cashiers are assigned; it deletes. Existing bills are untouched.
+- [ ] **Delete a branch that has a cashier (Main still exists):** the confirmation says the cashier will be moved to Main; after deleting, that cashier appears under Main.
+- [ ] **Try to delete Main while a cashier is assigned to it:** a "Cannot delete Main Canteen yet" message names the cashier and says to reassign first. Nothing is deleted.
+- [ ] **Staff tab:** the admin shows "All canteens"; the admin's row menu has no "Reassign Canteen"; a cashier shows their canteen and can be reassigned.
+- [ ] **Add Staff:** choosing Admin hides the canteen picker and explains admins reach every canteen; choosing Cashier shows only canteens that exist.
+- [ ] **Do NOT delete the real Main canteen during QA** unless you intend to: its records stay in the database but can only be seen under "All canteens" afterwards.

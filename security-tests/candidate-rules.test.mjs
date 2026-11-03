@@ -809,3 +809,32 @@ describe('M. Admin canteen choosers (Manage Menu, Master Credit Ledger, closing 
     await no(deleteDoc(doc(n, 'menuItems/north_TEA')));
   });
 });
+// ===========================================================================
+describe('N. Deleting a canteen (including main) and moving its cashiers', () => {
+  test('admin deletes a canteen and moves its cashier in ONE batch (what the screen sends)', async () => {
+    const a = A(cand);
+    await ok(setDoc(doc(a, 'canteens/main'), { name: 'Main Canteen' }));
+    const batch = writeBatch(a);
+    batch.delete(doc(a, 'canteens/main'));
+    batch.update(doc(a, 'canteenStaff/cashier-main-explicit'), { canteenId: 'north', canteenName: 'North' });
+    await ok(batch.commit());
+    // the cashier now belongs to north (access follows the staff record at once)
+    await ok(getDocs(query(collection(as(cand, 'cashier-main-explicit', 'cashier-main-explicit@x.com'), 'bills'), where('canteenId', '==', 'north'))));
+  });
+
+  test('admin creates and deletes canteens; reading them stays admin-only', async () => {
+    const a = A(cand);
+    await ok(setDoc(doc(a, 'canteens/new_branch'), { name: 'New Branch', createdAt: serverTimestamp() }));
+    await ok(getDocs(collection(a, 'canteens')));
+    await ok(deleteDoc(doc(a, 'canteens/new_branch')));
+  });
+
+  test('a cashier cannot delete a canteen (not even their own) or move staff', async () => {
+    const n = N(cand);
+    await no(deleteDoc(doc(n, 'canteens/north')));
+    await no(deleteDoc(doc(n, 'canteens/main')));
+    const batch = writeBatch(n);
+    batch.update(doc(n, 'canteenStaff/cashier-north'), { canteenId: 'south', canteenName: 'South' });
+    await no(batch.commit());
+  });
+});

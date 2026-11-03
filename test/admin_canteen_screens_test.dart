@@ -122,4 +122,62 @@ void main() {
       }
     });
   });
+
+  group('Manage Canteens & Staff: Main can be deleted, admins belong to every canteen (source guards)', () {
+    String dash() => read('lib/admin_dashboard_page.dart');
+
+    test('every canteen, including Main, shows the rename and delete buttons', () {
+      final s = dash();
+      expect(s.contains('if (!isMain)\n                            Row('), isFalse);
+      expect(s, contains('_confirmDeleteCanteen(\n                                      context, doc.id, name)'));
+    });
+
+    test('deleting plans first, blocks when a cashier would be left without a canteen, and is ONE batch', () {
+      final s = dash();
+      expect(s, contains('planCanteenDelete('));
+      expect(s, contains('if (!plan.allowed)'));
+      expect(s, contains(r'Cannot delete "$name" yet'));
+      expect(s, contains("batch.delete(db.collection('canteens').doc(id));"));
+      expect(s, contains('for (final cashier in plan.cashiers)'));
+      expect(s, contains('await batch.commit();'));
+      // the old two-step flow (delete, THEN move staff, always to main) is gone
+      expect(s.contains("'canteenId': 'main',\n                  'canteenName': 'Main Canteen',"), isFalse);
+      expect(s.contains('Staff assigned here will fall back to Main Canteen'), isFalse);
+    });
+
+    test('each canteen lists its cashiers plus every admin; an admin shows as ALL CANTEENS', () {
+      final s = dash();
+      expect(s, contains('staffForCanteen('));
+      expect(s, contains("'ADMIN · ALL CANTEENS'"));
+      expect(s.contains("(data['canteenId'] ?? 'main').toString() == canteenId"), isFalse);
+    });
+
+    test('the Staff tab labels an admin "All canteens" and offers no Reassign for admins', () {
+      final s = dash();
+      expect(s, contains("? 'All canteens'"));
+      expect(s, contains('if (!isAdmin)\n                          PopupMenuItem('));
+    });
+
+    test('creating an admin needs no canteen; creating a cashier needs a canteen that exists', () {
+      final s = dash();
+      expect(s, contains('Admins can access every canteen automatically'));
+      expect(s, contains("if (selectedRole != 'admin' && selectedCanteenId.isEmpty)"));
+      expect(s, contains('No canteens yet. Add a canteen first'));
+    });
+
+    test('dropdowns are only ever given a value that is one of their items (a deleted Main cannot crash them)', () {
+      final s = dash();
+      expect('validCanteenSelection('.allMatches(s).length, greaterThanOrEqualTo(2)); // add staff + reassign
+      expect(s.contains("String selectedCanteenId = 'main';"), isFalse);
+      expect(s.contains("String selectedId = data['canteenId'] ?? 'main';"), isFalse);
+      expect(s.contains('initialValue: selectedCanteenId,'), isFalse);
+      expect(s.contains('initialValue: selectedId,'), isFalse);
+    });
+
+    test('no screen invents a Main Canteen any more: pickers list canteens that exist', () {
+      expect(dash().contains("{'id': 'main', 'name': 'Main Canteen'}"), isFalse);
+      expect(read('lib/admin_expense_report_page.dart').contains("_CanteenOption('main', 'Main Canteen')"), isFalse);
+      expect(read('lib/canteen_selector.dart').contains("const CanteenChoice('main', 'Main Canteen'),\n    ...others"), isFalse);
+    });
+  });
 }

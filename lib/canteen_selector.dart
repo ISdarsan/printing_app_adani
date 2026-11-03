@@ -22,23 +22,28 @@ class CanteenChoice {
   int get hashCode => Object.hash(id, name);
 }
 
-/// The canteens an admin can pick from: "Main Canteen" first, then every canteen
-/// document (sorted by name), never listing main twice. [all] adds the leading
-/// "All canteens" choice.
+/// The canteens an admin can pick from: every canteen that really exists,
+/// "Main Canteen" first when its record exists, then the others sorted by name.
+/// Main is NOT added when its record has been deleted (every canteen, including
+/// Main, can be deleted). [all] adds the leading "All canteens" choice.
 List<CanteenChoice> buildCanteenChoices(
   Iterable<MapEntry<String, Map<String, dynamic>>> canteenDocs, {
   bool all = true,
 }) {
+  CanteenChoice? main;
   final others = <CanteenChoice>[];
   for (final e in canteenDocs) {
-    if (e.key == 'main') continue;
-    final name = (e.value['name'] ?? e.key).toString().trim();
-    others.add(CanteenChoice(e.key, name.isEmpty ? e.key : name));
+    final name = (e.value['name'] ?? '').toString().trim();
+    if (e.key == 'main') {
+      main = CanteenChoice('main', name.isEmpty ? 'Main Canteen' : name);
+    } else {
+      others.add(CanteenChoice(e.key, name.isEmpty ? e.key : name));
+    }
   }
   others.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   return [
     if (all) const CanteenChoice(kAllCanteens, 'All canteens'),
-    const CanteenChoice('main', 'Main Canteen'),
+    if (main != null) main,
     ...others,
   ];
 }
@@ -88,10 +93,16 @@ class _CanteenSelectorState extends State<CanteenSelector> {
       child: StreamBuilder<List<CanteenChoice>>(
         stream: _stream,
         builder: (context, snap) {
-          // While loading or on error show the usual fallback so the screen is
-          // still usable (main + all), never an empty control.
+          // While loading (or on error) offer "All canteens" and keep the current
+          // choice visible, so the control is never empty and nothing is
+          // invented. (No canteen is assumed to exist.)
           final choices = snap.data ??
-              buildCanteenChoices(const [], all: widget.includeAll);
+              [
+                if (widget.includeAll)
+                  const CanteenChoice(kAllCanteens, 'All canteens'),
+                if (widget.value != kAllCanteens)
+                  CanteenChoice(widget.value, widget.value),
+              ];
           final value = choices.any((c) => c.id == widget.value)
               ? widget.value
               : choices.first.id;

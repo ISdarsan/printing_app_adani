@@ -35,3 +35,9 @@
 24. **SMS Broadcast is not implemented**: both menus show "Coming soon"; the old SMS code remains in the project but is unreachable.
 25. **Analytics for a single canteen** reads that canteen's bills on the server (needs the existing indexes); for "All canteens" and for "Main Canteen" it reads all bills of the period and filters on the device (Main also owns older records with no canteen id). Large histories take longer; the page shows progress and a row limit.
 26. **One malformed bill** (for example an item price stored as text) makes the whole Analytics load fail with "Could not load analytics" instead of skipping that bill. No such record is known.
+
+## Added by round 3
+
+27. **Deleting Main (or any canteen) keeps its records.** Bills, expenses, closings, customers and menu items tagged to a deleted canteen, and older records with no canteen id, stay in the database. They still count under "All canteens" but cannot be picked as a single canteen, and creating a new canteen with the same name gives a different id (for example `main_canteen`), so they are not re-attached automatically.
+28. **A canteen with cashiers cannot be deleted** unless Main exists and is a different canteen: move the cashiers first. Admins never block a delete.
+29. **The app assumes the Main record exists in the database today** (the Branches screen lists it). If it did not, Main would no longer appear in the pickers.
