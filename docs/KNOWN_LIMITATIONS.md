@@ -41,3 +41,11 @@
 27. **Deleting Main (or any canteen) keeps its records.** Bills, expenses, closings, customers and menu items tagged to a deleted canteen, and older records with no canteen id, stay in the database. They still count under "All canteens" but cannot be picked as a single canteen, and creating a new canteen with the same name gives a different id (for example `main_canteen`), so they are not re-attached automatically.
 28. **A canteen with cashiers cannot be deleted** unless Main exists and is a different canteen: move the cashiers first. Admins never block a delete.
 29. **The app assumes the Main record exists in the database today** (the Branches screen lists it). If it did not, Main would no longer appear in the pickers.
+
+## Added by round 4
+
+30. **Printer connect was broken on every Android 12+ device** until 2026-11-03 (missing
+    runtime request of `BLUETOOTH_SCAN`; `cancelDiscovery()` threw `SecurityException` on
+    every attempt). Fixed in `MainActivity.kt` — see `FULL_ANALYSIS_SWEEP.md` Round 4. This
+    was only found by a real device test; no automated test in this project exercises the
+    native Bluetooth channel, so this class of bug cannot be caught without one.

@@ -90,15 +90,31 @@ class MainActivity : FlutterActivity() {
             checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
             PackageManager.PERMISSION_GRANTED
 
+    // cancelDiscovery() in connect() needs this on Android 12+ (SecurityException
+    // otherwise: "Need android.permission.BLUETOOTH_SCAN ... cancelDiscovery()").
+    // Declared with usesPermissionFlags="neverForLocation" in the manifest, so
+    // granting it never asks for location.
+    private fun hasScanPermission(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun hasBluetoothPermissions(): Boolean =
+        hasConnectPermission() && hasScanPermission()
+
     private fun ensurePermission(result: MethodChannel.Result) {
-        if (hasConnectPermission()) {
+        if (hasBluetoothPermissions()) {
             result.success(true)
             return
         }
         // A second request while one is open would orphan the first result.
         pendingPermission?.success(false)
         pendingPermission = result
-        requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), permissionRequestCode)
+        // Requested together: Android shows this as one "Nearby devices" prompt.
+        requestPermissions(
+            arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN),
+            permissionRequestCode
+        )
     }
 
     override fun onRequestPermissionsResult(
@@ -108,9 +124,10 @@ class MainActivity : FlutterActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == permissionRequestCode) {
-            val granted = grantResults.isNotEmpty() &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED
-            pendingPermission?.success(granted)
+            // Re-check actual state rather than trust grantResults[] ordering:
+            // correct even if the system only prompts for one of the two (for
+            // example the other was already granted) or grants them out of order.
+            pendingPermission?.success(hasBluetoothPermissions())
             pendingPermission = null
         }
     }
@@ -153,7 +170,16 @@ class MainActivity : FlutterActivity() {
             }
             try {
                 val device = bt.getRemoteDevice(address)
-                bt.cancelDiscovery()
+                // Best-effort: stopping any in-progress discovery makes the
+                // connection attempt faster and more reliable, but it is not
+                // essential, so a missing/revoked SCAN permission (or any other
+                // failure here) must never block the connection itself.
+                if (hasScanPermission()) {
+                    try {
+                        bt.cancelDiscovery()
+                    } catch (_: SecurityException) {
+                    }
+                }
                 val s = openSocket(device)
                 socket = s
                 output = s.outputStream

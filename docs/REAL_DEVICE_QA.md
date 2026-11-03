@@ -107,7 +107,8 @@ Mark each line Pass / Fail / Not tried and write what you saw. Test as the **cas
 - [ ] Turn on airplane mode and try to save: the app clearly says a connection is needed and does **not** show success. Turn it off: the next bill works.
 
 ### D. Printing and Bluetooth
-- [ ] First use: Nearby-devices permission prompt appears (Android 12+), allow it.
+- [ ] First use: Nearby-devices permission prompt appears (Android 12+, covers both BLUETOOTH_CONNECT and BLUETOOTH_SCAN in one prompt), allow it.
+- [ ] Connect to the printer (fixed 2026-11-03: was failing on every attempt with "Need android.permission.BLUETOOTH_SCAN ... cancelDiscovery()" because that permission, though declared in the manifest, was never requested at runtime — see Round 4 in `FULL_ANALYSIS_SWEEP.md`). Tap **Reconnect** or **Choose**, pick the printer, confirm it reaches "Connected" (not "Disconnected").
 - [ ] Pair and connect the real printer; receipt prints with correct items, total, date, bill number and alignment.
 - [ ] Printer off during a print: app shows a clear failure, the bill is **not** duplicated on retry.
 - [ ] Switch printer off/on, Bluetooth off/on, walk out of range and back: reconnects or tells you what to do.

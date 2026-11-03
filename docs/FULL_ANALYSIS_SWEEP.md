@@ -117,3 +117,43 @@ Rules: no change (admins already write `canteens` and `canteenStaff`); 3 emulato
 | Rules for deleting, assigning and picking (pure) | 17 tests |
 | Source guards (7), confirmed to fail on the old code | pass |
 | Emulator, candidate suite | **116 / 116** |
+
+---
+
+# Round 4: printer would not connect — missing BLUETOOTH_SCAN runtime request (2026-11-03)
+
+**Reported from a real device** (screenshot): tapping Reconnect/Choose always failed with
+`Connection failed: Need android.permission.BLUETOOTH_SCAN permission for ... BluetoothAdapterServiceBinder.cancelDiscovery()`.
+This is the first defect in this project found by an actual on-device run rather than by
+code reading or automated tests.
+
+## Root cause
+`BLUETOOTH_SCAN` is a runtime ("dangerous") permission on Android 12+ (API 31+). It was
+declared in `AndroidManifest.xml` with `usesPermissionFlags="neverForLocation"`, but
+`MainActivity.kt`'s `ensurePermission()` only ever requested `BLUETOOTH_CONNECT`. The one
+call that actually needs `BLUETOOTH_SCAN` — `adapter.cancelDiscovery()`, called right before
+opening the socket in `connect()` — therefore threw a `SecurityException` on every attempt,
+on every device running Android 12 or newer.
+
+## Fix (`android/app/src/main/kotlin/com/adani/canteen_adani/MainActivity.kt`)
+- `ensurePermission()` now requests `BLUETOOTH_CONNECT` and `BLUETOOTH_SCAN` together (Android
+  shows this as a single "Nearby devices" prompt); the granted check is a live re-check of
+  both permissions rather than trusting the `grantResults[]` array order.
+- `cancelDiscovery()` is now **best-effort**: it only runs if `BLUETOOTH_SCAN` is currently
+  granted, and a `SecurityException` from it is caught rather than allowed to fail the whole
+  connection. Stopping discovery is a reliability nicety, not something a real connection
+  attempt should be blocked by — including for a future Android version that introduces
+  another scan-adjacent check.
+- `getBondedDevices()` and the basic `connect()` gate are unchanged: they only ever needed
+  `BLUETOOTH_CONNECT`, which was already correctly requested.
+
+## Tests
+- No automated Dart test exercises the native Bluetooth channel (it requires a real adapter
+  and a real printer), so this class of bug is invisible to `flutter test` and to every
+  emulator/security suite in this project — a real device is the only way to catch it, which
+  is exactly how it was found. `KNOWN_LIMITATIONS.md` has said this plainly since the first
+  sweep.
+- Verified by rebuilding the release APK/AAB (same production signing certificate) and
+  re-running the full existing suite (`flutter analyze` clean, 460 Flutter tests) to confirm
+  the native-only change touched nothing else.
+- Device re-test needed: see the updated item in `REAL_DEVICE_QA.md`, section D.
